@@ -1,1 +1,419 @@
-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
+
+// tweaks-panel.jsx
+// Reusable Tweaks shell + form-control helpers.
+//
+// Owns the host protocol (listens for __activate_edit_mode / __deactivate_edit_mode,
+// posts __edit_mode_available / __edit_mode_set_keys / __edit_mode_dismissed) so
+// individual prototypes don't re-roll it. Ships a consistent set of controls so you
+// don't hand-draw <input type="range">, segmented radios, steppers, etc.
+//
+// Usage (in an HTML file that loads React + Babel):
+//
+//   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+//     "primaryColor": "#D97757",
+//     "fontSize": 16,
+//     "density": "regular",
+//     "dark": false
+//   }/*EDITMODE-END*/;
+//
+//   function App() {
+//     const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+//     return (
+//       <div style={{ fontSize: t.fontSize, color: t.primaryColor }}>
+//         Hello
+//         <TweaksPanel>
+//           <TweakSection label="Typography" />
+//           <TweakSlider label="Font size" value={t.fontSize} min={10} max={32} unit="px"
+//                        onChange={(v) => setTweak('fontSize', v)} />
+//           <TweakRadio  label="Density" value={t.density}
+//                        options={['compact', 'regular', 'comfy']}
+//                        onChange={(v) => setTweak('density', v)} />
+//           <TweakSection label="Theme" />
+//           <TweakColor  label="Primary" value={t.primaryColor}
+//                        onChange={(v) => setTweak('primaryColor', v)} />
+//           <TweakToggle label="Dark mode" value={t.dark}
+//                        onChange={(v) => setTweak('dark', v)} />
+//         </TweaksPanel>
+//       </div>
+//     );
+//   }
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-body::-webkit-scrollbar{width:8px}
+  .twk-body::-webkit-scrollbar-track{background:transparent;margin:2px}
+  .twk-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:4px;
+    border:2px solid transparent;background-clip:content-box}
+  .twk-body::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.25);
+    border:2px solid transparent;background-clip:content-box}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
+    color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+
+  .twk-field{appearance:none;width:100%;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-field:focus{border-color:rgba(0,0,0,.25);background:rgba(255,255,255,.85)}
+  select.twk-field{padding-right:22px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.5)' d='M0 0h10L5 6z'/></svg>");
+    background-repeat:no-repeat;background-position:right 8px center}
+
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg.dragging .twk-seg-thumb{transition:none}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;height:22px;
+    border-radius:6px;cursor:default;padding:0}
+
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+
+  .twk-num{display:flex;align-items:center;height:26px;padding:0 0 0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;background:rgba(255,255,255,.6)}
+  .twk-num-lbl{font-weight:500;color:rgba(41,38,27,.6);cursor:ew-resize;
+    user-select:none;padding-right:8px}
+  .twk-num input{flex:1;min-width:0;height:100%;border:0;background:transparent;
+    font:inherit;font-variant-numeric:tabular-nums;text-align:right;padding:0 8px 0 0;
+    outline:none;color:inherit;-moz-appearance:textfield}
+  .twk-num input::-webkit-inner-spin-button,.twk-num input::-webkit-outer-spin-button{
+    -webkit-appearance:none;margin:0}
+  .twk-num-unit{padding-right:8px;color:rgba(41,38,27,.45)}
+
+  .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+  .twk-btn:hover{background:rgba(0,0,0,.88)}
+  .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
+  .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
+
+  .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
+    background:transparent;flex-shrink:0}
+  .twk-swatch::-webkit-color-swatch-wrapper{padding:0}
+  .twk-swatch::-webkit-color-swatch{border:0;border-radius:5.5px}
+  .twk-swatch::-moz-color-swatch{border:0;border-radius:5.5px}
+`;
+
+// ── useTweaks ───────────────────────────────────────────────────────────────
+// Single source of truth for tweak values. setTweak persists via the host
+// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
+function useTweaks(defaults) {
+  const [values, setValues] = React.useState(defaults);
+  const setTweak = React.useCallback((key, val) => {
+    setValues((prev) => ({ ...prev, [key]: val }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: val } }, '*');
+  }, []);
+  return [values, setTweak];
+}
+
+// ── TweaksPanel ─────────────────────────────────────────────────────────────
+// Floating shell. Registers the protocol listener BEFORE announcing
+// availability — if the announce ran first, the host's activate could land
+// before our handler exists and the toolbar toggle would silently no-op.
+// The close button posts __edit_mode_dismissed so the host's toolbar toggle
+// flips off in lockstep; the host echoes __deactivate_edit_mode back which
+// is what actually hides the panel.
+function TweaksPanel({ title = 'Tweaks', children }) {
+  const [open, setOpen] = React.useState(false);
+  const dragRef = React.useRef(null);
+  const offsetRef = React.useRef({ x: 16, y: 16 });
+  const PAD = 16;
+
+  const clampToViewport = React.useCallback(() => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    offsetRef.current = {
+      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+    };
+    panel.style.right = offsetRef.current.x + 'px';
+    panel.style.bottom = offsetRef.current.y + 'px';
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    clampToViewport();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', clampToViewport);
+      return () => window.removeEventListener('resize', clampToViewport);
+    }
+    const ro = new ResizeObserver(clampToViewport);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [open, clampToViewport]);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const t = e?.data?.type;
+      if (t === '__activate_edit_mode') setOpen(true);
+      else if (t === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const dismiss = () => {
+    setOpen(false);
+    window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+  };
+
+  const onDragStart = (e) => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+    const move = (ev) => {
+      offsetRef.current = {
+        x: startRight - (ev.clientX - sx),
+        y: startBottom - (ev.clientY - sy),
+      };
+      clampToViewport();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      <style>{__TWEAKS_STYLE}</style>
+      <div ref={dragRef} className="twk-panel"
+           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+        <div className="twk-hd" onMouseDown={onDragStart}>
+          <b>{title}</b>
+          <button className="twk-x" aria-label="Close tweaks"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={dismiss}>✕</button>
+        </div>
+        <div className="twk-body">{children}</div>
+      </div>
+    </>
+  );
+}
+
+// ── Layout helpers ──────────────────────────────────────────────────────────
+
+function TweakSection({ label, children }) {
+  return (
+    <>
+      <div className="twk-sect">{label}</div>
+      {children}
+    </>
+  );
+}
+
+function TweakRow({ label, value, children, inline = false }) {
+  return (
+    <div className={inline ? 'twk-row twk-row-h' : 'twk-row'}>
+      <div className="twk-lbl">
+        <span>{label}</span>
+        {value != null && <span className="twk-val">{value}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+  return (
+    <TweakRow label={label} value={`${value}${unit}`}>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </TweakRow>
+  );
+}
+
+function TweakToggle({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
+              role="switch" aria-checked={!!value}
+              onClick={() => onChange(!value)}><i /></button>
+    </div>
+  );
+}
+
+function TweakRadio({ label, value, options, onChange }) {
+  const trackRef = React.useRef(null);
+  const [dragging, setDragging] = React.useState(false);
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+  const n = opts.length;
+
+  // The active value is read by pointer-move handlers attached for the lifetime
+  // of a drag — ref it so a stale closure doesn't fire onChange for every move.
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
+
+  const segAt = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const inner = r.width - 4;
+    const i = Math.floor(((clientX - r.left - 2) / inner) * n);
+    return opts[Math.max(0, Math.min(n - 1, i))].value;
+  };
+
+  const onPointerDown = (e) => {
+    setDragging(true);
+    const v0 = segAt(e.clientX);
+    if (v0 !== valueRef.current) onChange(v0);
+    const move = (ev) => {
+      if (!trackRef.current) return;
+      const v = segAt(ev.clientX);
+      if (v !== valueRef.current) onChange(v);
+    };
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  return (
+    <TweakRow label={label}>
+      <div ref={trackRef} role="radiogroup" onPointerDown={onPointerDown}
+           className={dragging ? 'twk-seg dragging' : 'twk-seg'}>
+        <div className="twk-seg-thumb"
+             style={{ left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
+                      width: `calc((100% - 4px) / ${n})` }} />
+        {opts.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={o.value === value}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakSelect({ label, value, options, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => {
+          const v = typeof o === 'object' ? o.value : o;
+          const l = typeof o === 'object' ? o.label : o;
+          return <option key={v} value={v}>{l}</option>;
+        })}
+      </select>
+    </TweakRow>
+  );
+}
+
+function TweakText({ label, value, placeholder, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <input className="twk-field" type="text" value={value} placeholder={placeholder}
+             onChange={(e) => onChange(e.target.value)} />
+    </TweakRow>
+  );
+}
+
+function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) {
+  const clamp = (n) => {
+    if (min != null && n < min) return min;
+    if (max != null && n > max) return max;
+    return n;
+  };
+  const startRef = React.useRef({ x: 0, val: 0 });
+  const onScrubStart = (e) => {
+    e.preventDefault();
+    startRef.current = { x: e.clientX, val: value };
+    const decimals = (String(step).split('.')[1] || '').length;
+    const move = (ev) => {
+      const dx = ev.clientX - startRef.current.x;
+      const raw = startRef.current.val + dx * step;
+      const snapped = Math.round(raw / step) * step;
+      onChange(clamp(Number(snapped.toFixed(decimals))));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div className="twk-num">
+      <span className="twk-num-lbl" onPointerDown={onScrubStart}>{label}</span>
+      <input type="number" value={value} min={min} max={max} step={step}
+             onChange={(e) => onChange(clamp(Number(e.target.value)))} />
+      {unit && <span className="twk-num-unit">{unit}</span>}
+    </div>
+  );
+}
+
+function TweakColor({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <input type="color" className="twk-swatch" value={value}
+             onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function TweakButton({ label, onClick, secondary = false }) {
+  return (
+    <button type="button" className={secondary ? 'twk-btn secondary' : 'twk-btn'}
+            onClick={onClick}>{label}</button>
+  );
+}
+
+Object.assign(window, {
+  useTweaks, TweaksPanel, TweakSection, TweakRow,
+  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
+  TweakText, TweakNumber, TweakColor, TweakButton,
+});

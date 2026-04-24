@@ -1,1 +1,676 @@
-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
+/* eslint-disable */
+const { useState, useEffect, useRef } = React;
+
+// ---------- Icons (hairline) ----------
+const I = {
+  shield: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3z"/>
+      <path d="m9 12 2 2 4-4"/>
+    </svg>
+  ),
+  check: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="20 6 9 17 4 12"/></svg>),
+  arrow: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>),
+  github: (p) => (<svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.99 1.03-2.69-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.03a9.5 9.5 0 0 1 5 0c1.91-1.3 2.75-1.03 2.75-1.03.55 1.37.2 2.39.1 2.64.64.7 1.03 1.6 1.03 2.69 0 3.85-2.34 4.7-4.57 4.95.36.31.68.93.68 1.88v2.79c0 .26.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>),
+  gitbranch: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10"/><path d="M6 14a6 6 0 0 0 6-6h4"/></svg>),
+  zip: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M10 10h2v2h-2z"/><path d="M12 12h-2v2h2z"/><path d="M10 14h2v2h-2z"/></svg>),
+  sparkle: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg>),
+  bolt: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>),
+  key: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="8" cy="15" r="4"/><path d="m10.85 12.15 7.4-7.4"/><path d="m18 5 3 3"/><path d="m15 8 2 2"/></svg>),
+  lock: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>),
+  upload: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>),
+  scan: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M8 12h8"/></svg>),
+  alert: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>),
+  info: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="9"/><path d="M12 8v.01"/><path d="M11 12h1v4h1"/></svg>),
+  link: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 1 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 1 0 7 7l1-1"/></svg>),
+  agent: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="9" cy="13" r="1.2"/><circle cx="15" cy="13" r="1.2"/><path d="M12 3v4"/><path d="M8 20v1"/><path d="M16 20v1"/></svg>),
+  doc: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>),
+  share: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4"/><path d="m15.4 6.5-6.8 4"/></svg>),
+  wand: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="m14 4 6 6-12 12-6-6z"/><path d="m13 5 6 6"/><path d="M18 3v2M22 4h-2M19 7h2"/></svg>),
+  chevron: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="m9 6 6 6-6 6"/></svg>),
+  dots: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" {...p}><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>),
+  search: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>),
+  gauge: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 14 8 10"/><circle cx="12" cy="13" r="9"/><path d="M4 18a9 9 0 0 1 16 0"/></svg>),
+  api: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M9 9h1v6H9z"/><path d="M13 9h1v6h-1z"/></svg>),
+};
+
+// ---------- Nav ----------
+function Nav() {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return (
+    <header className={`nav ${scrolled ? "is-scrolled" : ""}`}>
+      <div className="wrap nav-inner">
+        <a href="#" className="brand">
+          <span className="brand-mark"><I.shield /></span>
+          <span>VibeShield</span>
+          <span className="pill" style={{ marginLeft: 10, height: 22, fontSize: 10.5, padding: "0 8px" }}>Beta</span>
+        </a>
+        <nav className="nav-links">
+          <a href="#features">Features</a>
+          <a href="#how">How it works</a>
+          <a href="#report">Report</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#docs">Docs</a>
+        </nav>
+        <div className="nav-right">
+          <a href="#" className="btn btn-ghost">Sign in</a>
+          <a href="#" className="btn btn-primary">
+            Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
+          </a>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// ---------- Hero ----------
+function Hero() {
+  return (
+    <section className="hero">
+      <div className="hero-grid" />
+      <div className="wrap hero-inner">
+        <h1 className="display">
+          <span className="line">Scan your <em>vibe-coded</em></span>
+          <span className="line">app before <span className="muted">you ship.</span></span>
+        </h1>
+        <p className="lead">
+          VibeShield reviews code generated by v0, Cursor, Bolt, Lovable and Claude Code &mdash;
+          catching exposed keys, unauthenticated routes, unsafe tool calls and other
+          vibe-coding mistakes before they reach production.
+        </p>
+        <div className="hero-cta">
+          <a href="#scan" className="btn btn-accent btn-lg">Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></a>
+          <a href="#report" className="btn btn-outline btn-lg">View sample report</a>
+        </div>
+        <div className="hero-meta">
+          <span><b>No install.</b> Connect a repo or drop a ZIP.</span>
+          <span className="sep" />
+          <span><b>Private by default.</b> Code isn&rsquo;t retained after scan.</span>
+          <span className="sep" />
+          <span><b>6 scan engines.</b> Secrets, routes, AI risks &amp; more.</span>
+        </div>
+
+        {/* logos marquee */}
+        <div className="logos">
+          <div className="marquee-track">
+            {[...Array(2)].map((_, dup) => (
+              <React.Fragment key={dup}>
+                <span className="logo"><span className="logo-mono"><img src={window.__resources.logo_v0} alt="v0" /></span><span className="name">v0</span></span>
+                <span className="logo"><span className="logo-mono"><img src={window.__resources.logo_tempo} alt="Cursor" /></span><span className="name">Cursor</span></span>
+                <span className="logo"><img src={window.__resources.logo_claude} alt="Claude Code" /><span className="name">Claude Code</span></span>
+                <span className="logo"><img src={window.__resources.logo_lovable} alt="Lovable" /><span className="name">Lovable</span></span>
+                <span className="logo"><span className="logo-mono"><img src={window.__resources.logo_bolt} alt="Bolt" /></span><span className="name">Bolt</span></span>
+                <span className="logo"><span className="logo-mono"><img src={window.__resources.logo_windsurf} alt="Windsurf" /></span><span className="name">Windsurf</span></span>
+                <span className="logo"><img src={window.__resources.logo_replit} alt="Replit" /><span className="name">Replit</span></span>
+                <span className="logo"><span className="logo-mono"><img src={window.__resources.logo_cursor} alt="Copilot" /></span><span className="name">Copilot</span></span>
+                <span className="logo"><img src={window.__resources.logo_warp} alt="Codex" /><span className="name">Codex</span></span>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function VendorIcon({ name }) {
+  const map = {
+    v0: <rect x="2" y="2" width="12" height="12" rx="2" fill="currentColor"/>,
+    cursor: <path d="M2 2v12l5-4 2 4 2-1-2-4h5z" fill="currentColor"/>,
+    bolt: <path d="M9 1 3 9h4l-1 6 6-8H8z" fill="currentColor"/>,
+    lovable: <path d="M8 14s-5-3.2-5-7a3 3 0 0 1 5-2.2A3 3 0 0 1 13 7c0 3.8-5 7-5 7z" fill="currentColor"/>,
+    claude: <circle cx="8" cy="8" r="5" fill="currentColor"/>,
+    replit: <path d="M3 2h5v5H3zM8 7h5v5H8zM3 12h5v2H3z" fill="currentColor"/>,
+    windsurf: <path d="M2 10c2-3 4-3 6 0s4 3 6 0v3H2z" fill="currentColor"/>,
+    copilot: <path d="M8 2C5 2 3 4 3 7v2c-1 0-1 2 0 2v1c0 1 1 2 2 2h6c1 0 2-1 2-2v-1c1 0 1-2 0-2V7c0-3-2-5-5-5z" fill="currentColor"/>,
+    tempo: <g fill="currentColor"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M8 4v4l3 2"/></g>,
+    base44: <g fill="currentColor"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1" fillOpacity="0.5"/></g>,
+  };
+  return <svg viewBox="0 0 16 16" aria-hidden="true">{map[name]}</svg>;
+}
+
+// ---------- Scan input preview ----------
+function ScanPreview() {
+  const [tab, setTab] = useState("repo");
+  return (
+    <section className="section" id="scan" style={{ paddingTop: 20, paddingBottom: 48 }}>
+      <div className="wrap">
+        <div className="surface scan-card">
+          <div className="scan-tabs">
+            <div className="scan-tab" data-active={tab === "repo"} onClick={() => setTab("repo")}>
+              <I.github /> GitHub repository
+            </div>
+            <div className="scan-tab" data-active={tab === "zip"} onClick={() => setTab("zip")}>
+              <I.zip /> Upload ZIP
+            </div>
+            <div className="scan-tab" data-active={tab === "paste"} onClick={() => setTab("paste")}>
+              <I.doc /> Paste snippet
+            </div>
+            <div style={{ flex: 1 }} />
+            <div className="scan-tab" style={{ color: "var(--fg-5)", cursor: "default" }}>
+              <I.lock /> End-to-end encrypted
+            </div>
+          </div>
+          <div className="scan-body">
+            {tab === "repo" && (
+              <>
+                <div className="scan-input">
+                  <span className="prefix">github.com/</span>
+                  <input defaultValue="acme/storefront-ai" />
+                  <span className="hint mono">main</span>
+                  <button className="btn btn-accent">Scan repository <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></button>
+                </div>
+                <div className="scan-meta">
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><I.gitbranch /> 3 branches detected</span>
+                  <span>·</span>
+                  <span><b>184 files</b> · TypeScript, Next.js, Prisma</span>
+                  <span>·</span>
+                  <span>est. scan time <b>~42s</b></span>
+                </div>
+              </>
+            )}
+            {tab === "zip" && (
+              <div className="scan-drop">
+                <div className="icn"><I.upload /></div>
+                <div className="txt">
+                  <b>Drop a .zip of your project</b>
+                  <span>Up to 200 MB &middot; node_modules auto-excluded &middot; .env files flagged, never logged</span>
+                </div>
+                <button className="btn btn-outline">Choose file</button>
+              </div>
+            )}
+            {tab === "paste" && (
+              <div className="scan-drop" style={{ alignItems: "flex-start" }}>
+                <div className="icn"><I.doc /></div>
+                <div className="txt">
+                  <b>Paste a single file or snippet</b>
+                  <span>Useful for checking an AI-generated route handler or tool definition</span>
+                </div>
+                <button className="btn btn-outline">Open paste editor</button>
+              </div>
+            )}
+
+            <div className="disclaim">
+              <I.info style={{ width: 16, height: 16, color: "var(--fg-3)" }} />
+              <div>
+                VibeShield is a <b style={{ color: "var(--fg-2)", fontWeight: 500 }}>preflight security check</b>, not a guarantee.
+                We surface the most common vibe-coding risks &mdash; pair it with human review, auth, and standard
+                production safeguards before going live.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------- Dashboard preview ----------
+const FINDINGS = [
+  { sev: "critical", msg: "Exposed OpenAI API key committed in code", path: "lib/openai.ts", line: 3, age: "just now", ico: <I.key /> },
+  { sev: "critical", msg: "Unauthenticated route exposes user records", path: "app/api/users/route.ts", line: 17, age: "just now", ico: <I.lock /> },
+  { sev: "high", msg: "AI chat endpoint has no rate limit or auth guard", path: "app/api/chat/route.ts", line: 24, age: "5s ago", ico: <I.bolt /> },
+  { sev: "high", msg: "MCP tool executes shell without allow-list", path: "tools/shell.ts", line: 42, age: "9s ago", ico: <I.sparkle /> },
+  { sev: "medium", msg: "Supabase service role key read from NEXT_PUBLIC_*", path: "lib/db.ts", line: 8, age: "12s ago", ico: <I.key /> },
+  { sev: "medium", msg: "Missing CSRF protection on mutation route", path: "app/api/checkout/route.ts", line: 31, age: "14s ago", ico: <I.lock /> },
+  { sev: "low", msg: "User input passed directly to model context", path: "app/api/chat/route.ts", line: 51, age: "18s ago", ico: <I.api /> },
+];
+
+function Dashboard() {
+  return (
+    <section className="section" id="report">
+      <div className="wrap">
+        <div className="section-head">
+          <span className="eyebrow">The report</span>
+          <h2>A clear readout of <em>what&rsquo;s risky</em>, and how to fix it.</h2>
+          <p>
+            Findings ranked by severity with file &amp; line references, a plain-English
+            explanation, and a ready-to-apply patch. Share a link with your team, export to
+            Markdown, or let VibeShield open a pull request.
+          </p>
+        </div>
+
+        <div className="surface dash">
+          <div className="dash-chrome">
+            <div className="dash-dots"><span /><span /><span /></div>
+            <div className="dash-url">
+              <I.lock style={{ width: 12, height: 12 }} />
+              <span>app.vibeshield.dev/scans/</span>
+              <span className="path">acme/storefront-ai/r_8f2a</span>
+            </div>
+            <span className="pill" style={{ height: 22, fontSize: 11 }}>
+              <span className="dot" /> scan complete
+            </span>
+          </div>
+
+          <div className="dash-body">
+            {/* MAIN */}
+            <div className="dash-main">
+              <div className="dash-head">
+                <div className="title">
+                  <div className="crumb">acme <I.chevron style={{ width: 12, height: 12 }} /> storefront-ai <I.chevron style={{ width: 12, height: 12 }} /> scan r_8f2a</div>
+                  <h3>Security report <span className="repo">· main @ 1f3c2a8</span></h3>
+                </div>
+                <div className="actions">
+                  <button className="btn btn-outline"><I.share /> Share</button>
+                  <button className="btn btn-outline"><I.doc /> Export</button>
+                  <button className="btn btn-accent"><I.wand /> Apply fixes</button>
+                </div>
+              </div>
+
+              <div className="score-row">
+                <div className="score-card score-main">
+                  <div className="lbl">Overall posture</div>
+                  <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 14 }}>
+                    <div>
+                      <div className="val" style={{ fontSize: 34 }}>62<small>/ 100</small></div>
+                      <div className="sub">Needs attention before deploy</div>
+                    </div>
+                    <ScoreRing value={62} />
+                  </div>
+                </div>
+                <div className="score-card sev-crit">
+                  <div className="lbl">Critical</div>
+                  <div className="val">2</div>
+                  <div className="sub">Block deploy · exposed secret, open route</div>
+                </div>
+                <div className="score-card sev-med">
+                  <div className="lbl">High · Medium</div>
+                  <div className="val">2 <small style={{ color: "var(--fg-4)" }}>/</small> 4</div>
+                  <div className="sub">Auth gaps &amp; unsafe env usage</div>
+                </div>
+                <div className="score-card sev-low">
+                  <div className="lbl">Low · Info</div>
+                  <div className="val">9</div>
+                  <div className="sub">Hygiene &amp; best-practice notes</div>
+                </div>
+              </div>
+
+              <div className="findings-head">
+                <h4>Findings</h4>
+                <div className="filter">
+                  <span className="chip" data-active="true">All <span className="n">15</span></span>
+                  <span className="chip">Critical <span className="n">2</span></span>
+                  <span className="chip">AI risks <span className="n">4</span></span>
+                  <span className="chip">Secrets <span className="n">3</span></span>
+                  <span className="chip">Routes <span className="n">6</span></span>
+                </div>
+              </div>
+
+              <div className="findings">
+                {FINDINGS.map((f, i) => (
+                  <div className="finding" key={i}>
+                    <div className="ico">{f.ico}</div>
+                    <div className={`sev sev-${f.sev}`}><span className="dot" />{f.sev}</div>
+                    <div>
+                      <div className="msg">{f.msg}</div>
+                      <div className="path">{f.path}<b>:{f.line}</b></div>
+                    </div>
+                    <div className="meta">{f.age}</div>
+                    <button className="action"><I.wand style={{ width: 12, height: 12 }} /> Patch</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* SIDE: Agent timeline */}
+            <aside className="dash-side">
+              <div className="agent-head">
+                <h4>Scan agent</h4>
+                <span className="live"><span className="dot" /> live · 00:42</span>
+              </div>
+
+              <div className="timeline">
+                <TimelineItem state="done" title="Cloned acme/storefront-ai" sub="184 files · 11,842 LOC · TypeScript, Next.js" time="00:00 → 00:03" />
+                <TimelineItem state="done" title="Fingerprinted AI-generated code" sub="Detected v0 (72%), Cursor (18%), hand-edited (10%)" time="00:03 → 00:08" />
+                <TimelineItem state="done" title="Secret & key sweep" sub="Matched 14 providers · 1 exposed OpenAI key, 1 Supabase service role misplacement" time="00:08 → 00:19" />
+                <TimelineItem state="done" title="Route &amp; auth graph" sub="Walked 31 routes · 6 lack an auth guard · 2 allow public writes" time="00:19 → 00:31" />
+                <TimelineItem state="active" title="AI endpoint & tool review" sub="Analyzing chat routes, MCP tools and rate limits" time="00:31 → now"
+                  code={<><span className="c"># checking</span>{"\n"}<span className="k">→</span> app/api/chat/route.ts{"\n"}<span className="k">→</span> tools/shell.ts{"\n"}<span className="c"># 3 suggestions queued</span></>}
+                />
+                <TimelineItem state="pending" title="Generate patch PR" sub="Drafts fixes as a branch you can review" time="queued" />
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TimelineItem({ state, title, sub, time, code }) {
+  return (
+    <div className="tl-item" data-state={state}>
+      <div className="tl-title">{title}</div>
+      {sub && <div className="tl-sub">{sub}</div>}
+      {time && <div className="tl-time">{time}</div>}
+      {code && <div className="tl-code">{code}</div>}
+    </div>
+  );
+}
+
+function ScoreRing({ value }) {
+  const r = 24;
+  const c = 2 * Math.PI * r;
+  const off = c * (1 - value / 100);
+  return (
+    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="32" cy="32" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
+      <circle
+        cx="32" cy="32" r={r} fill="none"
+        stroke="var(--accent)" strokeWidth="4" strokeLinecap="round"
+        strokeDasharray={c} strokeDashoffset={off}
+        transform="rotate(-90 32 32)"
+      />
+    </svg>
+  );
+}
+
+// ---------- Features ----------
+function Features() {
+  return (
+    <section className="section" id="features">
+      <div className="wrap">
+        <div className="section-head">
+          <span className="eyebrow">What it catches</span>
+          <h2>Built for the <em>vibe-coding</em> era.</h2>
+          <p>
+            VibeShield knows the patterns AI code assistants reach for &mdash; and the
+            footguns they leave behind. It looks beyond generic linting at the parts of your
+            stack most likely to go live insecure.
+          </p>
+        </div>
+
+        <div className="features">
+          <article className="feature f-two-third">
+            <div className="f-icon"><I.scan /></div>
+            <h3>Repo &amp; snapshot scanning</h3>
+            <p>
+              Connect a GitHub repo for continuous scans on every push, or drop a ZIP for a
+              one-shot review. VibeShield respects monorepos, ignores generated output,
+              and scans diffs when you ask for speed.
+            </p>
+            <div className="f-art">
+              <div className="mini-list">
+                <div className="row"><span className="dot" style={{ background: "var(--accent)" }} /> github.com/acme/storefront-ai <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>main · auto</span></div>
+                <div className="row"><span className="dot" style={{ background: "var(--accent)" }} /> github.com/acme/lovable-crm <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>develop · auto</span></div>
+                <div className="row"><span className="dot" style={{ background: "var(--warn)" }} /> uploads/landing-v2.zip <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>snapshot · 2m ago</span></div>
+              </div>
+            </div>
+          </article>
+
+          <article className="feature f-third">
+            <div className="f-icon"><I.sparkle /></div>
+            <h3>AI risk detection</h3>
+            <p>
+              Checks AI endpoints for rate limiting, prompt-injection exposure,
+              unchecked tool/MCP calls, and model access that escapes your auth guards.
+            </p>
+            <div className="f-art">
+              <div className="mini-list">
+                <div className="row"><span className="dot" style={{ background: "var(--danger)" }} /> <code style={{ color: "var(--fg-2)" }}>POST /api/chat</code> <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>no rate limit</span></div>
+                <div className="row"><span className="dot" style={{ background: "var(--warn)" }} /> <code style={{ color: "var(--fg-2)" }}>tool:shell</code> <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>no allow-list</span></div>
+              </div>
+            </div>
+          </article>
+
+          <article className="feature f-third">
+            <div className="f-icon"><I.wand /></div>
+            <h3>Patch suggestions</h3>
+            <p>
+              Every finding comes with a readable explanation and a ready-to-apply diff.
+              Apply in-app or open a PR straight to your branch.
+            </p>
+            <div className="f-art">
+              <div className="diff">
+                <span className="c">app/api/chat/route.ts</span>{"\n"}
+                <span className="del">- export async function POST(req) {"{"}</span>
+                <span className="add">+ import {"{"} rateLimit {"}"} from "@/lib/limit";</span>
+                <span className="add">+ export const POST = rateLimit(async (req) =&gt; {"{"}</span>
+              </div>
+            </div>
+          </article>
+
+          <article className="feature f-two-third">
+            <div className="f-icon"><I.share /></div>
+            <h3>Shareable reports</h3>
+            <p>
+              Send a single link to a teammate, a client, or a compliance reviewer.
+              Every report is a stable URL with findings, fixes and a full audit trail &mdash;
+              private by default, optionally read-only public.
+            </p>
+            <div className="f-art" style={{ display: "grid", gap: 8 }}>
+              <div className="share-card">
+                <div className="avatar" />
+                <div className="txt">
+                  <span>Maya shared <b style={{ color: "var(--fg)" }}>storefront-ai · r_8f2a</b> with 3 reviewers</span>
+                  <small>app.vibeshield.dev/r/8f2ac0 · read-only</small>
+                </div>
+                <button className="btn btn-outline" style={{ height: 28, fontSize: 12 }}><I.link style={{ width: 12, height: 12 }} /> Copy link</button>
+              </div>
+              <div className="share-card">
+                <div className="avatar" style={{ background: "linear-gradient(135deg,#60a5fa,#7FE7C4)" }} />
+                <div className="txt">
+                  <span>Opened PR <b style={{ color: "var(--fg)" }}>#217 · VibeShield: auto-patch critical findings</b></span>
+                  <small>4 files · +31 −12 · awaiting review</small>
+                </div>
+                <button className="btn btn-outline" style={{ height: 28, fontSize: 12 }}><I.github style={{ width: 12, height: 12 }} /> View</button>
+              </div>
+            </div>
+          </article>
+
+          <article className="feature f-third">
+            <div className="f-icon"><I.key /></div>
+            <h3>Secret &amp; env-var audit</h3>
+            <p>
+              Catches 40+ key formats and flags secrets misfiled as <code style={{ fontSize: 12 }}>NEXT_PUBLIC_*</code> or committed to the repo. Rotation guides included.
+            </p>
+          </article>
+
+          <article className="feature f-third">
+            <div className="f-icon"><I.lock /></div>
+            <h3>Route &amp; auth graph</h3>
+            <p>
+              Walks your route tree to find handlers missing auth, CSRF protection, or
+              input validation &mdash; and which ones write to the database.
+            </p>
+          </article>
+
+          <article className="feature f-third">
+            <div className="f-icon"><I.agent /></div>
+            <h3>Tool &amp; MCP review</h3>
+            <p>
+              Inspects agent tool definitions for shell access, unchecked fetches, and
+              over-broad permissions. Suggests safe allow-lists.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------- How it works ----------
+function How() {
+  const steps = [
+    { n: "01", title: "Connect a repo", body: "Authorize GitHub or drop a ZIP. Monorepos and private repos supported. Your code is processed ephemerally and never used for training.", ico: <I.github /> },
+    { n: "02", title: "Run the scan", body: "Six engines run in parallel: secrets, routes, auth, AI endpoints, tool/MCP and dependency risks. Finishes in under a minute on most projects.", ico: <I.scan /> },
+    { n: "03", title: "Review findings", body: "A clear, ranked report with plain-English explanations, file:line references, severity and reasoning. No thousand-line logs.", ico: <I.search /> },
+    { n: "04", title: "Generate fixes", body: "Apply patches in-app, open a pull request, or hand them to your AI agent. Re-scan anytime &mdash; or on every push.", ico: <I.wand /> },
+  ];
+  return (
+    <section className="section" id="how">
+      <div className="wrap">
+        <div className="section-head">
+          <span className="eyebrow">How it works</span>
+          <h2>Four steps from <em>prompt</em> to <em>production-ready</em>.</h2>
+        </div>
+        <div className="howit">
+          {steps.map((s) => (
+            <div className="step" key={s.n}>
+              <div className="ico">{s.ico}</div>
+              <span className="num">{s.n}</span>
+              <h4>{s.title}</h4>
+              <p>{s.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------- Closing (CTA + stats + footer, unified gradient) ----------
+function Closing() {
+  return (
+    <section className="closing">
+      <div className="closing-cta">
+        <span className="eyebrow">Free in beta</span>
+        <h2>
+          Ship AI-built apps<br />
+          with <em>fewer surprises.</em>
+        </h2>
+        <p>Scan your first repo in under a minute. No install.</p>
+        <div className="cta-actions">
+          <a href="#" className="btn btn-accent btn-lg">Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></a>
+          <a href="#" className="btn btn-outline btn-lg"><I.github /> Install GitHub App</a>
+        </div>
+      </div>
+
+      <footer className="footer">
+        <div className="footer-inner">
+          <div className="footer-brand">
+            <a href="#" className="brand">
+              <span className="brand-mark"><I.shield /></span>
+              <span>VibeShield</span>
+            </a>
+            <p>A preflight security check for apps you built with AI.</p>
+            <span className="status"><span className="dot" /> All systems operational</span>
+          </div>
+          <div className="cols">
+            <div className="col">
+              <h5>Product</h5>
+              <a href="#features">Features</a>
+              <a href="#how">How it works</a>
+              <a href="#report">Sample report</a>
+              <a href="#">Pricing</a>
+            </div>
+            <div className="col">
+              <h5>Integrations</h5>
+              <a href="#">GitHub</a>
+              <a href="#">GitLab</a>
+              <a href="#">Slack</a>
+              <a href="#">Webhooks</a>
+            </div>
+            <div className="col">
+              <h5>Resources</h5>
+              <a href="#">Docs</a>
+              <a href="#">Threat library</a>
+              <a href="#">Changelog</a>
+              <a href="#">Status</a>
+            </div>
+            <div className="col">
+              <h5>Company</h5>
+              <a href="#">About</a>
+              <a href="#">Security</a>
+              <a href="#">Privacy</a>
+              <a href="#">Contact</a>
+            </div>
+          </div>
+        </div>
+
+        <div className="wordmark" aria-hidden="true">
+          Vibe<em>Shield</em>
+        </div>
+
+        <div className="footer-bottom">
+          <span>© 2026 VibeShield Labs · Not a guarantee of security.</span>
+          <div className="socials">
+            <a href="#" aria-label="GitHub"><I.github /></a>
+            <a href="#" aria-label="X"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.9 3H22l-7.5 8.6L23 21h-6.8l-5.3-6.9L4.7 21H1.5l8-9.2L1 3h6.9l4.8 6.3L18.9 3zm-1.2 16.3h1.9L7 4.6H5L17.7 19.3z"/></svg></a>
+            <a href="#" aria-label="LinkedIn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.98 3.5c0 1.4-1.1 2.5-2.5 2.5S0 4.9 0 3.5 1.1 1 2.5 1s2.48 1.1 2.48 2.5zM0 8h5v16H0V8zm7.5 0h4.8v2.2h.1c.7-1.3 2.4-2.7 4.9-2.7 5.2 0 6.2 3.4 6.2 7.9V24h-5v-7.2c0-1.7 0-4-2.4-4s-2.8 1.9-2.8 3.8V24h-5V8z"/></svg></a>
+          </div>
+        </div>
+      </footer>
+    </section>
+  );
+}
+
+// ---------- App ----------
+function App({ tweaks }) {
+  // apply accent + density
+  useEffect(() => {
+    const accents = {
+      mint: { a: "#7FE7C4", a2: "#4FD1A8", ink: "#062016", soft: "rgba(127,231,196,0.12)" },
+      lime: { a: "#BEF264", a2: "#A3E635", ink: "#1A2406", soft: "rgba(190,242,100,0.14)" },
+      cyan: { a: "#7DD3FC", a2: "#38BDF8", ink: "#03172A", soft: "rgba(125,211,252,0.14)" },
+      violet: { a: "#C4B5FD", a2: "#A78BFA", ink: "#120A2B", soft: "rgba(196,181,253,0.16)" },
+      amber: { a: "#FDE68A", a2: "#FBBF24", ink: "#2B1B04", soft: "rgba(253,230,138,0.16)" },
+      white: { a: "#F4F4F5", a2: "#D4D4D8", ink: "#0A0A0B", soft: "rgba(255,255,255,0.12)" },
+    };
+    const t = accents[tweaks.accent] || accents.mint;
+    const r = document.documentElement;
+    r.style.setProperty("--accent", t.a);
+    r.style.setProperty("--accent-2", t.a2);
+    r.style.setProperty("--accent-ink", t.ink);
+    r.style.setProperty("--accent-soft", t.soft);
+  }, [tweaks.accent]);
+
+  useEffect(() => {
+    const themes = {
+      ink: { bg: "#09090B", bg1: "#0C0C0F", bg2: "#111114", bg3: "#17171C", fg: "#F4F4F5" },
+      paper: { bg: "#FAFAF9", bg1: "#FFFFFF", bg2: "#F4F4F3", bg3: "#EAEAE8", fg: "#0A0A0B" },
+      slate: { bg: "#0B1220", bg1: "#0F172A", bg2: "#172033", bg3: "#1F2B43", fg: "#F1F5F9" },
+    };
+    const t = themes[tweaks.theme] || themes.ink;
+    const r = document.documentElement;
+    r.style.setProperty("--bg", t.bg);
+    r.style.setProperty("--bg-1", t.bg1);
+    r.style.setProperty("--bg-2", t.bg2);
+    r.style.setProperty("--bg-3", t.bg3);
+    r.style.setProperty("--fg", t.fg);
+    if (tweaks.theme === "paper") {
+      r.setAttribute("data-theme", "paper");
+      r.style.setProperty("--fg-2", "#27272A");
+      r.style.setProperty("--fg-3", "#52525B");
+      r.style.setProperty("--fg-4", "#71717A");
+      r.style.setProperty("--fg-5", "#A1A1AA");
+      r.style.setProperty("--line", "rgba(0,0,0,0.08)");
+      r.style.setProperty("--line-2", "rgba(0,0,0,0.12)");
+      r.style.setProperty("--line-strong", "rgba(0,0,0,0.2)");
+    } else {
+      r.setAttribute("data-theme", tweaks.theme);
+      r.style.setProperty("--fg-2", "#D4D4D8");
+      r.style.setProperty("--fg-3", "#A1A1AA");
+      r.style.setProperty("--fg-4", "#71717A");
+      r.style.setProperty("--fg-5", "#52525B");
+      r.style.setProperty("--line", "rgba(255,255,255,0.07)");
+      r.style.setProperty("--line-2", "rgba(255,255,255,0.12)");
+      r.style.setProperty("--line-strong", "rgba(255,255,255,0.18)");
+    }
+  }, [tweaks.theme]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--maxw", tweaks.wide ? "1280px" : "1200px");
+  }, [tweaks.wide]);
+
+  return (
+    <>
+      <Nav />
+      <Hero />
+      <ScanPreview />
+      <Dashboard />
+      <Features />
+      <How />
+      <Closing />
+    </>
+  );
+}
+
+Object.assign(window, { App });
