@@ -1,155 +1,48 @@
-"use client"
-
-import { useState, useEffect, type ReactNode, type SVGProps, Fragment } from "react"
-
-type IconProps = SVGProps<SVGSVGElement>
+/* eslint-disable */
+const { useState, useEffect, useRef } = React;
 
 // ---------- Icons (hairline) ----------
 const I = {
-  shield: (p: IconProps) => (
+  shield: (p) => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3z" />
-      <path d="m9 12 2 2 4-4" />
+      <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3z"/>
+      <path d="m9 12 2 2 4-4"/>
     </svg>
   ),
-  arrow: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="M5 12h14" />
-      <path d="m13 6 6 6-6 6" />
-    </svg>
-  ),
-  github: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="currentColor" {...p}>
-      <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.99 1.03-2.69-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.03a9.5 9.5 0 0 1 5 0c1.91-1.3 2.75-1.03 2.75-1.03.55 1.37.2 2.39.1 2.64.64.7 1.03 1.6 1.03 2.69 0 3.85-2.34 4.7-4.57 4.95.36.31.68.93.68 1.88v2.79c0 .26.18.58.69.48A10 10 0 0 0 12 2Z" />
-    </svg>
-  ),
-  gitbranch: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <circle cx="6" cy="5" r="2" />
-      <circle cx="6" cy="19" r="2" />
-      <circle cx="18" cy="12" r="2" />
-      <path d="M6 7v10" />
-      <path d="M6 14a6 6 0 0 0 6-6h4" />
-    </svg>
-  ),
-  zip: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M14 2v6h6" />
-      <path d="M10 10h2v2h-2z" />
-      <path d="M12 12h-2v2h2z" />
-      <path d="M10 14h2v2h-2z" />
-    </svg>
-  ),
-  sparkle: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8" />
-    </svg>
-  ),
-  bolt: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
-    </svg>
-  ),
-  key: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <circle cx="8" cy="15" r="4" />
-      <path d="m10.85 12.15 7.4-7.4" />
-      <path d="m18 5 3 3" />
-      <path d="m15 8 2 2" />
-    </svg>
-  ),
-  lock: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <rect x="4" y="11" width="16" height="10" rx="2" />
-      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-    </svg>
-  ),
-  upload: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <path d="m17 8-5-5-5 5" />
-      <path d="M12 3v12" />
-    </svg>
-  ),
-  scan: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-      <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-      <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-      <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-      <path d="M8 12h8" />
-    </svg>
-  ),
-  info: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 8v.01" />
-      <path d="M11 12h1v4h1" />
-    </svg>
-  ),
-  link: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 1 0-7-7l-1 1" />
-      <path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 1 0 7 7l1-1" />
-    </svg>
-  ),
-  agent: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <rect x="3" y="7" width="18" height="13" rx="3" />
-      <circle cx="9" cy="13" r="1.2" />
-      <circle cx="15" cy="13" r="1.2" />
-      <path d="M12 3v4" />
-      <path d="M8 20v1" />
-      <path d="M16 20v1" />
-    </svg>
-  ),
-  doc: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M14 2v6h6" />
-      <path d="M9 13h6" />
-      <path d="M9 17h4" />
-    </svg>
-  ),
-  share: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <circle cx="18" cy="5" r="3" />
-      <circle cx="6" cy="12" r="3" />
-      <circle cx="18" cy="19" r="3" />
-      <path d="m8.6 13.5 6.8 4" />
-      <path d="m15.4 6.5-6.8 4" />
-    </svg>
-  ),
-  wand: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="m14 4 6 6-12 12-6-6z" />
-      <path d="m13 5 6 6" />
-      <path d="M18 3v2M22 4h-2M19 7h2" />
-    </svg>
-  ),
-  chevron: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="m9 6 6 6-6 6" />
-    </svg>
-  ),
-  search: (p: IconProps) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-    </svg>
-  ),
-}
+  check: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="20 6 9 17 4 12"/></svg>),
+  arrow: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>),
+  github: (p) => (<svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.99 1.03-2.69-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.03a9.5 9.5 0 0 1 5 0c1.91-1.3 2.75-1.03 2.75-1.03.55 1.37.2 2.39.1 2.64.64.7 1.03 1.6 1.03 2.69 0 3.85-2.34 4.7-4.57 4.95.36.31.68.93.68 1.88v2.79c0 .26.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>),
+  gitbranch: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10"/><path d="M6 14a6 6 0 0 0 6-6h4"/></svg>),
+  zip: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M10 10h2v2h-2z"/><path d="M12 12h-2v2h2z"/><path d="M10 14h2v2h-2z"/></svg>),
+  sparkle: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg>),
+  bolt: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>),
+  key: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="8" cy="15" r="4"/><path d="m10.85 12.15 7.4-7.4"/><path d="m18 5 3 3"/><path d="m15 8 2 2"/></svg>),
+  lock: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>),
+  upload: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>),
+  scan: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M8 12h8"/></svg>),
+  alert: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>),
+  info: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="9"/><path d="M12 8v.01"/><path d="M11 12h1v4h1"/></svg>),
+  link: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 1 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 1 0 7 7l1-1"/></svg>),
+  agent: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="9" cy="13" r="1.2"/><circle cx="15" cy="13" r="1.2"/><path d="M12 3v4"/><path d="M8 20v1"/><path d="M16 20v1"/></svg>),
+  doc: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>),
+  share: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4"/><path d="m15.4 6.5-6.8 4"/></svg>),
+  wand: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="m14 4 6 6-12 12-6-6z"/><path d="m13 5 6 6"/><path d="M18 3v2M22 4h-2M19 7h2"/></svg>),
+  chevron: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="m9 6 6 6-6 6"/></svg>),
+  dots: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" {...p}><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>),
+  search: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>),
+  gauge: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 14 8 10"/><circle cx="12" cy="13" r="9"/><path d="M4 18a9 9 0 0 1 16 0"/></svg>),
+  api: (p) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M9 9h1v6H9z"/><path d="M13 9h1v6h-1z"/></svg>),
+};
 
 // ---------- Nav ----------
 function Nav() {
-  const [scrolled, setScrolled] = useState(false)
+  const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40)
-    onScroll()
-    window.addEventListener("scroll", onScroll, { passive: true })
-    return () => window.removeEventListener("scroll", onScroll)
-  }, [])
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
   return (
     <header className={`nav ${scrolled ? "is-scrolled" : ""}`}>
       <div className="wrap nav-inner">
@@ -173,7 +66,7 @@ function Nav() {
         </div>
       </div>
     </header>
-  )
+  );
 }
 
 // ---------- Hero ----------
@@ -198,7 +91,7 @@ function Hero() {
         <div className="hero-meta">
           <span><b>No install.</b> Connect a repo or drop a ZIP.</span>
           <span className="sep" />
-          <span><b>Private by default.</b> {"Code isn't retained after scan."}</span>
+          <span><b>Private by default.</b> Code isn&rsquo;t retained after scan.</span>
           <span className="sep" />
           <span><b>6 scan engines.</b> Secrets, routes, AI risks &amp; more.</span>
         </div>
@@ -206,29 +99,45 @@ function Hero() {
         {/* logos marquee */}
         <div className="logos">
           <div className="marquee-track">
-            {[0, 1].map((dup) => (
-              <Fragment key={dup}>
-                <span className="logo"><span className="logo-mono"><img src="/logos/v0.png" alt="v0" /></span><span className="name">v0</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/tempo.png" alt="Cursor" /></span><span className="name">Cursor</span></span>
-                <span className="logo"><img src="/logos/claude.png" alt="Claude Code" /><span className="name">Claude Code</span></span>
-                <span className="logo"><img src="/logos/lovable.png" alt="Lovable" /><span className="name">Lovable</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/bolt.png" alt="Bolt" /></span><span className="name">Bolt</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/windsurf.png" alt="Windsurf" /></span><span className="name">Windsurf</span></span>
-                <span className="logo"><img src="/logos/replit.png" alt="Replit" /><span className="name">Replit</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/cursor.png" alt="Copilot" /></span><span className="name">Copilot</span></span>
-                <span className="logo"><img src="/logos/warp.png" alt="Codex" /><span className="name">Codex</span></span>
-              </Fragment>
+            {[...Array(2)].map((_, dup) => (
+              <React.Fragment key={dup}>
+                <span className="logo"><span className="logo-mono"><img src={window.__resources.logo_v0} alt="v0" /></span><span className="name">v0</span></span>
+                <span className="logo"><span className="logo-mono"><img src={window.__resources.logo_tempo} alt="Cursor" /></span><span className="name">Cursor</span></span>
+                <span className="logo"><img src={window.__resources.logo_claude} alt="Claude Code" /><span className="name">Claude Code</span></span>
+                <span className="logo"><img src={window.__resources.logo_lovable} alt="Lovable" /><span className="name">Lovable</span></span>
+                <span className="logo"><span className="logo-mono"><img src={window.__resources.logo_bolt} alt="Bolt" /></span><span className="name">Bolt</span></span>
+                <span className="logo"><span className="logo-mono"><img src={window.__resources.logo_windsurf} alt="Windsurf" /></span><span className="name">Windsurf</span></span>
+                <span className="logo"><img src={window.__resources.logo_replit} alt="Replit" /><span className="name">Replit</span></span>
+                <span className="logo"><span className="logo-mono"><img src={window.__resources.logo_cursor} alt="Copilot" /></span><span className="name">Copilot</span></span>
+                <span className="logo"><img src={window.__resources.logo_warp} alt="Codex" /><span className="name">Codex</span></span>
+              </React.Fragment>
             ))}
           </div>
         </div>
       </div>
     </section>
-  )
+  );
+}
+
+function VendorIcon({ name }) {
+  const map = {
+    v0: <rect x="2" y="2" width="12" height="12" rx="2" fill="currentColor"/>,
+    cursor: <path d="M2 2v12l5-4 2 4 2-1-2-4h5z" fill="currentColor"/>,
+    bolt: <path d="M9 1 3 9h4l-1 6 6-8H8z" fill="currentColor"/>,
+    lovable: <path d="M8 14s-5-3.2-5-7a3 3 0 0 1 5-2.2A3 3 0 0 1 13 7c0 3.8-5 7-5 7z" fill="currentColor"/>,
+    claude: <circle cx="8" cy="8" r="5" fill="currentColor"/>,
+    replit: <path d="M3 2h5v5H3zM8 7h5v5H8zM3 12h5v2H3z" fill="currentColor"/>,
+    windsurf: <path d="M2 10c2-3 4-3 6 0s4 3 6 0v3H2z" fill="currentColor"/>,
+    copilot: <path d="M8 2C5 2 3 4 3 7v2c-1 0-1 2 0 2v1c0 1 1 2 2 2h6c1 0 2-1 2-2v-1c1 0 1-2 0-2V7c0-3-2-5-5-5z" fill="currentColor"/>,
+    tempo: <g fill="currentColor"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M8 4v4l3 2"/></g>,
+    base44: <g fill="currentColor"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1" fillOpacity="0.5"/></g>,
+  };
+  return <svg viewBox="0 0 16 16" aria-hidden="true">{map[name]}</svg>;
 }
 
 // ---------- Scan input preview ----------
 function ScanPreview() {
-  const [tab, setTab] = useState<"repo" | "zip" | "paste">("repo")
+  const [tab, setTab] = useState("repo");
   return (
     <section className="section" id="scan" style={{ paddingTop: 20, paddingBottom: 48 }}>
       <div className="wrap">
@@ -255,14 +164,10 @@ function ScanPreview() {
                   <span className="prefix">github.com/</span>
                   <input defaultValue="acme/storefront-ai" />
                   <span className="hint mono">main</span>
-                  <button className="btn btn-accent">
-                    Scan repository <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
-                  </button>
+                  <button className="btn btn-accent">Scan repository <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></button>
                 </div>
                 <div className="scan-meta">
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <I.gitbranch /> 3 branches detected
-                  </span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><I.gitbranch /> 3 branches detected</span>
                   <span>·</span>
                   <span><b>184 files</b> · TypeScript, Next.js, Prisma</span>
                   <span>·</span>
@@ -303,68 +208,19 @@ function ScanPreview() {
         </div>
       </div>
     </section>
-  )
+  );
 }
 
 // ---------- Dashboard preview ----------
-type Finding = {
-  sev: "critical" | "high" | "medium" | "low"
-  msg: string
-  path: string
-  line: number
-  age: string
-  ico: ReactNode
-}
-
-const FINDINGS: Finding[] = [
+const FINDINGS = [
   { sev: "critical", msg: "Exposed OpenAI API key committed in code", path: "lib/openai.ts", line: 3, age: "just now", ico: <I.key /> },
   { sev: "critical", msg: "Unauthenticated route exposes user records", path: "app/api/users/route.ts", line: 17, age: "just now", ico: <I.lock /> },
   { sev: "high", msg: "AI chat endpoint has no rate limit or auth guard", path: "app/api/chat/route.ts", line: 24, age: "5s ago", ico: <I.bolt /> },
   { sev: "high", msg: "MCP tool executes shell without allow-list", path: "tools/shell.ts", line: 42, age: "9s ago", ico: <I.sparkle /> },
   { sev: "medium", msg: "Supabase service role key read from NEXT_PUBLIC_*", path: "lib/db.ts", line: 8, age: "12s ago", ico: <I.key /> },
   { sev: "medium", msg: "Missing CSRF protection on mutation route", path: "app/api/checkout/route.ts", line: 31, age: "14s ago", ico: <I.lock /> },
-  { sev: "low", msg: "User input passed directly to model context", path: "app/api/chat/route.ts", line: 51, age: "18s ago", ico: <I.bolt /> },
-]
-
-function ScoreRing({ value }: { value: number }) {
-  const r = 24
-  const c = 2 * Math.PI * r
-  const off = c * (1 - value / 100)
-  return (
-    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
-      <circle cx="32" cy="32" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
-      <circle
-        cx="32" cy="32" r={r} fill="none"
-        stroke="var(--accent)" strokeWidth="4" strokeLinecap="round"
-        strokeDasharray={c} strokeDashoffset={off}
-        transform="rotate(-90 32 32)"
-      />
-    </svg>
-  )
-}
-
-function TimelineItem({
-  state,
-  title,
-  sub,
-  time,
-  code,
-}: {
-  state: "done" | "active" | "pending"
-  title: string
-  sub?: string
-  time?: string
-  code?: ReactNode
-}) {
-  return (
-    <div className="tl-item" data-state={state}>
-      <div className="tl-title">{title}</div>
-      {sub && <div className="tl-sub">{sub}</div>}
-      {time && <div className="tl-time">{time}</div>}
-      {code && <div className="tl-code">{code}</div>}
-    </div>
-  )
-}
+  { sev: "low", msg: "User input passed directly to model context", path: "app/api/chat/route.ts", line: 51, age: "18s ago", ico: <I.api /> },
+];
 
 function Dashboard() {
   return (
@@ -372,7 +228,7 @@ function Dashboard() {
       <div className="wrap">
         <div className="section-head">
           <span className="eyebrow">The report</span>
-          <h2>A clear readout of <em>{"what's risky"}</em>, and how to fix it.</h2>
+          <h2>A clear readout of <em>what&rsquo;s risky</em>, and how to fix it.</h2>
           <p>
             Findings ranked by severity with file &amp; line references, a plain-English
             explanation, and a ready-to-apply patch. Share a link with your team, export to
@@ -398,10 +254,7 @@ function Dashboard() {
             <div className="dash-main">
               <div className="dash-head">
                 <div className="title">
-                  <div className="crumb">
-                    acme <I.chevron style={{ width: 12, height: 12 }} /> storefront-ai{" "}
-                    <I.chevron style={{ width: 12, height: 12 }} /> scan r_8f2a
-                  </div>
+                  <div className="crumb">acme <I.chevron style={{ width: 12, height: 12 }} /> storefront-ai <I.chevron style={{ width: 12, height: 12 }} /> scan r_8f2a</div>
                   <h3>Security report <span className="repo">· main @ 1f3c2a8</span></h3>
                 </div>
                 <div className="actions">
@@ -477,20 +330,9 @@ function Dashboard() {
                 <TimelineItem state="done" title="Cloned acme/storefront-ai" sub="184 files · 11,842 LOC · TypeScript, Next.js" time="00:00 → 00:03" />
                 <TimelineItem state="done" title="Fingerprinted AI-generated code" sub="Detected v0 (72%), Cursor (18%), hand-edited (10%)" time="00:03 → 00:08" />
                 <TimelineItem state="done" title="Secret & key sweep" sub="Matched 14 providers · 1 exposed OpenAI key, 1 Supabase service role misplacement" time="00:08 → 00:19" />
-                <TimelineItem state="done" title="Route & auth graph" sub="Walked 31 routes · 6 lack an auth guard · 2 allow public writes" time="00:19 → 00:31" />
-                <TimelineItem
-                  state="active"
-                  title="AI endpoint & tool review"
-                  sub="Analyzing chat routes, MCP tools and rate limits"
-                  time="00:31 → now"
-                  code={
-                    <>
-                      <span className="c"># checking</span>{"\n"}
-                      <span className="k">→</span> app/api/chat/route.ts{"\n"}
-                      <span className="k">→</span> tools/shell.ts{"\n"}
-                      <span className="c"># 3 suggestions queued</span>
-                    </>
-                  }
+                <TimelineItem state="done" title="Route &amp; auth graph" sub="Walked 31 routes · 6 lack an auth guard · 2 allow public writes" time="00:19 → 00:31" />
+                <TimelineItem state="active" title="AI endpoint & tool review" sub="Analyzing chat routes, MCP tools and rate limits" time="00:31 → now"
+                  code={<><span className="c"># checking</span>{"\n"}<span className="k">→</span> app/api/chat/route.ts{"\n"}<span className="k">→</span> tools/shell.ts{"\n"}<span className="c"># 3 suggestions queued</span></>}
                 />
                 <TimelineItem state="pending" title="Generate patch PR" sub="Drafts fixes as a branch you can review" time="queued" />
               </div>
@@ -499,7 +341,35 @@ function Dashboard() {
         </div>
       </div>
     </section>
-  )
+  );
+}
+
+function TimelineItem({ state, title, sub, time, code }) {
+  return (
+    <div className="tl-item" data-state={state}>
+      <div className="tl-title">{title}</div>
+      {sub && <div className="tl-sub">{sub}</div>}
+      {time && <div className="tl-time">{time}</div>}
+      {code && <div className="tl-code">{code}</div>}
+    </div>
+  );
+}
+
+function ScoreRing({ value }) {
+  const r = 24;
+  const c = 2 * Math.PI * r;
+  const off = c * (1 - value / 100);
+  return (
+    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="32" cy="32" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
+      <circle
+        cx="32" cy="32" r={r} fill="none"
+        stroke="var(--accent)" strokeWidth="4" strokeLinecap="round"
+        strokeDasharray={c} strokeDashoffset={off}
+        transform="rotate(-90 32 32)"
+      />
+    </svg>
+  );
 }
 
 // ---------- Features ----------
@@ -528,18 +398,9 @@ function Features() {
             </p>
             <div className="f-art">
               <div className="mini-list">
-                <div className="row">
-                  <span className="dot" style={{ background: "var(--accent)" }} /> github.com/acme/storefront-ai
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>main · auto</span>
-                </div>
-                <div className="row">
-                  <span className="dot" style={{ background: "var(--accent)" }} /> github.com/acme/lovable-crm
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>develop · auto</span>
-                </div>
-                <div className="row">
-                  <span className="dot" style={{ background: "var(--warn)" }} /> uploads/landing-v2.zip
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>snapshot · 2m ago</span>
-                </div>
+                <div className="row"><span className="dot" style={{ background: "var(--accent)" }} /> github.com/acme/storefront-ai <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>main · auto</span></div>
+                <div className="row"><span className="dot" style={{ background: "var(--accent)" }} /> github.com/acme/lovable-crm <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>develop · auto</span></div>
+                <div className="row"><span className="dot" style={{ background: "var(--warn)" }} /> uploads/landing-v2.zip <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>snapshot · 2m ago</span></div>
               </div>
             </div>
           </article>
@@ -553,16 +414,8 @@ function Features() {
             </p>
             <div className="f-art">
               <div className="mini-list">
-                <div className="row">
-                  <span className="dot" style={{ background: "var(--danger)" }} />{" "}
-                  <code style={{ color: "var(--fg-2)" }}>POST /api/chat</code>
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>no rate limit</span>
-                </div>
-                <div className="row">
-                  <span className="dot" style={{ background: "var(--warn)" }} />{" "}
-                  <code style={{ color: "var(--fg-2)" }}>tool:shell</code>
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>no allow-list</span>
-                </div>
+                <div className="row"><span className="dot" style={{ background: "var(--danger)" }} /> <code style={{ color: "var(--fg-2)" }}>POST /api/chat</code> <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>no rate limit</span></div>
+                <div className="row"><span className="dot" style={{ background: "var(--warn)" }} /> <code style={{ color: "var(--fg-2)" }}>tool:shell</code> <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>no allow-list</span></div>
               </div>
             </div>
           </article>
@@ -577,9 +430,9 @@ function Features() {
             <div className="f-art">
               <div className="diff">
                 <span className="c">app/api/chat/route.ts</span>{"\n"}
-                <span className="del">{"- export async function POST(req) {"}</span>
-                <span className="add">{'+ import { rateLimit } from "@/lib/limit";'}</span>
-                <span className="add">{"+ export const POST = rateLimit(async (req) => {"}</span>
+                <span className="del">- export async function POST(req) {"{"}</span>
+                <span className="add">+ import {"{"} rateLimit {"}"} from "@/lib/limit";</span>
+                <span className="add">+ export const POST = rateLimit(async (req) =&gt; {"{"}</span>
               </div>
             </div>
           </article>
@@ -599,9 +452,7 @@ function Features() {
                   <span>Maya shared <b style={{ color: "var(--fg)" }}>storefront-ai · r_8f2a</b> with 3 reviewers</span>
                   <small>app.vibeshield.dev/r/8f2ac0 · read-only</small>
                 </div>
-                <button className="btn btn-outline" style={{ height: 28, fontSize: 12 }}>
-                  <I.link style={{ width: 12, height: 12 }} /> Copy link
-                </button>
+                <button className="btn btn-outline" style={{ height: 28, fontSize: 12 }}><I.link style={{ width: 12, height: 12 }} /> Copy link</button>
               </div>
               <div className="share-card">
                 <div className="avatar" style={{ background: "linear-gradient(135deg,#60a5fa,#7FE7C4)" }} />
@@ -609,9 +460,7 @@ function Features() {
                   <span>Opened PR <b style={{ color: "var(--fg)" }}>#217 · VibeShield: auto-patch critical findings</b></span>
                   <small>4 files · +31 −12 · awaiting review</small>
                 </div>
-                <button className="btn btn-outline" style={{ height: 28, fontSize: 12 }}>
-                  <I.github style={{ width: 12, height: 12 }} /> View
-                </button>
+                <button className="btn btn-outline" style={{ height: 28, fontSize: 12 }}><I.github style={{ width: 12, height: 12 }} /> View</button>
               </div>
             </div>
           </article>
@@ -644,7 +493,7 @@ function Features() {
         </div>
       </div>
     </section>
-  )
+  );
 }
 
 // ---------- How it works ----------
@@ -653,8 +502,8 @@ function How() {
     { n: "01", title: "Connect a repo", body: "Authorize GitHub or drop a ZIP. Monorepos and private repos supported. Your code is processed ephemerally and never used for training.", ico: <I.github /> },
     { n: "02", title: "Run the scan", body: "Six engines run in parallel: secrets, routes, auth, AI endpoints, tool/MCP and dependency risks. Finishes in under a minute on most projects.", ico: <I.scan /> },
     { n: "03", title: "Review findings", body: "A clear, ranked report with plain-English explanations, file:line references, severity and reasoning. No thousand-line logs.", ico: <I.search /> },
-    { n: "04", title: "Generate fixes", body: "Apply patches in-app, open a pull request, or hand them to your AI agent. Re-scan anytime — or on every push.", ico: <I.wand /> },
-  ]
+    { n: "04", title: "Generate fixes", body: "Apply patches in-app, open a pull request, or hand them to your AI agent. Re-scan anytime &mdash; or on every push.", ico: <I.wand /> },
+  ];
   return (
     <section className="section" id="how">
       <div className="wrap">
@@ -674,7 +523,7 @@ function How() {
         </div>
       </div>
     </section>
-  )
+  );
 }
 
 // ---------- Closing (CTA + stats + footer, unified gradient) ----------
@@ -689,12 +538,8 @@ function Closing() {
         </h2>
         <p>Scan your first repo in under a minute. No install.</p>
         <div className="cta-actions">
-          <a href="#" className="btn btn-accent btn-lg">
-            Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
-          </a>
-          <a href="#" className="btn btn-outline btn-lg">
-            <I.github /> Install GitHub App
-          </a>
+          <a href="#" className="btn btn-accent btn-lg">Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></a>
+          <a href="#" className="btn btn-outline btn-lg"><I.github /> Install GitHub App</a>
         </div>
       </div>
 
@@ -748,24 +593,73 @@ function Closing() {
           <span>© 2026 VibeShield Labs · Not a guarantee of security.</span>
           <div className="socials">
             <a href="#" aria-label="GitHub"><I.github /></a>
-            <a href="#" aria-label="X">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.9 3H22l-7.5 8.6L23 21h-6.8l-5.3-6.9L4.7 21H1.5l8-9.2L1 3h6.9l4.8 6.3L18.9 3zm-1.2 16.3h1.9L7 4.6H5L17.7 19.3z" />
-              </svg>
-            </a>
-            <a href="#" aria-label="LinkedIn">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M4.98 3.5c0 1.4-1.1 2.5-2.5 2.5S0 4.9 0 3.5 1.1 1 2.5 1s2.48 1.1 2.48 2.5zM0 8h5v16H0V8zm7.5 0h4.8v2.2h.1c.7-1.3 2.4-2.7 4.9-2.7 5.2 0 6.2 3.4 6.2 7.9V24h-5v-7.2c0-1.7 0-4-2.4-4s-2.8 1.9-2.8 3.8V24h-5V8z" />
-              </svg>
-            </a>
+            <a href="#" aria-label="X"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.9 3H22l-7.5 8.6L23 21h-6.8l-5.3-6.9L4.7 21H1.5l8-9.2L1 3h6.9l4.8 6.3L18.9 3zm-1.2 16.3h1.9L7 4.6H5L17.7 19.3z"/></svg></a>
+            <a href="#" aria-label="LinkedIn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.98 3.5c0 1.4-1.1 2.5-2.5 2.5S0 4.9 0 3.5 1.1 1 2.5 1s2.48 1.1 2.48 2.5zM0 8h5v16H0V8zm7.5 0h4.8v2.2h.1c.7-1.3 2.4-2.7 4.9-2.7 5.2 0 6.2 3.4 6.2 7.9V24h-5v-7.2c0-1.7 0-4-2.4-4s-2.8 1.9-2.8 3.8V24h-5V8z"/></svg></a>
           </div>
         </div>
       </footer>
     </section>
-  )
+  );
 }
 
-export default function Page() {
+// ---------- App ----------
+function App({ tweaks }) {
+  // apply accent + density
+  useEffect(() => {
+    const accents = {
+      mint: { a: "#7FE7C4", a2: "#4FD1A8", ink: "#062016", soft: "rgba(127,231,196,0.12)" },
+      lime: { a: "#BEF264", a2: "#A3E635", ink: "#1A2406", soft: "rgba(190,242,100,0.14)" },
+      cyan: { a: "#7DD3FC", a2: "#38BDF8", ink: "#03172A", soft: "rgba(125,211,252,0.14)" },
+      violet: { a: "#C4B5FD", a2: "#A78BFA", ink: "#120A2B", soft: "rgba(196,181,253,0.16)" },
+      amber: { a: "#FDE68A", a2: "#FBBF24", ink: "#2B1B04", soft: "rgba(253,230,138,0.16)" },
+      white: { a: "#F4F4F5", a2: "#D4D4D8", ink: "#0A0A0B", soft: "rgba(255,255,255,0.12)" },
+    };
+    const t = accents[tweaks.accent] || accents.mint;
+    const r = document.documentElement;
+    r.style.setProperty("--accent", t.a);
+    r.style.setProperty("--accent-2", t.a2);
+    r.style.setProperty("--accent-ink", t.ink);
+    r.style.setProperty("--accent-soft", t.soft);
+  }, [tweaks.accent]);
+
+  useEffect(() => {
+    const themes = {
+      ink: { bg: "#09090B", bg1: "#0C0C0F", bg2: "#111114", bg3: "#17171C", fg: "#F4F4F5" },
+      paper: { bg: "#FAFAF9", bg1: "#FFFFFF", bg2: "#F4F4F3", bg3: "#EAEAE8", fg: "#0A0A0B" },
+      slate: { bg: "#0B1220", bg1: "#0F172A", bg2: "#172033", bg3: "#1F2B43", fg: "#F1F5F9" },
+    };
+    const t = themes[tweaks.theme] || themes.ink;
+    const r = document.documentElement;
+    r.style.setProperty("--bg", t.bg);
+    r.style.setProperty("--bg-1", t.bg1);
+    r.style.setProperty("--bg-2", t.bg2);
+    r.style.setProperty("--bg-3", t.bg3);
+    r.style.setProperty("--fg", t.fg);
+    if (tweaks.theme === "paper") {
+      r.setAttribute("data-theme", "paper");
+      r.style.setProperty("--fg-2", "#27272A");
+      r.style.setProperty("--fg-3", "#52525B");
+      r.style.setProperty("--fg-4", "#71717A");
+      r.style.setProperty("--fg-5", "#A1A1AA");
+      r.style.setProperty("--line", "rgba(0,0,0,0.08)");
+      r.style.setProperty("--line-2", "rgba(0,0,0,0.12)");
+      r.style.setProperty("--line-strong", "rgba(0,0,0,0.2)");
+    } else {
+      r.setAttribute("data-theme", tweaks.theme);
+      r.style.setProperty("--fg-2", "#D4D4D8");
+      r.style.setProperty("--fg-3", "#A1A1AA");
+      r.style.setProperty("--fg-4", "#71717A");
+      r.style.setProperty("--fg-5", "#52525B");
+      r.style.setProperty("--line", "rgba(255,255,255,0.07)");
+      r.style.setProperty("--line-2", "rgba(255,255,255,0.12)");
+      r.style.setProperty("--line-strong", "rgba(255,255,255,0.18)");
+    }
+  }, [tweaks.theme]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--maxw", tweaks.wide ? "1280px" : "1200px");
+  }, [tweaks.wide]);
+
   return (
     <>
       <Nav />
@@ -776,5 +670,7 @@ export default function Page() {
       <How />
       <Closing />
     </>
-  )
+  );
 }
+
+Object.assign(window, { App });

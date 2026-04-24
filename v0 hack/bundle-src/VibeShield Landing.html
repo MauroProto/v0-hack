@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VibeShield — Scan your AI-built app before you ship</title>
+
+  <meta name="ext-resource-dependency" content="./logos/v0.png" data-resource-id="logo_v0" />
+  <meta name="ext-resource-dependency" content="./logos/tempo.png" data-resource-id="logo_tempo" />
+  <meta name="ext-resource-dependency" content="./logos/claude.png" data-resource-id="logo_claude" />
+  <meta name="ext-resource-dependency" content="./logos/lovable.png" data-resource-id="logo_lovable" />
+  <meta name="ext-resource-dependency" content="./logos/bolt.png" data-resource-id="logo_bolt" />
+  <meta name="ext-resource-dependency" content="./logos/windsurf.png" data-resource-id="logo_windsurf" />
+  <meta name="ext-resource-dependency" content="./logos/replit.png" data-resource-id="logo_replit" />
+  <meta name="ext-resource-dependency" content="./logos/cursor.png" data-resource-id="logo_cursor" />
+  <meta name="ext-resource-dependency" content="./logos/warp.png" data-resource-id="logo_warp" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <template id="__bundler_thumbnail" data-bg-color="#09090B">
+    <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1200" height="800" fill="#09090B"/>
+      <g transform="translate(600 400)">
+        <path d="M0 -120 L110 -85 L110 20 C110 95 55 160 0 180 C-55 160 -110 95 -110 20 L-110 -85 Z"
+              fill="none" stroke="#F4F4F5" stroke-width="6" stroke-linejoin="round"/>
+        <path d="M-35 10 L-10 35 L40 -25" fill="none" stroke="#7FE7C4" stroke-width="8"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+  </template>
+
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="components.jsx"></script>
+
+  <script type="text/babel" data-presets="react">
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "accent": "white",
+      "theme": "ink",
+      "wide": false
+    }/*EDITMODE-END*/;
+
+    function Root() {
+      const [tweaks, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
+      return (
+        <>
+          <App tweaks={tweaks} />
+          <window.TweaksPanel>
+            <window.TweakSection label="Accent" />
+            <window.TweakRadio label="Color" value={tweaks.accent}
+              onChange={(v) => setTweak("accent", v)}
+              options={[
+                { value: "mint", label: "Mint" },
+                { value: "lime", label: "Lime" },
+                { value: "cyan", label: "Cyan" },
+                { value: "violet", label: "Violet" },
+                { value: "amber", label: "Amber" },
+                { value: "white", label: "Mono" },
+              ]} />
+            <window.TweakSection label="Theme" />
+            <window.TweakRadio label="Palette" value={tweaks.theme}
+              onChange={(v) => setTweak("theme", v)}
+              options={[
+                { value: "ink", label: "Ink" },
+                { value: "slate", label: "Slate" },
+                { value: "paper", label: "Paper" },
+              ]} />
+            <window.TweakSection label="Layout" />
+            <window.TweakToggle label="Wide container" value={tweaks.wide}
+              onChange={(v) => setTweak("wide", v)} />
+          </window.TweaksPanel>
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+  </script>
+</body>
+</html>
