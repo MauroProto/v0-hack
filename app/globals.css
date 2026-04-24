@@ -46,31 +46,31 @@
 }
 
 .dark {
-  --background: oklch(0.13 0.015 260);
-  --foreground: oklch(0.96 0.005 250);
-  --card: oklch(0.16 0.015 260);
-  --card-foreground: oklch(0.96 0.005 250);
-  --popover: oklch(0.16 0.015 260);
-  --popover-foreground: oklch(0.96 0.005 250);
-  --primary: oklch(0.75 0.18 165);
-  --primary-foreground: oklch(0.13 0.015 260);
-  --secondary: oklch(0.2 0.015 260);
-  --secondary-foreground: oklch(0.96 0.005 250);
-  --muted: oklch(0.2 0.015 260);
-  --muted-foreground: oklch(0.6 0.01 250);
-  --accent: oklch(0.75 0.18 165);
-  --accent-foreground: oklch(0.13 0.015 260);
-  --destructive: oklch(0.6 0.22 25);
+  --background: oklch(0.12 0 0);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.15 0 0);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.15 0 0);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.86 0.11 170);
+  --primary-foreground: oklch(0.12 0 0);
+  --secondary: oklch(0.18 0 0);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.18 0 0);
+  --muted-foreground: oklch(0.62 0 0);
+  --accent: oklch(0.86 0.11 170);
+  --accent-foreground: oklch(0.12 0 0);
+  --destructive: oklch(0.65 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
-  --warning: oklch(0.8 0.18 75);
+  --warning: oklch(0.82 0.16 75);
   --warning-foreground: oklch(0.15 0 0);
-  --success: oklch(0.75 0.18 165);
-  --success-foreground: oklch(0.13 0.015 260);
-  --info: oklch(0.7 0.15 230);
-  --info-foreground: oklch(0.13 0.015 260);
-  --border: oklch(0.25 0.015 260);
-  --input: oklch(0.25 0.015 260);
-  --ring: oklch(0.75 0.18 165);
+  --success: oklch(0.86 0.11 170);
+  --success-foreground: oklch(0.12 0 0);
+  --info: oklch(0.72 0.15 230);
+  --info-foreground: oklch(0.12 0 0);
+  --border: oklch(0.22 0 0);
+  --input: oklch(0.22 0 0);
+  --ring: oklch(0.86 0.11 170);
   --chart-1: oklch(0.75 0.18 165);
   --chart-2: oklch(0.7 0.15 230);
   --chart-3: oklch(0.7 0.15 300);
@@ -162,29 +162,56 @@
 
 /* Glow effects */
 .glow-primary {
-  box-shadow: 0 0 20px oklch(0.75 0.18 165 / 0.3), 0 0 40px oklch(0.75 0.18 165 / 0.1);
+  box-shadow: 0 0 24px oklch(0.86 0.11 170 / 0.25), 0 0 60px oklch(0.86 0.11 170 / 0.08);
 }
 
 .glow-destructive {
-  box-shadow: 0 0 20px oklch(0.6 0.22 25 / 0.3), 0 0 40px oklch(0.6 0.22 25 / 0.1);
+  box-shadow: 0 0 20px oklch(0.65 0.22 25 / 0.25), 0 0 40px oklch(0.65 0.22 25 / 0.08);
 }
 
 .glow-warning {
-  box-shadow: 0 0 20px oklch(0.8 0.18 75 / 0.3), 0 0 40px oklch(0.8 0.18 75 / 0.1);
+  box-shadow: 0 0 20px oklch(0.82 0.16 75 / 0.25), 0 0 40px oklch(0.82 0.16 75 / 0.08);
 }
 
 /* Grid pattern background */
 .grid-pattern {
-  background-image: 
-    linear-gradient(oklch(0.25 0.015 260 / 0.5) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.25 0.015 260 / 0.5) 1px, transparent 1px);
-  background-size: 60px 60px;
+  background-image:
+    linear-gradient(oklch(0.22 0 0 / 0.6) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.22 0 0 / 0.6) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 90%);
+}
+
+/* Dotted pattern */
+.dot-pattern {
+  background-image: radial-gradient(oklch(0.32 0 0) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(ellipse 70% 50% at 50% 50%, black 30%, transparent 80%);
 }
 
 /* Gradient text */
 .gradient-text {
   @apply bg-clip-text text-transparent;
-  background-image: linear-gradient(135deg, oklch(0.75 0.18 165), oklch(0.8 0.15 180));
+  background-image: linear-gradient(135deg, oklch(0.97 0 0), oklch(0.78 0 0));
+}
+
+.gradient-mint {
+  @apply bg-clip-text text-transparent;
+  background-image: linear-gradient(135deg, oklch(0.86 0.11 170), oklch(0.78 0.13 180));
+}
+
+/* Noise texture */
+.noise {
+  position: relative;
+}
+.noise::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  mix-blend-mode: overlay;
 }
 
 /* Scan line animation */
