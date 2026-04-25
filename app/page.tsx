@@ -209,14 +209,14 @@ function Hero() {
             {[0, 1].map((dup) => (
               <Fragment key={dup}>
                 <span className="logo"><span className="logo-mono"><img src="/logos/v0.png" alt="v0" /></span><span className="name">v0</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/tempo.png" alt="Cursor" /></span><span className="name">Cursor</span></span>
+                <span className="logo"><span className="logo-mono"><img src="/logos/cursor.png" alt="Cursor" /></span><span className="name">Cursor</span></span>
                 <span className="logo"><img src="/logos/claude.png" alt="Claude Code" /><span className="name">Claude Code</span></span>
                 <span className="logo"><img src="/logos/lovable.png" alt="Lovable" /><span className="name">Lovable</span></span>
                 <span className="logo"><span className="logo-mono"><img src="/logos/bolt.png" alt="Bolt" /></span><span className="name">Bolt</span></span>
                 <span className="logo"><span className="logo-mono"><img src="/logos/windsurf.png" alt="Windsurf" /></span><span className="name">Windsurf</span></span>
                 <span className="logo"><img src="/logos/replit.png" alt="Replit" /><span className="name">Replit</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/cursor.png" alt="Copilot" /></span><span className="name">Copilot</span></span>
-                <span className="logo"><img src="/logos/warp.png" alt="Codex" /><span className="name">Codex</span></span>
+                <span className="logo"><span className="logo-mono"><img src="/logos/tempo.png" alt="Tempo" /></span><span className="name">Tempo</span></span>
+                <span className="logo"><img src="/logos/warp.png" alt="Warp" /><span className="name">Warp</span></span>
               </Fragment>
             ))}
           </div>
