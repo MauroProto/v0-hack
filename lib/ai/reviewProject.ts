@@ -1,0 +1,457 @@
+import "server-only"
+
+import { generateText, Output } from "ai"
+import { z } from "zod"
+import { resolveAiModel } from "@/lib/ai/model"
+import { auditEvent } from "@/lib/scanner/scan"
+import { calculateRiskScore } from "@/lib/scanner/patches"
+import { isApiRoute, redactSecrets } from "@/lib/scanner/rules"
+import type { FindingCategory, ProjectFile, ScanFinding, ScanReport, Severity } from "@/lib/scanner/types"
+
+const SeveritySchema = z.enum(["critical", "high", "medium", "low", "info"])
+const CategorySchema = z.enum([
+  "secret_exposure",
+  "public_env_misuse",
+  "missing_auth",
+  "ai_endpoint_risk",
+  "unsafe_tool_calling",
+  "mcp_risk",
+  "input_validation",
+  "client_data_exposure",
+  "dangerous_code",
+  "vercel_hardening",
+  "dependency_signal",
+])
+
+const AiReviewSchema = z.object({
+  findings: z
+    .array(
+      z.object({
+        severity: SeveritySchema,
+        category: CategorySchema,
+        title: z.string().min(1).max(160),
+        description: z.string().min(1).max(700),
+        filePath: z.string().min(1).max(260),
+        lineStart: z.number().int().positive().optional(),
+        evidence: z.string().min(1).max(500),
+        confidence: z.number().min(0).max(1),
+        recommendation: z.string().min(1).max(700),
+      }),
+    )
+    .max(6),
+})
+
+type AiReviewOutput = z.infer<typeof AiReviewSchema>
+
+type SnippetContext = {
+  file: ProjectFile
+  score: number
+  reasons: string[]
+  redactedText: string
+  numberedText: string
+}
+
+const MAX_CONTEXT_CHARS = 28_000
+
+const STATIC_RULE_HARNESS = [
+  {
+    category: "secret_exposure",
+    objective: "Find committed env files, provider keys, private key blocks, database URLs, service role keys, and high-risk secret names.",
+    evidenceRequired: "A redacted line containing the env variable, provider key prefix, private key marker, or assigned secret-looking value.",
+  },
+  {
+    category: "public_env_misuse",
+    objective: "Find dangerous NEXT_PUBLIC_* values that would be bundled into browser JavaScript.",
+    evidenceRequired: "A line containing a NEXT_PUBLIC_* variable with secret, token, private, database, service role, or API key semantics.",
+  },
+  {
+    category: "missing_auth",
+    objective: "Find admin, internal, billing, users, or secrets endpoints without obvious server-side authentication and authorization.",
+    evidenceRequired: "An API route handler or exported function showing sensitive behavior without an auth guard nearby.",
+  },
+  {
+    category: "ai_endpoint_risk",
+    objective: "Find AI/model endpoints without rate limits, quota checks, bot protection, or budget controls before model invocation.",
+    evidenceRequired: "A model call, AI SDK/OpenAI/Anthropic import, tools object, or model configuration line with no nearby guard.",
+  },
+  {
+    category: "unsafe_tool_calling",
+    objective: "Find dynamic tool dispatch, MCP/tool execution, shell access, or tool names selected from user-controlled input.",
+    evidenceRequired: "A line where request/user input influences tool selection, process execution, or tool arguments.",
+  },
+  {
+    category: "input_validation",
+    objective: "Find request JSON parsing without Zod/Yup/Valibot/Superstruct validation before use.",
+    evidenceRequired: "A route line with req.json/request.json and no schema parse/safeParse nearby.",
+  },
+  {
+    category: "client_data_exposure",
+    objective: "Find sensitive-looking data inside browser/client components.",
+    evidenceRequired: "A 'use client' file line referencing passwords, tokens, API keys, secrets, PII, or sensitive mock records.",
+  },
+  {
+    category: "dangerous_code",
+    objective: "Find dynamic code execution, raw HTML rendering, OS command execution, unsafe Rust, or file writes from request input.",
+    evidenceRequired: "A concrete line with eval, new Function, dangerouslySetInnerHTML, child_process, Command::new, unsafe, or risky file write.",
+  },
+] as const
+
+export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile[]): Promise<ScanReport> {
+  const startedAt = Date.now()
+
+  if (process.env.VIBESHIELD_ENABLE_AI_REVIEW === "false") {
+    return appendAudit(report, "AI auditor skipped", "complete", {
+      reason: "disabled_by_env",
+    })
+  }
+
+  const snippets = selectSnippetContexts(files, report)
+  const harnessedReport = appendAudit(report, "Build hybrid static-AI harness", "complete", {
+    ruleObjectives: STATIC_RULE_HARNESS.length,
+    candidateFiles: snippets.length,
+    contextChars: snippets.reduce((total, snippet) => total + snippet.numberedText.length, 0),
+    confirmedRuleFindings: report.findings.length,
+  })
+
+  const aiModel = resolveAiModel()
+  if (!aiModel) {
+    return appendAudit(harnessedReport, "AI auditor skipped", "complete", {
+      reason: "no_server_side_model_configured",
+    })
+  }
+
+  if (snippets.length === 0) {
+    return appendAudit(harnessedReport, "AI auditor skipped", "complete", {
+      reason: "no_reviewable_context",
+      provider: aiModel.provider,
+      model: aiModel.modelId,
+    })
+  }
+
+  try {
+    const { output } = await generateText({
+      model: aiModel.model,
+      providerOptions: aiModel.providerOptions,
+      output: Output.object({ schema: AiReviewSchema }),
+      system: [
+        "You are VibeShield's second-pass security auditor.",
+        "You operate inside a deterministic static-analysis harness. The harness chooses files, redacts secrets, and supplies rule objectives.",
+        "Review only the redacted source snippets and harness signals provided by the scanner.",
+        "Find additional security or production-readiness issues the deterministic rules may have missed, then tie every claim to snippet evidence.",
+        "Do not report style issues, generic advice, or findings without concrete file evidence.",
+        "Do not repeat confirmed deterministic findings unless you identify a materially different issue.",
+        "Never include full secrets. Evidence is already redacted and must stay redacted.",
+        "Prefer no finding over a speculative finding.",
+      ].join(" "),
+      prompt: JSON.stringify({
+        project: {
+          name: harnessedReport.projectName,
+          framework: harnessedReport.framework ?? "unknown",
+          source: harnessedReport.sourceLabel,
+          filesInspected: harnessedReport.filesInspected,
+        },
+        staticRuleHarness: STATIC_RULE_HARNESS,
+        scannerStats: {
+          apiRoutesInspected: harnessedReport.apiRoutesInspected,
+          clientComponentsInspected: harnessedReport.clientComponentsInspected,
+          aiEndpointsInspected: harnessedReport.aiEndpointsInspected,
+          deterministicRiskScore: harnessedReport.riskScore,
+        },
+        deterministicFindings: harnessedReport.findings.slice(0, 20).map((finding) => ({
+          id: finding.id,
+          severity: finding.severity,
+          category: finding.category,
+          title: finding.title,
+          filePath: finding.filePath,
+          lineStart: finding.lineStart,
+          evidence: redactSecrets(finding.evidence ?? ""),
+        })),
+        instructions: {
+          maxFindings: 6,
+          requireEvidenceFromSnippets: true,
+          allowedFiles: snippets.map((snippet) => snippet.file.path),
+        },
+        redactedSnippets: snippets.map((snippet) => ({
+          filePath: snippet.file.path,
+          scannerPriority: snippet.score,
+          selectedBecause: snippet.reasons,
+          content: snippet.numberedText,
+        })),
+      }),
+    })
+
+    const aiFindings = normalizeAiFindings(output, snippets, harnessedReport.findings)
+    const findings = assignFindingIds([...harnessedReport.findings, ...aiFindings])
+
+    return {
+      ...harnessedReport,
+      riskScore: calculateRiskScore(findings),
+      findings,
+      auditTrail: [
+        ...harnessedReport.auditTrail,
+        auditEvent("Run AI auditor model", "complete", {
+          provider: aiModel.provider,
+          model: aiModel.modelId,
+          reviewedFiles: snippets.length,
+          acceptedFindings: aiFindings.length,
+          durationMs: Date.now() - startedAt,
+        }),
+      ],
+    }
+  } catch (error) {
+    return appendAudit(harnessedReport, "Run AI auditor model", "failed", {
+      provider: aiModel.provider,
+      model: aiModel.modelId,
+      error: error instanceof Error ? error.message.slice(0, 240) : "AI review failed",
+      durationMs: Date.now() - startedAt,
+    })
+  }
+}
+
+function normalizeAiFindings(output: AiReviewOutput, snippets: SnippetContext[], existing: ScanFinding[]): ScanFinding[] {
+  const byPath = new Map(snippets.map((snippet) => [snippet.file.path, snippet]))
+  const findings: ScanFinding[] = []
+
+  for (const candidate of output.findings) {
+    const snippet = byPath.get(candidate.filePath)
+    if (!snippet) continue
+
+    const evidence = evidenceFromSnippet(candidate, snippet)
+    if (!evidence) continue
+    if (isDuplicateFinding(candidate, existing) || isDuplicateFinding(candidate, findings)) continue
+
+    findings.push({
+      id: "AI-000",
+      severity: capAiSeverity(candidate.severity, candidate.category),
+      category: candidate.category,
+      title: candidate.title,
+      description: candidate.description,
+      filePath: candidate.filePath,
+      lineStart: candidate.lineStart,
+      evidence,
+      confidence: Math.min(candidate.confidence, 0.76),
+      recommendation: candidate.recommendation,
+      patchable: false,
+      source: "ai",
+    })
+  }
+
+  return findings
+}
+
+function evidenceFromSnippet(candidate: AiReviewOutput["findings"][number], snippet: SnippetContext) {
+  if (candidate.lineStart) {
+    const line = lineAt(snippet.file.text, candidate.lineStart)
+    if (line) return redactSecrets(line.trim()).slice(0, 500)
+  }
+
+  const redactedEvidence = redactSecrets(candidate.evidence.trim())
+  if (!redactedEvidence) return null
+
+  const lineNumber = findLineNumber(snippet.redactedText, redactedEvidence)
+  if (!lineNumber) return null
+  candidate.lineStart = lineNumber
+  return redactedEvidence
+}
+
+function selectSnippetContexts(files: ProjectFile[], report: ScanReport) {
+  const maxFiles = readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_MAX_FILES, 18)
+  const existingFindingPaths = new Set(report.findings.map((finding) => finding.filePath))
+  const scored = files
+    .map((file) => scoreFile(file, existingFindingPaths))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path))
+    .slice(0, maxFiles)
+
+  const snippets: SnippetContext[] = []
+  let totalChars = 0
+
+  for (const entry of scored) {
+    const redactedText = redactSecrets(entry.file.text)
+    const numberedText = buildNumberedSnippet(entry.file, redactedText, report)
+    if (!numberedText.trim()) continue
+
+    const nextTotal = totalChars + numberedText.length
+    if (nextTotal > MAX_CONTEXT_CHARS && snippets.length > 0) break
+
+    snippets.push({
+      file: entry.file,
+      score: entry.score,
+      reasons: entry.reasons,
+      redactedText,
+      numberedText: numberedText.slice(0, Math.max(800, MAX_CONTEXT_CHARS - totalChars)),
+    })
+    totalChars += numberedText.length
+  }
+
+  return snippets
+}
+
+function scoreFile(file: ProjectFile, existingFindingPaths: Set<string>) {
+  const path = file.path
+  const text = file.text.slice(0, 120_000)
+  let score = 0
+  const reasons: string[] = []
+
+  const add = (points: number, reason: string) => {
+    score += points
+    reasons.push(reason)
+  }
+
+  if (existingFindingPaths.has(path)) add(90, "deterministic finding already exists in this file")
+  if (isApiRoute(path)) add(80, "API route")
+  if (isEnvLike(path)) add(80, "environment file")
+  if (/(\bpackage\.json|Cargo\.toml|next\.config\.|vite\.config\.|middleware\.)$/i.test(path)) add(45, "framework or dependency configuration")
+  if (/\.(ts|tsx|js|jsx|mjs|cjs|rs)$/.test(path)) add(20, "source file")
+  if (SECURITY_REVIEW_KEYWORDS.test(text)) add(45, "security-sensitive keywords")
+  if (/\b(Command::new|unsafe\s*\{|child_process|exec\s*\(|spawn\s*\(|eval\s*\(|dangerouslySetInnerHTML)\b/i.test(text)) add(50, "dangerous execution or rendering primitive")
+  if (/\b(generateText|streamText|openai|anthropic|deepseek|tools\s*:|toolName|mcp)\b/i.test(text)) add(45, "AI model or tool-calling surface")
+
+  return { file, score, reasons }
+}
+
+const SECURITY_REVIEW_KEYWORDS =
+  /\b(auth|admin|internal|billing|token|secret|password|api[_-]?key|private[_-]?key|service[_-]?role|database_url|webhook|stripe|supabase|process\.env|headers\(|cookies\(|req\.json|request\.json|cors|origin)\b/i
+
+function buildNumberedSnippet(file: ProjectFile, redactedText: string, report: ScanReport) {
+  const lines = redactedText.split(/\r?\n/)
+  const interestingLines = collectInterestingLines(file, lines, report)
+  const ranges = interestingLines.length > 0 ? mergeRanges(interestingLines.map((line) => [line - 18, line + 18])) : [[1, 100]]
+  const output: string[] = []
+  let emitted = 0
+
+  for (const [rawStart, rawEnd] of ranges) {
+    const start = Math.max(1, rawStart)
+    const end = Math.min(lines.length, rawEnd)
+    if (start > end) continue
+    if (output.length > 0) output.push("...")
+
+    for (let lineNumber = start; lineNumber <= end; lineNumber += 1) {
+      const line = lines[lineNumber - 1]
+      output.push(`L${lineNumber}: ${line.slice(0, 220)}`)
+      emitted += 1
+      if (emitted >= 180) return output.join("\n")
+    }
+  }
+
+  return output.join("\n")
+}
+
+function collectInterestingLines(file: ProjectFile, lines: string[], report: ScanReport) {
+  const lineNumbers = new Set<number>()
+
+  for (const finding of report.findings) {
+    if (finding.filePath === file.path && finding.lineStart) lineNumbers.add(finding.lineStart)
+  }
+
+  lines.forEach((line, index) => {
+    if (SECURITY_REVIEW_KEYWORDS.test(line)) lineNumbers.add(index + 1)
+    if (/\b(Command::new|unsafe\s*\{|child_process|exec\s*\(|spawn\s*\(|eval\s*\(|dangerouslySetInnerHTML)\b/i.test(line)) {
+      lineNumbers.add(index + 1)
+    }
+  })
+
+  return [...lineNumbers].sort((a, b) => a - b).slice(0, 24)
+}
+
+function mergeRanges(ranges: number[][]) {
+  const sorted = ranges.sort((a, b) => a[0] - b[0])
+  const merged: number[][] = []
+
+  for (const range of sorted) {
+    const current = merged[merged.length - 1]
+    if (!current || range[0] > current[1] + 1) {
+      merged.push([...range])
+      continue
+    }
+
+    current[1] = Math.max(current[1], range[1])
+  }
+
+  return merged
+}
+
+function isEnvLike(path: string) {
+  const name = path.split("/").pop() ?? path
+  return name === ".env" || name.startsWith(".env.")
+}
+
+function appendAudit(
+  report: ScanReport,
+  label: string,
+  status: "complete" | "failed",
+  metadata: Record<string, unknown>,
+): ScanReport {
+  return {
+    ...report,
+    auditTrail: [...report.auditTrail, auditEvent(label, status, metadata)],
+  }
+}
+
+function assignFindingIds(findings: ScanFinding[]) {
+  return [...findings].sort(compareFindings).map((finding, index) => ({
+    ...finding,
+    id: `F-${String(index + 1).padStart(3, "0")}`,
+  }))
+}
+
+function compareFindings(a: ScanFinding, b: ScanFinding) {
+  const severityDelta = severityRank(b.severity) - severityRank(a.severity)
+  if (severityDelta !== 0) return severityDelta
+  const pathDelta = a.filePath.localeCompare(b.filePath)
+  if (pathDelta !== 0) return pathDelta
+  return (a.lineStart ?? 0) - (b.lineStart ?? 0)
+}
+
+function severityRank(severity: Severity) {
+  if (severity === "critical") return 5
+  if (severity === "high") return 4
+  if (severity === "medium") return 3
+  if (severity === "low") return 2
+  return 1
+}
+
+function capAiSeverity(severity: Severity, category: FindingCategory): Severity {
+  if (severity !== "critical") return severity
+  if (category === "secret_exposure" || category === "public_env_misuse") return "critical"
+  return "high"
+}
+
+function isDuplicateFinding(
+  candidate: Pick<ScanFinding, "category" | "filePath" | "lineStart" | "title">,
+  existing: Array<Pick<ScanFinding, "category" | "filePath" | "lineStart" | "title">>,
+) {
+  const title = normalizeText(candidate.title)
+  return existing.some((finding) => {
+    if (finding.category !== candidate.category) return false
+    if (finding.filePath !== candidate.filePath) return false
+    if (finding.lineStart && candidate.lineStart && Math.abs(finding.lineStart - candidate.lineStart) <= 3) return true
+    return normalizeText(finding.title) === title
+  })
+}
+
+function lineAt(text: string, lineNumber: number) {
+  return text.split(/\r?\n/)[lineNumber - 1]
+}
+
+function findLineNumber(redactedText: string, evidence: string) {
+  const target = normalizeText(evidence)
+  if (!target || target.length < 4) return null
+
+  const lines = redactedText.split(/\r?\n/)
+  for (let index = 0; index < lines.length; index += 1) {
+    if (normalizeText(lines[index]).includes(target)) return index + 1
+  }
+
+  return null
+}
+
+function normalizeText(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim()
+}
+
+function readPositiveInt(value: string | undefined, fallback: number) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+  return Math.floor(parsed)
+}

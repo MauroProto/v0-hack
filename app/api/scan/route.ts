@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
+import { reviewProjectWithAi } from "@/lib/ai/reviewProject"
 import { scanProject } from "@/lib/scanner/scan"
 import { saveScanReport } from "@/lib/scanner/store"
 import { apiHeaders } from "@/lib/security/headers"
@@ -56,13 +57,16 @@ export async function POST(request: Request) {
       token,
     })
 
+    const deterministicReport = scanProject({
+      ...extracted,
+      sourceType: "github",
+      sourceLabel: extracted.sourceLabel,
+    })
+    const reviewedReport = await reviewProjectWithAi(deterministicReport, extracted.files)
+
     const report = await saveScanReport(
       attachReportOwner(
-        scanProject({
-          ...extracted,
-          sourceType: "github",
-          sourceLabel: extracted.sourceLabel,
-        }),
+        reviewedReport,
         identity,
       ),
     )
