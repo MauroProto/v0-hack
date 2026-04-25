@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, type ReactNode, type SVGProps, Fragment } from "react"
+import Link from "next/link"
 
 type IconProps = SVGProps<SVGSVGElement>
 
@@ -166,10 +167,10 @@ function Nav() {
           <a href="#docs">Docs</a>
         </nav>
         <div className="nav-right">
-          <a href="#" className="btn btn-ghost">Sign in</a>
-          <a href="#" className="btn btn-primary">
+          <Link href="/scan" className="btn btn-ghost">Open scanner</Link>
+          <Link href="/scan" className="btn btn-primary">
             Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
-          </a>
+          </Link>
         </div>
       </div>
     </header>
@@ -192,13 +193,13 @@ function Hero() {
           vibe-coding mistakes before they reach production.
         </p>
         <div className="hero-cta">
-          <a href="#scan" className="btn btn-accent btn-lg">Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></a>
-          <a href="#report" className="btn btn-outline btn-lg">View sample report</a>
+          <Link href="/scan" className="btn btn-accent btn-lg">Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></Link>
+          <Link href="/report/demo" className="btn btn-outline btn-lg">View sample report</Link>
         </div>
         <div className="hero-meta">
-          <span><b>No install.</b> Connect a repo or drop a ZIP.</span>
+          <span><b>No install.</b> Login with GitHub or paste a public repo.</span>
           <span className="sep" />
-          <span><b>Private by default.</b> {"Code isn't retained after scan."}</span>
+          <span><b>Server-side.</b> GitHub tree and blob APIs, no browser repo reads.</span>
           <span className="sep" />
           <span><b>6 scan engines.</b> Secrets, routes, AI risks &amp; more.</span>
         </div>
@@ -228,32 +229,29 @@ function Hero() {
 
 // ---------- Scan input preview ----------
 function ScanPreview() {
-  const [tab, setTab] = useState<"repo" | "zip" | "paste">("repo")
+  const [tab, setTab] = useState<"public" | "login">("public")
   return (
     <section className="section" id="scan" style={{ paddingTop: 20, paddingBottom: 48 }}>
       <div className="wrap">
         <div className="surface scan-card">
           <div className="scan-tabs">
-            <div className="scan-tab" data-active={tab === "repo"} onClick={() => setTab("repo")}>
-              <I.github /> GitHub repository
+            <div className="scan-tab" data-active={tab === "public"} onClick={() => setTab("public")}>
+              <I.github /> Public GitHub URL
             </div>
-            <div className="scan-tab" data-active={tab === "zip"} onClick={() => setTab("zip")}>
-              <I.zip /> Upload ZIP
-            </div>
-            <div className="scan-tab" data-active={tab === "paste"} onClick={() => setTab("paste")}>
-              <I.doc /> Paste snippet
+            <div className="scan-tab" data-active={tab === "login"} onClick={() => setTab("login")}>
+              <I.lock /> Login with GitHub
             </div>
             <div style={{ flex: 1 }} />
             <div className="scan-tab" style={{ color: "var(--fg-5)", cursor: "default" }}>
-              <I.lock /> End-to-end encrypted
+              <I.scan /> Server-side harness
             </div>
           </div>
           <div className="scan-body">
-            {tab === "repo" && (
+            {tab === "public" && (
               <>
                 <div className="scan-input">
                   <span className="prefix">github.com/</span>
-                  <input defaultValue="acme/storefront-ai" />
+                  <input defaultValue="owner/repo" />
                   <span className="hint mono">main</span>
                   <button className="btn btn-accent">
                     Scan repository <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
@@ -261,33 +259,23 @@ function ScanPreview() {
                 </div>
                 <div className="scan-meta">
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <I.gitbranch /> 3 branches detected
+                    <I.gitbranch /> default branch detected
                   </span>
                   <span>·</span>
-                  <span><b>184 files</b> · TypeScript, Next.js, Prisma</span>
+                  <span><b>GitHub tree</b> · supported blobs only</span>
                   <span>·</span>
-                  <span>est. scan time <b>~42s</b></span>
+                  <span>20 scans/user/day</span>
                 </div>
               </>
             )}
-            {tab === "zip" && (
-              <div className="scan-drop">
-                <div className="icn"><I.upload /></div>
-                <div className="txt">
-                  <b>Drop a .zip of your project</b>
-                  <span>Up to 200 MB &middot; node_modules auto-excluded &middot; .env files flagged, never logged</span>
-                </div>
-                <button className="btn btn-outline">Choose file</button>
-              </div>
-            )}
-            {tab === "paste" && (
+            {tab === "login" && (
               <div className="scan-drop" style={{ alignItems: "flex-start" }}>
-                <div className="icn"><I.doc /></div>
+                <div className="icn"><I.github /></div>
                 <div className="txt">
-                  <b>Paste a single file or snippet</b>
-                  <span>Useful for checking an AI-generated route handler or tool definition</span>
+                  <b>List repositories from your GitHub account</b>
+                  <span>VibeShield asks GitHub for metadata, tree entries and file blobs from the server.</span>
                 </div>
-                <button className="btn btn-outline">Open paste editor</button>
+                <button className="btn btn-outline">Connect GitHub</button>
               </div>
             )}
 
@@ -375,8 +363,8 @@ function Dashboard() {
           <h2>A clear readout of <em>{"what's risky"}</em>, and how to fix it.</h2>
           <p>
             Findings ranked by severity with file &amp; line references, a plain-English
-            explanation, and a ready-to-apply patch. Share a link with your team, export to
-            Markdown, or let VibeShield open a pull request.
+            explanation, and conservative patch previews. Share a link with your team or copy
+            a GitHub issue body for review.
           </p>
         </div>
 
@@ -386,7 +374,7 @@ function Dashboard() {
             <div className="dash-url">
               <I.lock style={{ width: 12, height: 12 }} />
               <span>app.vibeshield.dev/scans/</span>
-              <span className="path">acme/storefront-ai/r_8f2a</span>
+              <span className="path">report/demo</span>
             </div>
             <span className="pill" style={{ height: 22, fontSize: 11 }}>
               <span className="dot" /> scan complete
@@ -399,15 +387,15 @@ function Dashboard() {
               <div className="dash-head">
                 <div className="title">
                   <div className="crumb">
-                    acme <I.chevron style={{ width: 12, height: 12 }} /> storefront-ai{" "}
-                    <I.chevron style={{ width: 12, height: 12 }} /> scan r_8f2a
+                    VibeShield <I.chevron style={{ width: 12, height: 12 }} /> vulnerable-next-app{" "}
+                    <I.chevron style={{ width: 12, height: 12 }} /> scan demo
                   </div>
                   <h3>Security report <span className="repo">· main @ 1f3c2a8</span></h3>
                 </div>
                 <div className="actions">
-                  <button className="btn btn-outline"><I.share /> Share</button>
-                  <button className="btn btn-outline"><I.doc /> Export</button>
-                  <button className="btn btn-accent"><I.wand /> Apply fixes</button>
+                  <span className="btn btn-outline"><I.share /> Share</span>
+                  <span className="btn btn-outline"><I.doc /> Issue body</span>
+                  <span className="btn btn-accent"><I.wand /> Fix previews</span>
                 </div>
               </div>
 
@@ -474,8 +462,8 @@ function Dashboard() {
               </div>
 
               <div className="timeline">
-                <TimelineItem state="done" title="Cloned acme/storefront-ai" sub="184 files · 11,842 LOC · TypeScript, Next.js" time="00:00 → 00:03" />
-                <TimelineItem state="done" title="Fingerprinted AI-generated code" sub="Detected v0 (72%), Cursor (18%), hand-edited (10%)" time="00:03 → 00:08" />
+                <TimelineItem state="done" title="Loaded project archive" sub="184 files · TypeScript, Next.js · no code execution" time="00:00 → 00:03" />
+                <TimelineItem state="done" title="Detected framework signals" sub="Next.js App Router · AI SDK usage · client components" time="00:03 → 00:08" />
                 <TimelineItem state="done" title="Secret & key sweep" sub="Matched 14 providers · 1 exposed OpenAI key, 1 Supabase service role misplacement" time="00:08 → 00:19" />
                 <TimelineItem state="done" title="Route & auth graph" sub="Walked 31 routes · 6 lack an auth guard · 2 allow public writes" time="00:19 → 00:31" />
                 <TimelineItem
@@ -492,7 +480,7 @@ function Dashboard() {
                     </>
                   }
                 />
-                <TimelineItem state="pending" title="Generate patch PR" sub="Drafts fixes as a branch you can review" time="queued" />
+                <TimelineItem state="pending" title="Generate patch previews" sub="Conservative, review-required suggestions" time="queued" />
               </div>
             </aside>
           </div>
@@ -522,23 +510,22 @@ function Features() {
             <div className="f-icon"><I.scan /></div>
             <h3>Repo &amp; snapshot scanning</h3>
             <p>
-              Connect a GitHub repo for continuous scans on every push, or drop a ZIP for a
-              one-shot review. VibeShield respects monorepos, ignores generated output,
-              and scans diffs when you ask for speed.
+              Paste a public GitHub repo URL or login with GitHub to choose from your repositories.
+              VibeShield fetches repository metadata, trees and blobs server-side without executing code.
             </p>
             <div className="f-art">
               <div className="mini-list">
                 <div className="row">
-                  <span className="dot" style={{ background: "var(--accent)" }} /> github.com/acme/storefront-ai
+                  <span className="dot" style={{ background: "var(--accent)" }} /> github.com/owner/repo
                   <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>main · auto</span>
                 </div>
                 <div className="row">
-                  <span className="dot" style={{ background: "var(--accent)" }} /> github.com/acme/lovable-crm
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>develop · auto</span>
+                  <span className="dot" style={{ background: "var(--accent)" }} /> github.com/team/ai-dashboard
+                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>master · public</span>
                 </div>
                 <div className="row">
-                  <span className="dot" style={{ background: "var(--warn)" }} /> uploads/landing-v2.zip
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>snapshot · 2m ago</span>
+                  <span className="dot" style={{ background: "var(--warn)" }} /> github.com/org/private-agent-app
+                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>login · private</span>
                 </div>
               </div>
             </div>
@@ -571,8 +558,8 @@ function Features() {
             <div className="f-icon"><I.wand /></div>
             <h3>Patch suggestions</h3>
             <p>
-              Every finding comes with a readable explanation and a ready-to-apply diff.
-              Apply in-app or open a PR straight to your branch.
+              Every finding comes with a readable explanation and a conservative diff preview.
+              Review-required suggestions keep the MVP honest.
             </p>
             <div className="f-art">
               <div className="diff">
@@ -589,15 +576,14 @@ function Features() {
             <h3>Shareable reports</h3>
             <p>
               Send a single link to a teammate, a client, or a compliance reviewer.
-              Every report is a stable URL with findings, fixes and a full audit trail &mdash;
-              private by default, optionally read-only public.
+              Every report is a stable URL with findings, fixes and a full audit trail for the current demo session.
             </p>
             <div className="f-art" style={{ display: "grid", gap: 8 }}>
               <div className="share-card">
                 <div className="avatar" />
                 <div className="txt">
-                  <span>Maya shared <b style={{ color: "var(--fg)" }}>storefront-ai · r_8f2a</b> with 3 reviewers</span>
-                  <small>app.vibeshield.dev/r/8f2ac0 · read-only</small>
+                  <span>Maya copied <b style={{ color: "var(--fg)" }}>vulnerable-next-app · demo</b> for review</span>
+                  <small>app.vibeshield.dev/report/demo</small>
                 </div>
                 <button className="btn btn-outline" style={{ height: 28, fontSize: 12 }}>
                   <I.link style={{ width: 12, height: 12 }} /> Copy link
@@ -606,11 +592,11 @@ function Features() {
               <div className="share-card">
                 <div className="avatar" style={{ background: "linear-gradient(135deg,#60a5fa,#7FE7C4)" }} />
                 <div className="txt">
-                  <span>Opened PR <b style={{ color: "var(--fg)" }}>#217 · VibeShield: auto-patch critical findings</b></span>
-                  <small>4 files · +31 −12 · awaiting review</small>
+                  <span>Copied GitHub issue body <b style={{ color: "var(--fg)" }}>VibeShield security scan</b></span>
+                  <small>top findings · affected files · next steps</small>
                 </div>
                 <button className="btn btn-outline" style={{ height: 28, fontSize: 12 }}>
-                  <I.github style={{ width: 12, height: 12 }} /> View
+                  <I.github style={{ width: 12, height: 12 }} /> Preview
                 </button>
               </div>
             </div>
@@ -650,10 +636,10 @@ function Features() {
 // ---------- How it works ----------
 function How() {
   const steps = [
-    { n: "01", title: "Connect a repo", body: "Authorize GitHub or drop a ZIP. Monorepos and private repos supported. Your code is processed ephemerally and never used for training.", ico: <I.github /> },
-    { n: "02", title: "Run the scan", body: "Six engines run in parallel: secrets, routes, auth, AI endpoints, tool/MCP and dependency risks. Finishes in under a minute on most projects.", ico: <I.scan /> },
+    { n: "01", title: "Connect GitHub or paste a repo", body: "Login with GitHub to list repositories, or paste a public GitHub URL without logging in.", ico: <I.github /> },
+    { n: "02", title: "Run the harness", body: "The server reads GitHub metadata, tree entries and selected blobs, then runs deterministic passes for secrets, routes, auth, AI endpoints and tool risks.", ico: <I.scan /> },
     { n: "03", title: "Review findings", body: "A clear, ranked report with plain-English explanations, file:line references, severity and reasoning. No thousand-line logs.", ico: <I.search /> },
-    { n: "04", title: "Generate fixes", body: "Apply patches in-app, open a pull request, or hand them to your AI agent. Re-scan anytime — or on every push.", ico: <I.wand /> },
+    { n: "04", title: "Generate fixes", body: "Generate AI explanations and conservative patch previews you can review before editing your app.", ico: <I.wand /> },
   ]
   return (
     <section className="section" id="how">
@@ -689,12 +675,12 @@ function Closing() {
         </h2>
         <p>Scan your first repo in under a minute. No install.</p>
         <div className="cta-actions">
-          <a href="#" className="btn btn-accent btn-lg">
+          <Link href="/scan" className="btn btn-accent btn-lg">
             Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
-          </a>
-          <a href="#" className="btn btn-outline btn-lg">
-            <I.github /> Install GitHub App
-          </a>
+          </Link>
+          <Link href="/report/demo" className="btn btn-outline btn-lg">
+            <I.github /> View demo report
+          </Link>
         </div>
       </div>
 
