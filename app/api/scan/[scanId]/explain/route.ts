@@ -5,7 +5,7 @@ import { auditEvent } from "@/lib/scanner/scan"
 import { getScanReport, saveScanReport } from "@/lib/scanner/store"
 import { apiHeaders } from "@/lib/security/headers"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
-import { assertBurstAllowed, isSecurityError } from "@/lib/security/quota"
+import { assertBurstAllowed, assertContentLengthAllowed, isSecurityError } from "@/lib/security/quota"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -13,6 +13,8 @@ export const dynamic = "force-dynamic"
 export async function POST(request: Request, { params }: { params: Promise<{ scanId: string }> }) {
   try {
     const { scanId } = await params
+    assertContentLengthAllowed(request, 1_000)
+
     const aiStatus = getAiModelStatus()
     const identity = await getRequestIdentity(request)
     await assertBurstAllowed(identity, "explain")

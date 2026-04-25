@@ -40,8 +40,7 @@ export async function POST(request: Request) {
     const identity = await getRequestIdentity(request)
     await assertBurstAllowed(identity, "scan")
 
-    const contentType = request.headers.get("content-type") ?? ""
-    if (!contentType.includes("application/json")) {
+    if (!isJsonContentType(request.headers.get("content-type"))) {
       return NextResponse.json({ error: "Use application/json. ZIP uploads are disabled for security." }, { status: 415, headers: apiHeaders() })
     }
 
@@ -77,6 +76,7 @@ export async function POST(request: Request) {
 function getErrorStatus(error: unknown) {
   if (isSecurityError(error)) return error.status
   if (error instanceof SyntaxError) return 400
+  if (error instanceof z.ZodError) return 400
   const message = getErrorMessage(error).toLowerCase()
   if (message.includes("too large")) return 413
   if (message.includes("too many")) return 413
@@ -84,6 +84,10 @@ function getErrorStatus(error: unknown) {
   if (message.includes("provide either")) return 400
   if (message.includes("no supported text files")) return 400
   return 500
+}
+
+function isJsonContentType(contentType: string | null) {
+  return contentType?.split(";")[0]?.trim().toLowerCase() === "application/json"
 }
 
 function getErrorMessage(error: unknown) {
