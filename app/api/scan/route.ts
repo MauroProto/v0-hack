@@ -2,11 +2,12 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { scanProject } from "@/lib/scanner/scan"
 import { saveScanReport } from "@/lib/scanner/store"
+import { apiHeaders } from "@/lib/security/headers"
 import { attachReportOwner, getRequestIdentity, publicReport } from "@/lib/security/request"
 import {
   assertBurstAllowed,
   assertContentLengthAllowed,
-  consumeDailyScanQuota,
+  consumeMonthlyScanQuota,
   isSecurityError,
   rateLimitHeaders,
   type QuotaState,
@@ -41,12 +42,12 @@ export async function POST(request: Request) {
 
     const contentType = request.headers.get("content-type") ?? ""
     if (!contentType.includes("application/json")) {
-      return NextResponse.json({ error: "Use application/json. ZIP uploads are disabled for security." }, { status: 415 })
+      return NextResponse.json({ error: "Use application/json. ZIP uploads are disabled for security." }, { status: 415, headers: apiHeaders() })
     }
 
     assertContentLengthAllowed(request, 20_000)
     const body = JsonScanSchema.parse(await request.json())
-    const quota = await consumeDailyScanQuota(identity)
+    const quota = await consumeMonthlyScanQuota(identity)
 
     const token = getGitHubTokenFromRequest(request)
     const repo = body.repoFullName ? parseGitHubFullName(body.repoFullName) : parsePublicGitHubUrl(body.githubUrl ?? "")
@@ -94,12 +95,12 @@ function getErrorMessage(error: unknown) {
 
 function errorResponse(error: unknown) {
   if (isSecurityError(error)) {
-    return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: error.headers })
+    return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: apiHeaders(error.headers) })
   }
 
-  return NextResponse.json({ error: getErrorMessage(error) }, { status: getErrorStatus(error) })
+  return NextResponse.json({ error: getErrorMessage(error) }, { status: getErrorStatus(error), headers: apiHeaders() })
 }
 
 function jsonWithQuota(body: Record<string, unknown>, quota: QuotaState) {
-  return NextResponse.json(body, { headers: rateLimitHeaders(quota) })
+  return NextResponse.json(body, { headers: apiHeaders(rateLimitHeaders(quota)) })
 }

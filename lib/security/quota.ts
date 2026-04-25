@@ -10,13 +10,21 @@ type Counter = {
 
 type SecurityGlobal = typeof globalThis & {
   __vibeshieldBurstCounters?: Map<string, Counter>
-  __vibeshieldDailyCounters?: Map<string, Counter>
+  __vibeshieldMonthlyCounters?: Map<string, Counter>
 }
 
 export type QuotaState = {
   limit: number
   remaining: number
   resetAt: string
+  period: "monthly"
+}
+
+type RateLimitHeaderState = {
+  limit: number
+  remaining: number
+  resetAt: string
+  period?: "monthly" | "burst"
 }
 
 type QuotaRpcRow = {
@@ -57,16 +65,21 @@ export async function assertBurstAllowed(identity: RequestIdentity, action: "sca
         limit,
         remaining: 0,
         resetAt: new Date(result.resetAt).toISOString(),
+        period: "burst",
       }),
     )
   }
 }
 
-export async function consumeDailyScanQuota(identity: RequestIdentity): Promise<QuotaState> {
-  const limit = readPositiveInt(process.env.VIBESHIELD_DAILY_SCAN_QUOTA, 20)
-  const windowStart = getUtcDay()
-  const resetAt = getNextUtcDayStart()
+export async function consumeMonthlyScanQuota(identity: RequestIdentity): Promise<QuotaState> {
+  const limit = readPositiveInt(process.env.VIBESHIELD_MONTHLY_SCAN_QUOTA, 20)
+  const windowStart = getUtcMonthStart()
+  const resetAt = getNextUtcMonthStart()
   const supabase = getSupabaseServiceClient()
+
+  if (!supabase && persistentQuotaRequired()) {
+    throw persistentQuotaUnavailable()
+  }
 
   if (supabase) {
     const { data, error } = await supabase.rpc("vibeshield_consume_scan_quota", {
@@ -82,6 +95,7 @@ export async function consumeDailyScanQuota(identity: RequestIdentity): Promise<
           limit,
           remaining: Math.max(0, Number(row.remaining) || 0),
           resetAt: resetAt.toISOString(),
+          period: "monthly",
         }
       }
 
@@ -89,22 +103,17 @@ export async function consumeDailyScanQuota(identity: RequestIdentity): Promise<
     }
 
     console.error("VibeShield Supabase quota failed", error.message)
-    if (process.env.VIBESHIELD_REQUIRE_PERSISTENT_QUOTA === "true") {
-      throw new SecurityError(
-        "Scan quota is not configured. Run the Supabase migration before accepting production scans.",
-        503,
-        "persistent_quota_unavailable",
-      )
-    }
+    if (persistentQuotaRequired()) throw persistentQuotaUnavailable()
   }
 
-  const result = consumeMemoryCounter(getDailyCounters(), `daily:${windowStart}:${identity.subjectHash}`, limit, resetAt.getTime())
+  const result = consumeMemoryCounter(getMonthlyCounters(), `monthly:${windowStart}:${identity.subjectHash}`, limit, resetAt.getTime())
   if (!result.allowed) throw quotaExceeded(limit, resetAt)
 
   return {
     limit,
     remaining: result.remaining,
     resetAt: new Date(result.resetAt).toISOString(),
+    period: "monthly",
   }
 }
 
@@ -126,24 +135,38 @@ export function isSecurityError(error: unknown): error is SecurityError {
   return error instanceof SecurityError
 }
 
-export function rateLimitHeaders(quota: QuotaState) {
+export function rateLimitHeaders(quota: RateLimitHeaderState) {
   return {
     "X-RateLimit-Limit": String(quota.limit),
     "X-RateLimit-Remaining": String(quota.remaining),
     "X-RateLimit-Reset": quota.resetAt,
+    ...(quota.period ? { "X-RateLimit-Period": quota.period } : {}),
   }
 }
 
 function quotaExceeded(limit: number, resetAt: Date) {
   return new SecurityError(
-    "Daily scan quota reached. This MVP allows 20 scans per user per UTC day.",
+    "Monthly scan quota reached. VibeShield allows 20 scans per user per UTC month.",
     429,
-    "daily_quota_reached",
+    "monthly_quota_reached",
     rateLimitHeaders({
       limit,
       remaining: 0,
       resetAt: resetAt.toISOString(),
+      period: "monthly",
     }),
+  )
+}
+
+function persistentQuotaRequired() {
+  return process.env.VIBESHIELD_REQUIRE_PERSISTENT_QUOTA === "true"
+}
+
+function persistentQuotaUnavailable() {
+  return new SecurityError(
+    "Persistent monthly scan quota is not configured. Connect Supabase and run the migration before accepting production scans.",
+    503,
+    "persistent_quota_unavailable",
   )
 }
 
@@ -167,18 +190,19 @@ function getBurstCounters() {
   return securityGlobal.__vibeshieldBurstCounters
 }
 
-function getDailyCounters() {
-  securityGlobal.__vibeshieldDailyCounters ??= new Map<string, Counter>()
-  return securityGlobal.__vibeshieldDailyCounters
+function getMonthlyCounters() {
+  securityGlobal.__vibeshieldMonthlyCounters ??= new Map<string, Counter>()
+  return securityGlobal.__vibeshieldMonthlyCounters
 }
 
-function getUtcDay() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function getNextUtcDayStart() {
+function getUtcMonthStart() {
   const now = new Date()
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1))
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`
+}
+
+function getNextUtcMonthStart() {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
 }
 
 function readPositiveInt(value: string | undefined, fallback: number) {

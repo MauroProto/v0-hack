@@ -3,6 +3,7 @@ import { explainFinding } from "@/lib/ai/explainFinding"
 import { getAiModelStatus } from "@/lib/ai/model"
 import { auditEvent } from "@/lib/scanner/scan"
 import { getScanReport, saveScanReport } from "@/lib/scanner/store"
+import { apiHeaders } from "@/lib/security/headers"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
 import { assertBurstAllowed, isSecurityError } from "@/lib/security/quota"
 
@@ -19,7 +20,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
     const current = await getScanReport(scanId)
 
     if (!current || !canAccessReport(current, identity)) {
-      return NextResponse.json({ error: "Scan report not found." }, { status: 404 })
+      return NextResponse.json({ error: "Scan report not found." }, { status: 404, headers: apiHeaders() })
     }
 
     const findings = []
@@ -58,16 +59,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
       ],
     })
 
-    return NextResponse.json({ report: publicReport(report) })
+    return NextResponse.json({ report: publicReport(report) }, { headers: apiHeaders() })
   } catch (error) {
     if (isSecurityError(error)) {
-      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: error.headers })
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: apiHeaders(error.headers) })
     }
 
-    return NextResponse.json({ error: "Could not generate explanations." }, { status: 500 })
+    return NextResponse.json({ error: "Could not generate explanations." }, { status: 500, headers: apiHeaders() })
   }
 }
 
 export async function OPTIONS() {
-  return new Response(null, { status: 204 })
+  return new Response(null, { status: 204, headers: apiHeaders() })
 }

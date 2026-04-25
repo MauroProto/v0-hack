@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { apiHeaders } from "@/lib/security/headers"
 import { getGitHubTokenFromRequest, listAuthenticatedGitHubRepos } from "@/lib/utils/github"
 
 export const runtime = "nodejs"
@@ -8,14 +9,14 @@ export async function GET(request: Request) {
   try {
     const token = getGitHubTokenFromRequest(request)
     if (!token) {
-      return NextResponse.json({ error: "GitHub login token is required." }, { status: 401 })
+      return NextResponse.json({ error: "GitHub login token is required." }, { status: 401, headers: apiHeaders() })
     }
 
     const repos = await listAuthenticatedGitHubRepos(token)
-    return NextResponse.json({ repos })
+    return NextResponse.json({ repos }, { headers: apiHeaders() })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not list GitHub repositories."
-    return NextResponse.json({ error: message }, { status: statusForError(message) })
+    return NextResponse.json({ error: message }, { status: statusForError(message), headers: apiHeaders() })
   }
 }
 

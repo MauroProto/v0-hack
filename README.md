@@ -17,7 +17,7 @@ The scanner never executes repository code, never runs `npm install` inside user
 
 Security limits:
 
-- 20 scans per user/identity per UTC day by default.
+- 20 scans per user/identity per UTC month by default.
 - Short burst limits protect `/api/scan` and AI explanation generation.
 - Reports are owned by a salted request identity and require the same identity that created them.
 - GitHub repository scans are bounded by supported text file count, per-file size and total text size.
@@ -38,7 +38,7 @@ For v0/Vercel/Supabase persistence:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-VIBESHIELD_DAILY_SCAN_QUOTA=20
+VIBESHIELD_MONTHLY_SCAN_QUOTA=20
 VIBESHIELD_REQUIRE_PERSISTENT_QUOTA=true
 VIBESHIELD_IDENTITY_SALT=
 ```

@@ -61,7 +61,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <div className="org-card">
             <div className="avatar">VS</div>
             <div className="name">GitHub security scanner</div>
-            <span className="plan">20 scans/day</span>
+            <span className="plan">20 scans/month</span>
           </div>
 
           <nav className="side-nav">

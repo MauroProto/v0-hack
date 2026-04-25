@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { listScanReports } from "@/lib/scanner/store"
+import { apiHeaders } from "@/lib/security/headers"
 import { getRequestIdentity, publicReport } from "@/lib/security/request"
 
 export const runtime = "nodejs"
@@ -11,5 +12,5 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     reports: reports.map(publicReport),
-  })
+  }, { headers: apiHeaders() })
 }

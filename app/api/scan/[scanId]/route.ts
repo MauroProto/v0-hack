@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getScanReport } from "@/lib/scanner/store"
+import { apiHeaders } from "@/lib/security/headers"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
 
 export const runtime = "nodejs"
@@ -11,8 +12,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ scan
   const identity = await getRequestIdentity(request)
 
   if (!report || !canAccessReport(report, identity)) {
-    return NextResponse.json({ error: "Scan report not found." }, { status: 404 })
+    return NextResponse.json({ error: "Scan report not found." }, { status: 404, headers: apiHeaders() })
   }
 
-  return NextResponse.json({ report: publicReport(report) })
+  return NextResponse.json({ report: publicReport(report) }, { headers: apiHeaders() })
 }

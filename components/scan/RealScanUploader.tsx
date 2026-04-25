@@ -266,7 +266,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
 
           <div className="scan-meta">
             <span>
-              <b>Limits:</b> 20 scans/day · 500 files · 500 KB/file · 10 MB text
+              <b>Limits:</b> 20 scans/month · 500 files · 500 KB/file · 10 MB text
             </span>
             <span>
               <b>Harness:</b> GitHub metadata · tree API · blob API · deterministic rules

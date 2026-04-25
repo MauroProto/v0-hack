@@ -115,4 +115,4 @@ revoke all on function public.vibeshield_consume_scan_quota(text, date, integer)
 grant execute on function public.vibeshield_consume_scan_quota(text, date, integer) to service_role;
 
 comment on table public.vibeshield_scan_usage is
-  'Per-user scan quota counters. Subjects are salted hashes, not raw IP addresses or emails.';
+  'Per-user monthly scan quota counters. window_start is the first UTC day of the month. Subjects are salted hashes, not raw IP addresses or emails.';
