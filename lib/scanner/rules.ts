@@ -53,6 +53,8 @@ export interface ProjectSignals {
   hasAiSdk: boolean
   hasOpenAiSdk: boolean
   hasAnthropicSdk: boolean
+  hasRust: boolean
+  hasTauri: boolean
   hasVercelAnalytics: boolean
   hasSpeedInsights: boolean
   hasAiGateway: boolean
@@ -105,10 +107,12 @@ export function collectRuleFindings(files: ProjectFile[]): RuleScanResult {
     scanUnsafeToolCalling(file, add)
     scanMissingInputValidation(file, add)
     scanDangerousCode(file, add)
+    scanRustDangerousCode(file, add)
     scanSensitiveClientData(file, add)
   }
 
   scanVercelHardening(files, signals, add)
+  scanCoverageSignals(files, signals, add)
 
   return { findings, signals, stats }
 }
@@ -120,6 +124,11 @@ export function detectProjectSignals(files: ProjectFile[]): ProjectSignals {
   const hasPagesRouter = paths.some((path) => path.startsWith("pages/"))
   const hasNextConfig = paths.some((path) => /^next\.config\.(mjs|js|ts|cjs)$/.test(path))
   const hasVite = paths.some((path) => /^vite\.config\.(mjs|js|ts|cjs)$/.test(path))
+  const hasCargoToml = paths.some((path) => path === "Cargo.toml" || path.endsWith("/Cargo.toml"))
+  const hasRust = hasCargoToml || paths.some((path) => path.endsWith(".rs"))
+  const hasTauri =
+    paths.some((path) => path.startsWith("src-tauri/") || path.endsWith("/tauri.conf.json") || path === "tauri.conf.json") ||
+    /tauri-build|@tauri-apps\/api|tauri::/i.test(allText)
   const hasAiSdk = /\bfrom\s+["']ai["']|["']ai["']\s*:|from\s+["']@ai-sdk\//.test(allText)
   const hasOpenAiSdk = /\bfrom\s+["']openai["']|["']openai["']\s*:/.test(allText)
   const hasAnthropicSdk = /\bfrom\s+["']@anthropic-ai\/|["']@anthropic-ai\//.test(allText)
@@ -129,6 +138,8 @@ export function detectProjectSignals(files: ProjectFile[]): ProjectSignals {
   else if (hasPagesRouter && hasNextConfig) framework = "Next.js Pages Router"
   else if (hasNextConfig) framework = "Next.js"
   else if (hasVite) framework = "React/Vite"
+  else if (hasTauri) framework = "Tauri/Rust"
+  else if (hasRust) framework = "Rust"
 
   return {
     framework,
@@ -139,6 +150,8 @@ export function detectProjectSignals(files: ProjectFile[]): ProjectSignals {
     hasAiSdk,
     hasOpenAiSdk,
     hasAnthropicSdk,
+    hasRust,
+    hasTauri,
     hasVercelAnalytics: /@vercel\/analytics|<Analytics\b|injectAnalytics\(/.test(allText),
     hasSpeedInsights: /@vercel\/speed-insights|<SpeedInsights\b/.test(allText),
     hasAiGateway:
@@ -338,6 +351,7 @@ function scanMissingInputValidation(file: ProjectFile, add: (finding: RuleFindin
 }
 
 function scanDangerousCode(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  const isRustFile = file.path.endsWith(".rs")
   const checks: { pattern: RegExp; title: string; severity: Severity; description: string }[] = [
     { pattern: /\beval\s*\(/, title: "Dynamic eval call detected", severity: "high", description: "eval executes strings as code and can turn input handling bugs into remote code execution." },
     { pattern: /\bnew\s+Function\s*\(/, title: "Dynamic Function constructor detected", severity: "high", description: "new Function executes generated code and is unsafe for user-controlled input." },
@@ -348,6 +362,8 @@ function scanDangerousCode(file: ProjectFile, add: (finding: RuleFinding) => voi
   ]
 
   for (const check of checks) {
+    if (isRustFile && check.title === "Shell process call detected") continue
+
     const hit = findLineMatching(file.text, check.pattern)
     if (!hit) continue
 
@@ -362,6 +378,46 @@ function scanDangerousCode(file: ProjectFile, add: (finding: RuleFinding) => voi
       confidence: 0.8,
       recommendation: "Avoid dynamic code execution and sanitize all HTML/user input. If shell or file access is required, use strict allowlists and fixed paths.",
       patchable: check.pattern.source.includes("dangerouslySetInnerHTML"),
+      source: "rule",
+    })
+  }
+}
+
+function scanRustDangerousCode(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (!file.path.endsWith(".rs")) return
+
+  const checks: { pattern: RegExp; title: string; severity: Severity; description: string; recommendation: string }[] = [
+    {
+      pattern: /\b(?:std::process::)?Command::new\s*\(/,
+      title: "Rust process execution detected",
+      severity: "medium",
+      description: "This Rust code starts an operating-system process. That is expected in some tools, but it becomes command injection risk if command names, arguments, or working directories are user-controlled.",
+      recommendation: "Keep command names fixed, pass arguments as structured values, reject shell metacharacters, and never forward untrusted input into a shell.",
+    },
+    {
+      pattern: /\bunsafe\s*\{/,
+      title: "Rust unsafe block detected",
+      severity: "medium",
+      description: "Unsafe Rust bypasses compiler memory-safety guarantees and should receive focused security review before release.",
+      recommendation: "Minimize unsafe blocks, document invariants, add tests around boundary conditions, and prefer safe wrappers where possible.",
+    },
+  ]
+
+  for (const check of checks) {
+    const hit = findLineMatching(file.text, check.pattern)
+    if (!hit) continue
+
+    add({
+      severity: check.severity,
+      category: "dangerous_code",
+      title: check.title,
+      description: check.description,
+      filePath: file.path,
+      lineStart: hit.lineNumber,
+      evidence: redactSecrets(hit.line.trim()),
+      confidence: 0.74,
+      recommendation: check.recommendation,
+      patchable: false,
       source: "rule",
     })
   }
@@ -383,6 +439,30 @@ function scanSensitiveClientData(file: ProjectFile, add: (finding: RuleFinding) 
     evidence: redactSecrets(hit.line.trim()),
     confidence: 0.73,
     recommendation: "Move sensitive data fetching to server components or protected API routes, and avoid shipping secrets or PII in client bundles.",
+    patchable: false,
+    source: "rule",
+  })
+}
+
+function scanCoverageSignals(files: ProjectFile[], signals: ProjectSignals, add: (finding: RuleFinding) => void) {
+  if (signals.isNextApp || signals.hasVite) return
+
+  const anchor =
+    files.find((file) => basename(file.path) === "Cargo.toml") ??
+    files.find((file) => basename(file.path) === "package.json") ??
+    files.find((file) => basename(file.path).toUpperCase() === "README") ??
+    files[0]
+  if (!anchor) return
+
+  add({
+    severity: "info",
+    category: "dependency_signal",
+    title: "Repository is outside primary Next.js/React coverage",
+    description: "VibeShield scanned supported text files server-side, but the highest-confidence MVP rules are optimized for Next.js, React, and AI endpoint repositories.",
+    filePath: anchor.path,
+    evidence: `Detected framework: ${signals.framework ?? "unknown"}`,
+    confidence: 0.9,
+    recommendation: "Treat this report as baseline static analysis. For this stack, review the surfaced secrets, dangerous-code signals, and configuration findings before shipping.",
     patchable: false,
     source: "rule",
   })

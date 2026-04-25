@@ -8,8 +8,11 @@ const SUPPORTED_EXTENSIONS = new Set([
   ".mjs",
   ".cjs",
   ".json",
+  ".lock",
   ".md",
+  ".rs",
   ".txt",
+  ".toml",
   ".yml",
   ".yaml",
 ])
@@ -66,7 +69,7 @@ export function shouldConsiderProjectPath(filePath: string) {
 
 export function shouldSkipLargeLockfile(filePath: string, size: number) {
   if (size <= 250_000) return false
-  return /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$/i.test(filePath)
+  return /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock)$/i.test(filePath)
 }
 
 function isEnvFile(filePath: string) {
