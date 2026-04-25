@@ -188,7 +188,7 @@ img { max-width: 100%; display: block; }
 }
 
 /* Hero */
-.hero { padding: 88px 0 40px; position: relative; }
+.hero { padding: 160px 0 40px; position: relative; }
 .hero-inner { max-width: 860px; }
 .hero h1 {
   font-size: clamp(48px, 7vw, 92px);
@@ -799,7 +799,7 @@ img { max-width: 100%; display: block; }
   .finding { grid-template-columns: 20px auto 1fr auto; }
   .finding .meta { display: none; }
   .nav-links { display: none; }
-  .hero { padding: 56px 0 28px; }
+  .hero { padding: 112px 0 28px; }
 }
 @media (max-width: 520px) {
   .howit { grid-template-columns: 1fr; }
