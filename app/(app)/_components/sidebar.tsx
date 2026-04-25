@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { Icon } from "./icons"
 
 type Repo = { name: string; status: "warn" | "ok"; href: string }
@@ -41,6 +41,7 @@ const PRIMARY: Item[] = [
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname() || ""
+  const router = useRouter()
 
   const isActive = (it: Item) => {
     if (it.match) return it.match(pathname)
@@ -52,10 +53,10 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       <aside className="app-side" data-open={open}>
         <div className="app-side-scroll">
           <div className="brand-row">
-            <Link href="/scan" className="brand">
+            <button type="button" className="brand" onClick={() => router.push("/")}>
               <span className="brand-mark"><Icon.shield /></span>
               <span>VibeShield</span>
-            </Link>
+            </button>
           </div>
 
           <div className="org-card">

@@ -345,6 +345,14 @@ async function extractFilesFromArchive(archiveBytes: Uint8Array, limits: Scanner
   let totalTextBytes = 0
 
   for (const candidate of candidates) {
+    const declaredSize = getZipEntryDeclaredSize(candidate.entry)
+    if (declaredSize !== null) {
+      if (declaredSize > limits.maxFileSizeBytes || shouldSkipLargeLockfile(candidate.path, declaredSize)) continue
+      if (totalTextBytes + declaredSize > limits.maxTotalSizeBytes) {
+        throw new Error(`Project text files exceed ${limits.maxTotalSizeBytes} bytes.`)
+      }
+    }
+
     const bytes = await candidate.entry.async("uint8array")
     if (bytes.byteLength > limits.maxFileSizeBytes || shouldSkipLargeLockfile(candidate.path, bytes.byteLength)) continue
     if (isProbablyBinary(bytes)) continue
@@ -360,6 +368,11 @@ async function extractFilesFromArchive(archiveBytes: Uint8Array, limits: Scanner
   }
 
   return files
+}
+
+function getZipEntryDeclaredSize(entry: unknown) {
+  const rawSize = (entry as { _data?: { uncompressedSize?: unknown } })._data?.uncompressedSize
+  return typeof rawSize === "number" && Number.isFinite(rawSize) && rawSize >= 0 ? rawSize : null
 }
 
 function stripArchiveRoot(entryName: string) {

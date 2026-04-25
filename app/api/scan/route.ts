@@ -47,10 +47,10 @@ export async function POST(request: Request) {
 
     assertContentLengthAllowed(request, 20_000)
     const body = JsonScanSchema.parse(await request.json())
-    const quota = await consumeMonthlyScanQuota(identity)
-
     const token = getGitHubTokenFromRequest(request)
     const repo = body.repoFullName ? parseGitHubFullName(body.repoFullName) : parsePublicGitHubUrl(body.githubUrl ?? "")
+    const quota = await consumeMonthlyScanQuota(identity)
+
     const extracted = await extractProjectFromGitHubRepo({
       ...repo,
       ref: body.ref,

@@ -159,7 +159,10 @@ function quotaExceeded(limit: number, resetAt: Date) {
 }
 
 function persistentQuotaRequired() {
-  return process.env.VIBESHIELD_REQUIRE_PERSISTENT_QUOTA === "true"
+  const value = process.env.VIBESHIELD_REQUIRE_PERSISTENT_QUOTA?.trim().toLowerCase()
+  if (value === "true") return true
+  if (value === "false") return false
+  return process.env.NODE_ENV === "production"
 }
 
 function persistentQuotaUnavailable() {

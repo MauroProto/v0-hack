@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { Session } from "@supabase/supabase-js"
 import { Icon } from "@/app/(app)/_components/icons"
+import { ScanProgress } from "@/app/(app)/_components/scan-progress"
 import { createBrowserSupabaseClient } from "@/lib/supabase/client"
 
 type Mode = "public" | "github"
@@ -28,6 +29,9 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null)
   const [loading, setLoading] = useState<"scan" | "login" | "repos" | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pendingScanId, setPendingScanId] = useState<string | null>(null)
+  const [scanFinished, setScanFinished] = useState(false)
+  const [scanKey, setScanKey] = useState(0)
 
   const githubToken = session?.provider_token ?? undefined
   const accessToken = session?.access_token
@@ -52,13 +56,29 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     return () => data.subscription.unsubscribe()
   }, [supabase])
 
-  const startPublicScan = async () => {
+  const beginScan = () => {
     setError(null)
+    setPendingScanId(null)
+    setScanFinished(false)
+    setScanKey((k) => k + 1)
     setLoading("scan")
+  }
+
+  const handleScanFailure = (message: string) => {
+    setError(message)
+    setLoading(null)
+    setScanFinished(false)
+    setPendingScanId(null)
+  }
+
+  const startPublicScan = async () => {
+    if (!githubUrl.trim()) {
+      handleScanFailure("Paste a public GitHub repository URL first.")
+      return
+    }
+    beginScan()
 
     try {
-      if (!githubUrl.trim()) throw new Error("Paste a public GitHub repository URL first.")
-
       const response = await fetch("/api/scan", {
         method: "POST",
         headers: requestHeaders(githubToken, accessToken),
@@ -66,21 +86,21 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Scan failed.")
-      router.push(`/report/${data.scanId}`)
+      setPendingScanId(data.scanId)
+      setScanFinished(true)
     } catch (scanError) {
-      setError(scanError instanceof Error ? scanError.message : "Scan failed.")
-    } finally {
-      setLoading(null)
+      handleScanFailure(scanError instanceof Error ? scanError.message : "Scan failed.")
     }
   }
 
   const startRepoScan = async (repo: GitHubRepo) => {
-    setError(null)
-    setLoading("scan")
+    if (!githubToken) {
+      handleScanFailure("Reconnect GitHub before scanning private or account repositories.")
+      return
+    }
+    beginScan()
 
     try {
-      if (!githubToken) throw new Error("Reconnect GitHub before scanning private or account repositories.")
-
       const response = await fetch("/api/scan", {
         method: "POST",
         headers: requestHeaders(githubToken, accessToken),
@@ -88,11 +108,16 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Scan failed.")
-      router.push(`/report/${data.scanId}`)
+      setPendingScanId(data.scanId)
+      setScanFinished(true)
     } catch (scanError) {
-      setError(scanError instanceof Error ? scanError.message : "Scan failed.")
-    } finally {
-      setLoading(null)
+      handleScanFailure(scanError instanceof Error ? scanError.message : "Scan failed.")
+    }
+  }
+
+  const handleScanProgressComplete = () => {
+    if (pendingScanId) {
+      router.push(`/report/${pendingScanId}`)
     }
   }
 
@@ -244,15 +269,23 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
             </div>
           )}
 
+          {loading === "scan" && (
+            <ScanProgress
+              key={scanKey}
+              done={scanFinished}
+              onComplete={handleScanProgressComplete}
+            />
+          )}
+
           <div className="scan-actions-row">
             {mode === "public" ? (
-              <button className="btn btn-accent btn-lg" onClick={startPublicScan} disabled={loading !== null} type="button">
+              <button className="btn btn-outline" onClick={startPublicScan} disabled={loading !== null} type="button">
                 <Icon.bolt style={{ width: 14, height: 14 }} />
                 {loading === "scan" ? "Scanning..." : "Scan public repository"}
               </button>
             ) : (
               <button
-                className="btn btn-accent btn-lg"
+                className="btn btn-outline"
                 onClick={() => selectedRepo && startRepoScan(selectedRepo)}
                 disabled={loading !== null || !selectedRepo}
                 type="button"
@@ -263,14 +296,6 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
             )}
           </div>
 
-          <div className="scan-meta">
-            <span>
-              <b>Limits:</b> 20 scans/month · 500 files · 500 KB/file · 10 MB text
-            </span>
-            <span>
-              <b>Harness:</b> GitHub metadata · tree API · blob API · deterministic rules
-            </span>
-          </div>
         </div>
       </div>
     </div>
