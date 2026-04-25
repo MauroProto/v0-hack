@@ -1,5 +1,21 @@
-import { redirect } from "next/navigation"
+import { RealScanUploader } from "@/components/scan/RealScanUploader"
 
 export default function RepositoriesPage() {
-  redirect("/scan")
+  return (
+    <>
+      <div className="app-topbar">
+        <div className="crumbs">
+          <span>VibeShield</span>
+          <span className="sep">/</span>
+          <span>
+            <b>GitHub repositories</b>
+          </span>
+        </div>
+      </div>
+
+      <div className="page-pad">
+        <RealScanUploader initialMode="github" />
+      </div>
+    </>
+  )
 }

@@ -4,6 +4,10 @@ import { scanProject } from "./scan"
 import { getScanReport, saveScanReport } from "./store"
 import type { ScanReport } from "./types"
 
+export function isDemoScanEnabled() {
+  return process.env.NODE_ENV !== "production" || process.env.VIBESHIELD_ENABLE_DEMO === "true"
+}
+
 export async function getOrCreateDemoReport(): Promise<ScanReport> {
   const existing = await getScanReport("demo")
   if (existing) return existing

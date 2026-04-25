@@ -18,15 +18,15 @@ type GitHubRepo = {
   language?: string | null
 }
 
-export function RealScanUploader() {
+export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mode }) {
   const router = useRouter()
   const supabase = useMemo(() => createBrowserSupabaseClient(), [])
-  const [mode, setMode] = useState<Mode>("public")
+  const [mode, setMode] = useState<Mode>(initialMode)
   const [githubUrl, setGithubUrl] = useState("")
   const [session, setSession] = useState<Session | null>(null)
   const [repos, setRepos] = useState<GitHubRepo[]>([])
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null)
-  const [loading, setLoading] = useState<"scan" | "demo" | "login" | "repos" | null>(null)
+  const [loading, setLoading] = useState<"scan" | "login" | "repos" | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const githubToken = session?.provider_token ?? undefined
@@ -91,26 +91,6 @@ export function RealScanUploader() {
       router.push(`/report/${data.scanId}`)
     } catch (scanError) {
       setError(scanError instanceof Error ? scanError.message : "Scan failed.")
-    } finally {
-      setLoading(null)
-    }
-  }
-
-  const runDemoScan = async () => {
-    setError(null)
-    setLoading("demo")
-
-    try {
-      const response = await fetch("/api/scan", {
-        method: "POST",
-        headers: requestHeaders(githubToken, accessToken),
-        body: JSON.stringify({ demo: true }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error ?? "Demo scan failed.")
-      router.push(`/report/${data.scanId}`)
-    } catch (scanError) {
-      setError(scanError instanceof Error ? scanError.message : "Demo scan failed.")
     } finally {
       setLoading(null)
     }
@@ -282,10 +262,6 @@ export function RealScanUploader() {
                 {loading === "scan" ? "Scanning..." : "Scan selected repository"}
               </button>
             )}
-            <button className="btn btn-outline btn-lg" onClick={runDemoScan} disabled={loading !== null} type="button">
-              <Icon.scan style={{ width: 14, height: 14 }} />
-              {loading === "demo" ? "Preparing demo..." : "Run demo scan"}
-            </button>
           </div>
 
           <div className="scan-meta">

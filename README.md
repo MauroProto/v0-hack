@@ -10,11 +10,12 @@ Main flows:
 
 - `/scan` accepts either a public GitHub repo URL or GitHub login for repository selection.
 - `/report/[scanId]` renders the real scan report.
-- `/report/demo` scans `examples/vulnerable-next-app`.
 - `/api/github/repos` lists repositories for a GitHub-authenticated user.
 - `/api/scan/[scanId]/explain` generates AI explanations and patch previews when AI Gateway is configured, and falls back deterministically otherwise.
 
 The scanner never executes repository code, never runs `npm install` inside user projects, never accepts ZIP uploads, and only reads supported text files server-side through GitHub APIs.
+
+`examples/vulnerable-next-app` is a local test fixture with fake values. It is not part of the production user flow unless `VIBESHIELD_ENABLE_DEMO=true`.
 
 Security limits:
 

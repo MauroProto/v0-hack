@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { getOrCreateDemoReport } from "@/lib/scanner/demo"
+import { getOrCreateDemoReport, isDemoScanEnabled } from "@/lib/scanner/demo"
 import { scanProject } from "@/lib/scanner/scan"
 import { saveScanReport } from "@/lib/scanner/store"
 import { attachReportOwner, getRequestIdentity, publicReport } from "@/lib/security/request"
@@ -51,6 +51,9 @@ export async function POST(request: Request) {
     const quota = await consumeDailyScanQuota(identity)
 
     if (body.demo) {
+      if (!isDemoScanEnabled()) {
+        return NextResponse.json({ error: "Demo scans are disabled in this environment." }, { status: 404 })
+      }
       const report = await getOrCreateDemoReport()
       return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota }, quota)
     }

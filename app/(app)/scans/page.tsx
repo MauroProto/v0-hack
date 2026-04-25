@@ -29,13 +29,10 @@ export default async function ScansPage() {
               <Icon.scan style={{ width: 28, height: 28 }} />
             </div>
             <h2 className="empty-title">No scans yet</h2>
-            <p className="empty-sub">Login with GitHub, scan a public GitHub repo, or run the bundled vulnerable demo.</p>
+            <p className="empty-sub">Login with GitHub or scan a public GitHub repo to create your first report.</p>
             <div className="empty-actions">
               <Link href="/scan" className="btn btn-accent btn-lg">
                 <Icon.bolt style={{ width: 14, height: 14 }} /> Start security scan
-              </Link>
-              <Link href="/report/demo" className="btn btn-outline btn-lg">
-                View demo report
               </Link>
             </div>
           </div>
@@ -67,7 +64,7 @@ export default async function ScansPage() {
         </h1>
         <div className="page-sub">
           <span>
-            <b>{reports.length}</b> stored in this demo session
+            <b>{reports.length}</b> available for this identity
           </span>
           <span>·</span>
           <span>static analysis only</span>
