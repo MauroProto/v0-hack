@@ -62,7 +62,7 @@ export interface ScanReport {
   framework?: string
   ownerHash?: string
   ownerKind?: "supabase_user" | "anonymous"
-  sourceType: "github" | "demo"
+  sourceType: "github"
   sourceLabel: string
   status: "queued" | "running" | "completed" | "failed"
   riskScore: number

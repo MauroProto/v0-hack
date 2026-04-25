@@ -39,8 +39,6 @@ export async function getRequestIdentityFromHeaders(headers: HeaderSource): Prom
 }
 
 export function attachReportOwner(report: ScanReport, identity: RequestIdentity): ScanReport {
-  if (report.id === "demo" || report.sourceType === "demo") return report
-
   return {
     ...report,
     ownerHash: identity.subjectHash,
@@ -49,7 +47,6 @@ export function attachReportOwner(report: ScanReport, identity: RequestIdentity)
 }
 
 export function canAccessReport(report: ScanReport, identity: RequestIdentity) {
-  if (report.id === "demo" || report.sourceType === "demo") return true
   if (report.ownerHash) return report.ownerHash === identity.subjectHash
   return process.env.VIBESHIELD_ALLOW_LEGACY_REPORT_ACCESS === "true"
 }

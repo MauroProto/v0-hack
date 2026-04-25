@@ -141,7 +141,6 @@ async function listSupabaseOwnerReports(ownerHash?: string) {
 }
 
 function canListReport(report: ScanReport, ownerHash?: string) {
-  if (report.id === "demo" || report.sourceType === "demo") return true
   return Boolean(ownerHash && report.ownerHash === ownerHash)
 }
 

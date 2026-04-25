@@ -15,13 +15,11 @@ Main flows:
 
 The scanner never executes repository code, never runs `npm install` inside user projects, never accepts ZIP uploads, and only reads supported text files server-side through GitHub APIs.
 
-`examples/vulnerable-next-app` is a local test fixture with fake values. It is not part of the production user flow unless `VIBESHIELD_ENABLE_DEMO=true`.
-
 Security limits:
 
 - 20 scans per user/identity per UTC day by default.
 - Short burst limits protect `/api/scan` and AI explanation generation.
-- Reports are owned by a salted request identity. Demo reports stay public; real reports require the same identity that created them.
+- Reports are owned by a salted request identity and require the same identity that created them.
 - GitHub repository scans are bounded by supported text file count, per-file size and total text size.
 - Public mode reads only public repositories. GitHub login mode lists and scans repositories through GitHub REST API metadata, tree and blob endpoints.
 - Secrets are redacted before responses and before AI prompts.

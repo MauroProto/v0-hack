@@ -4,7 +4,7 @@ create table if not exists public.vibeshield_scan_reports (
   updated_at timestamptz not null default now(),
   owner_hash text,
   project_name text not null,
-  source_type text not null check (source_type in ('github', 'demo')),
+  source_type text not null check (source_type in ('github')),
   source_label text not null,
   status text not null check (status in ('queued', 'running', 'completed', 'failed')),
   risk_score integer not null check (risk_score >= 0 and risk_score <= 100),

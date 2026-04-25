@@ -25,28 +25,8 @@ export function createDeterministicPatch(finding: ScanFinding): PatchSuggestion 
   if (finding.category === "input_validation") {
     return {
       title: "Validate request body with Zod",
-      summary: "Introduce a request schema and parse the JSON body before using it.",
-      before: "const body = await req.json();",
-      after: [
-        "const BodySchema = z.object({",
-        "  // TODO: define fields",
-        "});",
-        "",
-        "const body = BodySchema.parse(await req.json());",
-      ].join("\n"),
-      unifiedDiff: [
-        `--- a/${finding.filePath}`,
-        `+++ b/${finding.filePath}`,
-        "@@",
-        "+import { z } from \"zod\";",
-        "+",
-        "+const BodySchema = z.object({",
-        "+  // TODO: define fields",
-        "+});",
-        "+",
-        "-const body = await req.json();",
-        "+const body = BodySchema.parse(await req.json());",
-      ].join("\n"),
+      summary:
+        "Add a route-specific schema based on the actual request contract and parse the JSON body before any business logic uses it.",
       reviewRequired: true,
     }
   }
@@ -54,24 +34,8 @@ export function createDeterministicPatch(finding: ScanFinding): PatchSuggestion 
   if (finding.category === "missing_auth") {
     return {
       title: "Add a server-side auth guard",
-      summary: "Require a validated user before returning sensitive route data.",
-      before: "export async function GET() {",
-      after: [
-        "export async function GET() {",
-        "  const user = await requireAuth();",
-        "  if (!user) {",
-        "    return NextResponse.json({ error: \"Unauthorized\" }, { status: 401 });",
-        "  }",
-      ].join("\n"),
-      unifiedDiff: [
-        `--- a/${finding.filePath}`,
-        `+++ b/${finding.filePath}`,
-        "@@",
-        "+  const user = await requireAuth();",
-        "+  if (!user) {",
-        "+    return NextResponse.json({ error: \"Unauthorized\" }, { status: 401 });",
-        "+  }",
-      ].join("\n"),
+      summary:
+        "Use the project's real authentication provider to verify the user on the server, then enforce role or ownership checks before returning sensitive data.",
       reviewRequired: true,
     }
   }
@@ -79,26 +43,8 @@ export function createDeterministicPatch(finding: ScanFinding): PatchSuggestion 
   if (finding.category === "ai_endpoint_risk") {
     return {
       title: "Add rate limiting before model calls",
-      summary: "Check quota/abuse controls before invoking the AI model.",
-      before: "const result = await streamText({",
-      after: [
-        "const allowed = await checkRateLimit(request);",
-        "if (!allowed) {",
-        "  return new Response(\"Too many requests\", { status: 429 });",
-        "}",
-        "",
-        "const result = await streamText({",
-      ].join("\n"),
-      unifiedDiff: [
-        `--- a/${finding.filePath}`,
-        `+++ b/${finding.filePath}`,
-        "@@",
-        "+const allowed = await checkRateLimit(request);",
-        "+if (!allowed) {",
-        "+  return new Response(\"Too many requests\", { status: 429 });",
-        "+}",
-        "+",
-      ].join("\n"),
+      summary:
+        "Insert the project's real quota, rate-limit, bot protection, and budget checks before the first model invocation in this route.",
       reviewRequired: true,
     }
   }
@@ -107,15 +53,6 @@ export function createDeterministicPatch(finding: ScanFinding): PatchSuggestion 
     return {
       title: "Move public secret to server-only environment variable",
       summary: "Rename the variable without NEXT_PUBLIC_ and read it only from server code.",
-      before: "NEXT_PUBLIC_OPENAI_API_KEY=...",
-      after: "OPENAI_API_KEY=...",
-      unifiedDiff: [
-        `--- a/${finding.filePath}`,
-        `+++ b/${finding.filePath}`,
-        "@@",
-        "-NEXT_PUBLIC_*SECRET*=...",
-        "+SERVER_ONLY_SECRET=...",
-      ].join("\n"),
       reviewRequired: true,
     }
   }
@@ -125,7 +62,6 @@ export function createDeterministicPatch(finding: ScanFinding): PatchSuggestion 
       title: "Remove committed secret and rotate it",
       summary: "Delete the committed value, rotate the credential, and load it from server-only environment variables.",
       before: finding.evidence,
-      after: "SECRET_NAME=...redacted-placeholder",
       reviewRequired: true,
     }
   }
@@ -133,22 +69,8 @@ export function createDeterministicPatch(finding: ScanFinding): PatchSuggestion 
   if (finding.category === "unsafe_tool_calling" || finding.category === "mcp_risk") {
     return {
       title: "Replace dynamic tool dispatch with an allowlist",
-      summary: "Validate the requested tool name against a fixed map before dispatching.",
-      before: "const tool = tools[input.tool];",
-      after: [
-        "const ToolNameSchema = z.enum([\"search\", \"summarize\"]);",
-        "const toolName = ToolNameSchema.parse(input.tool);",
-        "const tool = tools[toolName];",
-      ].join("\n"),
-      unifiedDiff: [
-        `--- a/${finding.filePath}`,
-        `+++ b/${finding.filePath}`,
-        "@@",
-        "+const ToolNameSchema = z.enum([\"search\", \"summarize\"]);",
-        "+const toolName = ToolNameSchema.parse(input.tool);",
-        "-const tool = tools[input.tool];",
-        "+const tool = tools[toolName];",
-      ].join("\n"),
+      summary:
+        "Define the exact tools this route is allowed to call, validate the requested name against that fixed set, and reject anything outside it before dispatch.",
       reviewRequired: true,
     }
   }

@@ -375,7 +375,7 @@ function scanSensitiveClientData(file: ProjectFile, add: (finding: RuleFinding) 
     severity: "medium",
     category: "client_data_exposure",
     title: "Sensitive-looking data appears in a client component",
-    description: "This client component references sensitive mock/data fields that may end up in browser JavaScript.",
+    description: "This client component references sensitive-looking data fields that may end up in browser JavaScript.",
     filePath: file.path,
     lineStart: hit.lineNumber,
     evidence: redactSecrets(hit.line.trim()),

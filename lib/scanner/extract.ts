@@ -1,7 +1,4 @@
-import { promises as fs } from "node:fs"
 import path from "node:path"
-import type { ExtractedProject, ProjectFile } from "./types"
-import { auditEvent } from "./scan"
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".ts",
@@ -51,68 +48,8 @@ export function getScannerLimits(): ScannerLimits {
   }
 }
 
-export async function extractProjectFromDirectory(
-  rootDir: string,
-  projectName: string,
-  limits = getScannerLimits(),
-): Promise<ExtractedProject> {
-  const files: ProjectFile[] = []
-  let totalTextBytes = 0
-
-  async function walk(currentDir: string) {
-    const entries = await fs.readdir(currentDir, { withFileTypes: true })
-    for (const entry of entries) {
-      const absolutePath = path.join(currentDir, entry.name)
-      const relativePath = normalizeZipPath(path.relative(rootDir, absolutePath))
-
-      if (entry.isDirectory()) {
-        if (relativePath.split("/").some((segment) => IGNORED_SEGMENTS.has(segment))) continue
-        await walk(absolutePath)
-        continue
-      }
-
-      if (!entry.isFile()) continue
-      if (!shouldConsiderProjectPath(relativePath)) continue
-
-      const stat = await fs.stat(absolutePath)
-      if (stat.size > limits.maxFileSizeBytes || shouldSkipLargeLockfile(relativePath, stat.size)) continue
-      totalTextBytes += stat.size
-      if (totalTextBytes > limits.maxTotalSizeBytes) {
-        throw new Error(`Project text files exceed ${formatBytes(limits.maxTotalSizeBytes)}.`)
-      }
-
-      const bytes = await fs.readFile(absolutePath)
-      if (isProbablyBinary(bytes)) continue
-      const text = decodeUtf8(bytes)
-      if (text === null) continue
-
-      files.push({ path: relativePath, size: stat.size, text })
-      if (files.length > limits.maxFiles) {
-        throw new Error(`Project has too many supported files. Limit is ${limits.maxFiles}.`)
-      }
-    }
-  }
-
-  await walk(rootDir)
-
-  if (files.length === 0) {
-    throw new Error("No supported text files were found in the demo project.")
-  }
-
-  return {
-    projectName,
-    files,
-    auditTrail: [
-      auditEvent("Load bundled vulnerable demo project", "complete", {
-        files: files.length,
-        totalTextBytes,
-      }),
-    ],
-  }
-}
-
 export function shouldConsiderProjectPath(filePath: string) {
-  const normalized = normalizeZipPath(filePath)
+  const normalized = normalizeProjectPath(filePath)
   if (!normalized || normalized.endsWith("/")) return false
 
   const segments = normalized.split("/")
@@ -166,11 +103,3 @@ function readPositiveInt(value: string | undefined, fallback: number) {
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback
   return Math.floor(parsed)
 }
-
-function formatBytes(bytes: number) {
-  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
-  if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(1)} KB`
-  return `${bytes} bytes`
-}
-
-const normalizeZipPath = normalizeProjectPath

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { getOrCreateDemoReport, isDemoScanEnabled } from "@/lib/scanner/demo"
 import { scanProject } from "@/lib/scanner/scan"
 import { saveScanReport } from "@/lib/scanner/store"
 import { attachReportOwner, getRequestIdentity, publicReport } from "@/lib/security/request"
@@ -27,12 +26,11 @@ const JsonScanSchema = z
     githubUrl: z.string().trim().min(1).optional(),
     repoFullName: z.string().trim().min(1).optional(),
     ref: z.string().trim().min(1).max(120).optional(),
-    demo: z.boolean().optional(),
   })
-  .refine((value) => value.demo || value.githubUrl || value.repoFullName, {
-    message: "Provide githubUrl, repoFullName, or demo=true.",
+  .refine((value) => value.githubUrl || value.repoFullName, {
+    message: "Provide githubUrl or repoFullName.",
   })
-  .refine((value) => Number(Boolean(value.githubUrl)) + Number(Boolean(value.repoFullName)) + Number(Boolean(value.demo)) === 1, {
+  .refine((value) => Number(Boolean(value.githubUrl)) + Number(Boolean(value.repoFullName)) === 1, {
     message: "Choose exactly one scan source.",
   })
 
@@ -49,14 +47,6 @@ export async function POST(request: Request) {
     assertContentLengthAllowed(request, 20_000)
     const body = JsonScanSchema.parse(await request.json())
     const quota = await consumeDailyScanQuota(identity)
-
-    if (body.demo) {
-      if (!isDemoScanEnabled()) {
-        return NextResponse.json({ error: "Demo scans are disabled in this environment." }, { status: 404 })
-      }
-      const report = await getOrCreateDemoReport()
-      return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota }, quota)
-    }
 
     const token = getGitHubTokenFromRequest(request)
     const repo = body.repoFullName ? parseGitHubFullName(body.repoFullName) : parsePublicGitHubUrl(body.githubUrl ?? "")

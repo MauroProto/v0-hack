@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 import { explainFinding } from "@/lib/ai/explainFinding"
 import { auditEvent } from "@/lib/scanner/scan"
-import { getOrCreateDemoReport, isDemoScanEnabled } from "@/lib/scanner/demo"
 import { getScanReport, saveScanReport } from "@/lib/scanner/store"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
 import { assertBurstAllowed, isSecurityError } from "@/lib/security/quota"
@@ -12,14 +11,10 @@ export const dynamic = "force-dynamic"
 export async function POST(request: Request, { params }: { params: Promise<{ scanId: string }> }) {
   try {
     const { scanId } = await params
-    if (scanId === "demo" && !isDemoScanEnabled()) {
-      return NextResponse.json({ error: "Scan report not found." }, { status: 404 })
-    }
-
     const identity = await getRequestIdentity(request)
     await assertBurstAllowed(identity, "explain")
 
-    const current = scanId === "demo" ? await getOrCreateDemoReport() : await getScanReport(scanId)
+    const current = await getScanReport(scanId)
 
     if (!current || !canAccessReport(current, identity)) {
       return NextResponse.json({ error: "Scan report not found." }, { status: 404 })
