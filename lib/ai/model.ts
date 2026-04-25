@@ -26,6 +26,7 @@ export interface AiModelStatus {
 const DEFAULT_GATEWAY_MODEL = "openai/gpt-5.2-mini"
 const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5"
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
+const DEFAULT_DEEPSEEK_REASONING_EFFORT = "high"
 
 export function resolveAiModel(): ResolvedAiModel | null {
   const requestedProvider = normalizeProvider(process.env.VIBESHIELD_AI_PROVIDER)
@@ -84,7 +85,10 @@ function resolveDeepSeekModel(): ResolvedAiModel | null {
   if (!apiKey) return null
 
   const modelId = process.env.VIBESHIELD_DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL
-  const deepseek = createDeepSeek({ apiKey })
+  const deepseek = createDeepSeek({
+    apiKey,
+    fetch: withDeepSeekReasoningEffort(fetch),
+  })
   return {
     configured: true,
     provider: "deepseek",
@@ -104,4 +108,30 @@ function normalizeProvider(value: string | undefined): AiProvider | null {
   if (normalized === "claude") return "anthropic"
   if (normalized === "anthropic" || normalized === "deepseek" || normalized === "gateway") return normalized
   return null
+}
+
+function withDeepSeekReasoningEffort(fetchImpl: typeof fetch): typeof fetch {
+  return async (input, init) => {
+    if (typeof init?.body !== "string") return fetchImpl(input, init)
+
+    try {
+      const payload = JSON.parse(init.body) as Record<string, unknown>
+      if (!("reasoning_effort" in payload)) {
+        payload.reasoning_effort = readDeepSeekReasoningEffort()
+      }
+
+      return fetchImpl(input, {
+        ...init,
+        body: JSON.stringify(payload),
+      })
+    } catch {
+      return fetchImpl(input, init)
+    }
+  }
+}
+
+function readDeepSeekReasoningEffort() {
+  const value = process.env.VIBESHIELD_DEEPSEEK_REASONING_EFFORT?.trim().toLowerCase()
+  if (value === "low" || value === "medium" || value === "high") return value
+  return DEFAULT_DEEPSEEK_REASONING_EFFORT
 }
