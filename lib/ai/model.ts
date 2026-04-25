@@ -1,7 +1,7 @@
 import "server-only"
 
 import { createAnthropic } from "@ai-sdk/anthropic"
-import { createDeepSeek } from "@ai-sdk/deepseek"
+import { createDeepSeek, type DeepSeekLanguageModelOptions } from "@ai-sdk/deepseek"
 import type { LanguageModel } from "ai"
 
 type AiProvider = "gateway" | "anthropic" | "deepseek"
@@ -11,6 +11,9 @@ export interface ResolvedAiModel {
   provider: AiProvider
   modelId: string
   model: LanguageModel
+  providerOptions?: {
+    deepseek?: DeepSeekLanguageModelOptions
+  }
 }
 
 export interface AiModelStatus {
@@ -22,7 +25,7 @@ export interface AiModelStatus {
 
 const DEFAULT_GATEWAY_MODEL = "openai/gpt-5.2-mini"
 const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5"
-const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
+const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
 
 export function resolveAiModel(): ResolvedAiModel | null {
   const requestedProvider = normalizeProvider(process.env.VIBESHIELD_AI_PROVIDER)
@@ -87,6 +90,11 @@ function resolveDeepSeekModel(): ResolvedAiModel | null {
     provider: "deepseek",
     modelId,
     model: deepseek(modelId),
+    providerOptions: {
+      deepseek: {
+        thinking: { type: "enabled" },
+      } satisfies DeepSeekLanguageModelOptions,
+    },
   }
 }
 

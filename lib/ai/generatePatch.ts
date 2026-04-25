@@ -21,6 +21,7 @@ export async function generatePatch(finding: ScanFinding, fileSnippet?: string):
   try {
     const { output } = await generateText({
       model: aiModel.model,
+      providerOptions: aiModel.providerOptions,
       output: Output.object({ schema: PatchSchema }),
       system: [
         "You generate conservative patch suggestions for security findings.",

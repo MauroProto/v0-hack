@@ -34,6 +34,7 @@ export async function explainFinding(
   try {
     const { output } = await generateText({
       model: aiModel.model,
+      providerOptions: aiModel.providerOptions,
       output: Output.object({
         schema: ExplanationSchema,
       }),

@@ -53,7 +53,7 @@ VibeShield supports three real AI paths:
 
 - AI Gateway: set `AI_GATEWAY_API_KEY` or use Vercel OIDC, plus `VIBESHIELD_MODEL`.
 - Claude/Anthropic: set `VIBESHIELD_AI_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, and optionally `VIBESHIELD_ANTHROPIC_MODEL`.
-- DeepSeek: set `VIBESHIELD_AI_PROVIDER=deepseek`, `DEEPSEEK_API_KEY`, and optionally `VIBESHIELD_DEEPSEEK_MODEL`.
+- DeepSeek: set `VIBESHIELD_AI_PROVIDER=deepseek`, `DEEPSEEK_API_KEY`, and optionally `VIBESHIELD_DEEPSEEK_MODEL`. The default is `deepseek-v4-pro` with DeepSeek thinking mode enabled.
 
 If `VIBESHIELD_AI_PROVIDER` is not set, the server tries AI Gateway first, then Claude/Anthropic, then DeepSeek. If no provider is configured, scans still run and explanations fall back to deterministic recommendations.
 

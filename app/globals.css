@@ -403,8 +403,12 @@ img { max-width: 100%; display: block; }
   white-space: nowrap;
   border: 0;
 }
-.real-github-input .prefix {
-  min-width: max-content;
+.real-github-input input {
+  padding: 0 8px;
+}
+.real-github-input input::placeholder {
+  color: var(--fg-5);
+  font-family: var(--font-mono);
 }
 .scan-actions-row {
   display: flex;

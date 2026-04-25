@@ -176,11 +176,10 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
         <div className="scan-body">
           {mode === "public" ? (
             <div className="scan-input real-github-input">
-              <span className="prefix">https://github.com/</span>
               <input
-                value={githubUrl.replace(/^https:\/\/github\.com\//, "")}
-                onChange={(event) => setGithubUrl(normalizeGithubInput(event.target.value))}
-                placeholder="owner/repo"
+                value={githubUrl}
+                onChange={(event) => setGithubUrl(event.target.value)}
+                placeholder="https://github.com/owner/repo"
               />
               <span className="hint mono">server-side</span>
             </div>
