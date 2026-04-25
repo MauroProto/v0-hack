@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { explainFinding } from "@/lib/ai/explainFinding"
+import { getAiModelStatus } from "@/lib/ai/model"
 import { auditEvent } from "@/lib/scanner/scan"
 import { getScanReport, saveScanReport } from "@/lib/scanner/store"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic"
 export async function POST(request: Request, { params }: { params: Promise<{ scanId: string }> }) {
   try {
     const { scanId } = await params
+    const aiStatus = getAiModelStatus()
     const identity = await getRequestIdentity(request)
     await assertBurstAllowed(identity, "explain")
 
@@ -48,7 +50,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
       auditTrail: [
         ...current.auditTrail,
         auditEvent("Generate AI explanations and patch previews", "complete", {
-          aiConfigured: Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN),
+          aiConfigured: aiStatus.configured,
+          aiProvider: aiStatus.provider ?? "deterministic_fallback",
+          aiModel: aiStatus.modelId ?? "none",
           findings: findings.length,
         }),
       ],

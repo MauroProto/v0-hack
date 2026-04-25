@@ -5,7 +5,7 @@ import { Icon } from "@/app/(app)/_components/icons"
 import { generateIssueBody, getRiskLabel } from "@/lib/scanner/patches"
 import type { AuditTrailEvent, FindingCategory, ScanFinding, ScanReport, Severity } from "@/lib/scanner/types"
 
-export function ScanResultsClient({ initialReport }: { initialReport: ScanReport }) {
+export function ScanResultsClient({ initialReport, authToken }: { initialReport: ScanReport; authToken?: string | null }) {
   const [report, setReport] = useState(initialReport)
   const [loadingAi, setLoadingAi] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
@@ -16,7 +16,10 @@ export function ScanResultsClient({ initialReport }: { initialReport: ScanReport
     setError(null)
     setLoadingAi(true)
     try {
-      const response = await fetch(`/api/scan/${report.id}/explain`, { method: "POST" })
+      const response = await fetch(`/api/scan/${report.id}/explain`, {
+        method: "POST",
+        headers: authHeaders(authToken),
+      })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Could not generate AI explanations.")
       setReport(data.report)
@@ -53,7 +56,7 @@ export function ScanResultsClient({ initialReport }: { initialReport: ScanReport
         </div>
         <div className="actions">
           <button className="btn btn-outline" onClick={copyShareLink} type="button">
-            <Icon.share style={{ width: 14, height: 14 }} /> <span>{copied === "share" ? "Copied" : "Share"}</span>
+            <Icon.share style={{ width: 14, height: 14 }} /> <span>{copied === "share" ? "Copied" : "Copy report link"}</span>
           </button>
           <button className="btn btn-outline" onClick={copyIssueBody} type="button">
             <Icon.doc style={{ width: 14, height: 14 }} /> <span>{copied === "issue" ? "Copied" : "Copy GitHub issue body"}</span>
@@ -336,4 +339,8 @@ function formatMetadata(metadata: Record<string, unknown>) {
   return Object.entries(metadata)
     .map(([key, value]) => `${key}: ${String(value)}`)
     .join(" · ")
+}
+
+function authHeaders(accessToken?: string | null) {
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
 }

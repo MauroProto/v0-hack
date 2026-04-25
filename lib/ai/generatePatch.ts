@@ -1,5 +1,6 @@
 import { generateText, Output } from "ai"
 import { z } from "zod"
+import { resolveAiModel } from "@/lib/ai/model"
 import { createDeterministicPatch } from "@/lib/scanner/patches"
 import { redactSecrets } from "@/lib/scanner/rules"
 import type { PatchSuggestion, ScanFinding } from "@/lib/scanner/types"
@@ -14,11 +15,12 @@ const PatchSchema = z.object({
 export async function generatePatch(finding: ScanFinding, fileSnippet?: string): Promise<PatchSuggestion | undefined> {
   const fallback = createDeterministicPatch(finding)
   if (!finding.patchable) return fallback
-  if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) return fallback
+  const aiModel = resolveAiModel()
+  if (!aiModel) return fallback
 
   try {
     const { output } = await generateText({
-      model: process.env.VIBESHIELD_MODEL || "openai/gpt-5.2-mini",
+      model: aiModel.model,
       output: Output.object({ schema: PatchSchema }),
       system: [
         "You generate conservative patch suggestions for security findings.",

@@ -1,5 +1,6 @@
 import { generateText, Output } from "ai"
 import { z } from "zod"
+import { resolveAiModel } from "@/lib/ai/model"
 import { createDeterministicPatch } from "@/lib/scanner/patches"
 import { redactSecrets } from "@/lib/scanner/rules"
 import type { FindingExplanation, ScanFinding, ScanReport } from "@/lib/scanner/types"
@@ -27,11 +28,12 @@ export async function explainFinding(
   context: ExplainFindingContext,
 ): Promise<FindingExplanation> {
   const fallback = fallbackExplanation(finding)
-  if (!hasAiConfig()) return fallback
+  const aiModel = resolveAiModel()
+  if (!aiModel) return fallback
 
   try {
     const { output } = await generateText({
-      model: process.env.VIBESHIELD_MODEL || "openai/gpt-5.2-mini",
+      model: aiModel.model,
       output: Output.object({
         schema: ExplanationSchema,
       }),
@@ -89,10 +91,6 @@ export function fallbackExplanation(finding: ScanFinding): FindingExplanation {
     ],
     patch: createDeterministicPatch(finding),
   }
-}
-
-function hasAiConfig() {
-  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN)
 }
 
 function formatLocation(finding: ScanFinding) {

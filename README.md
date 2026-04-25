@@ -1,4 +1,4 @@
-# v0-hack
+# VibeShield
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [v0](https://v0.app).
 
@@ -11,7 +11,7 @@ Main flows:
 - `/scan` accepts either a public GitHub repo URL or GitHub login for repository selection.
 - `/report/[scanId]` renders the real scan report.
 - `/api/github/repos` lists repositories for a GitHub-authenticated user.
-- `/api/scan/[scanId]/explain` generates AI explanations and patch previews when AI Gateway is configured, and falls back deterministically otherwise.
+- `/api/scan/[scanId]/explain` generates AI explanations and patch previews when AI Gateway, Claude/Anthropic, or DeepSeek is configured, and falls back deterministically otherwise.
 
 The scanner never executes repository code, never runs `npm install` inside user projects, never accepts ZIP uploads, and only reads supported text files server-side through GitHub APIs.
 
@@ -44,6 +44,18 @@ VIBESHIELD_IDENTITY_SALT=
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` and `VIBESHIELD_IDENTITY_SALT` must stay server-only. The tables have RLS enabled and no public policies; route handlers persist reports and quota counters with the service role key.
+
+## AI provider keys
+
+Do not commit provider keys. Add them in Vercel/v0 environment variables or local `.env.local` only.
+
+VibeShield supports three real AI paths:
+
+- AI Gateway: set `AI_GATEWAY_API_KEY` or use Vercel OIDC, plus `VIBESHIELD_MODEL`.
+- Claude/Anthropic: set `VIBESHIELD_AI_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, and optionally `VIBESHIELD_ANTHROPIC_MODEL`.
+- DeepSeek: set `VIBESHIELD_AI_PROVIDER=deepseek`, `DEEPSEEK_API_KEY`, and optionally `VIBESHIELD_DEEPSEEK_MODEL`.
+
+If `VIBESHIELD_AI_PROVIDER` is not set, the server tries AI Gateway first, then Claude/Anthropic, then DeepSeek. If no provider is configured, scans still run and explanations fall back to deterministic recommendations.
 
 ## Built with v0
 
