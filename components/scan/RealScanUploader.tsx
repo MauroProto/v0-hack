@@ -37,6 +37,27 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   const accessToken = session?.access_token
 
   useEffect(() => {
+    if (!scanFinished || !pendingScanId) return
+
+    const reportPath = `/report/${pendingScanId}`
+    let fallbackTimer: number | undefined
+    const redirectTimer = window.setTimeout(() => {
+      router.push(reportPath)
+
+      fallbackTimer = window.setTimeout(() => {
+        if (window.location.pathname !== reportPath) {
+          window.location.assign(reportPath)
+        }
+      }, 1000)
+    }, 650)
+
+    return () => {
+      window.clearTimeout(redirectTimer)
+      if (fallbackTimer) window.clearTimeout(fallbackTimer)
+    }
+  }, [pendingScanId, router, scanFinished])
+
+  useEffect(() => {
     if (!supabase) return
 
     supabase.auth.getSession().then(({ data }) => {
@@ -112,12 +133,6 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
       setScanFinished(true)
     } catch (scanError) {
       handleScanFailure(scanError instanceof Error ? scanError.message : "Scan failed.")
-    }
-  }
-
-  const handleScanProgressComplete = () => {
-    if (pendingScanId) {
-      router.push(`/report/${pendingScanId}`)
     }
   }
 
@@ -273,7 +288,6 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
             <ScanProgress
               key={scanKey}
               done={scanFinished}
-              onComplete={handleScanProgressComplete}
             />
           )}
 

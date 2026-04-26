@@ -17,10 +17,9 @@ const fmt = (s: number) =>
 
 type Props = {
   done?: boolean
-  onComplete?: () => void
 }
 
-export function ScanProgress({ done = false, onComplete }: Props) {
+export function ScanProgress({ done = false }: Props) {
   const [step, setStep] = useState(0)
   const [now, setNow] = useState(0)
 
@@ -30,15 +29,13 @@ export function ScanProgress({ done = false, onComplete }: Props) {
   const totalSec = acc
 
   useEffect(() => {
-    if (step >= STAGES.length) {
-      onComplete?.()
-      return
-    }
+    if (done || step >= STAGES.length - 1) return
+
     const speed = done ? 8 : 1
     const ms = (STAGES[step].duration / speed) * 1000
     const t = setTimeout(() => setStep((s) => s + 1), ms)
     return () => clearTimeout(t)
-  }, [step, done, onComplete])
+  }, [step, done])
 
   useEffect(() => {
     const t0 = Date.now()
@@ -46,7 +43,8 @@ export function ScanProgress({ done = false, onComplete }: Props) {
     return () => clearInterval(i)
   }, [totalSec])
 
-  const complete = step >= STAGES.length
+  const complete = done
+  const renderedStep = done ? STAGES.length : step
 
   return (
     <div className="scan-progress" style={{ marginTop: 18 }}>
@@ -60,7 +58,7 @@ export function ScanProgress({ done = false, onComplete }: Props) {
       <div className="timeline">
         {STAGES.map((s, i) => {
           const state: "done" | "active" | "pending" =
-            i < step ? "done" : i === step ? "active" : "pending"
+            i < renderedStep ? "done" : i === renderedStep ? "active" : "pending"
           const startStr = fmt(starts[i])
           const endStr = fmt(starts[i] + s.duration)
           const time =

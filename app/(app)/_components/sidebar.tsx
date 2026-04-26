@@ -30,13 +30,6 @@ const PRIMARY: Item[] = [
     match: (p) => p === "/scan" || p.startsWith("/report/"),
   },
   { key: "scans", label: "Scan history", icon: "scan", href: "/scans" },
-  {
-    key: "repos",
-    label: "GitHub repos",
-    icon: "book",
-    href: "/repositories",
-    match: (p) => p.startsWith("/repositories"),
-  },
 ]
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -59,10 +52,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             </button>
           </div>
 
-          <div className="org-card">
-            <div className="avatar">VS</div>
-            <div className="name">GitHub security scanner</div>
-            <span className="plan">20 scans/month</span>
+          <div className="quota-card">
+            <div className="quota-row">
+              <span className="quota-label">Monthly limit</span>
+              <span className="quota-value"><b>20</b> scans</span>
+            </div>
+            <div className="quota-bar"><span style={{ width: "100%" }} /></div>
           </div>
 
           <nav className="side-nav">
@@ -98,13 +93,6 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         </div>
 
         <div className="app-side-bottom">
-          <div className="cycle-meter">
-            <div className="row">
-              <span>Beta · free for now</span>
-              <b>MVP</b>
-            </div>
-            <div className="bar"><span style={{ width: "100%" }} /></div>
-          </div>
           <div className="user-card">
             <div className="avatar">GH</div>
             <div className="info">
