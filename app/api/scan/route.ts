@@ -62,7 +62,20 @@ export async function POST(request: Request) {
       sourceType: "github",
       sourceLabel: extracted.sourceLabel,
     })
-    const reviewedReport = await reviewProjectWithAi(deterministicReport, extracted.files)
+    const reviewedReport = await reviewProjectWithAi(
+      {
+        ...deterministicReport,
+        repository: {
+          owner: repo.owner,
+          repo: repo.repo,
+          ref: extracted.ref,
+          defaultBranch: extracted.defaultBranch,
+          private: extracted.private,
+          htmlUrl: extracted.htmlUrl,
+        },
+      },
+      extracted.files,
+    )
 
     const report = await saveScanReport(
       attachReportOwner(

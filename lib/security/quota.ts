@@ -46,10 +46,14 @@ export class SecurityError extends Error {
   }
 }
 
-export async function assertBurstAllowed(identity: RequestIdentity, action: "scan" | "explain") {
+export async function assertBurstAllowed(identity: RequestIdentity, action: "scan" | "explain" | "pull_request") {
   const limit = readPositiveInt(
-    action === "scan" ? process.env.VIBESHIELD_SCAN_BURST_LIMIT : process.env.VIBESHIELD_EXPLAIN_BURST_LIMIT,
-    action === "scan" ? 6 : 10,
+    action === "scan"
+      ? process.env.VIBESHIELD_SCAN_BURST_LIMIT
+      : action === "pull_request"
+        ? process.env.VIBESHIELD_PULL_REQUEST_BURST_LIMIT
+        : process.env.VIBESHIELD_EXPLAIN_BURST_LIMIT,
+    action === "scan" ? 6 : action === "pull_request" ? 3 : 10,
   )
   const windowSeconds = readPositiveInt(process.env.VIBESHIELD_BURST_WINDOW_SECONDS, 60)
   const resetAt = Date.now() + windowSeconds * 1000

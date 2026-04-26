@@ -3,11 +3,21 @@
 import { useMemo, useState } from "react"
 import { Icon } from "@/app/(app)/_components/icons"
 import { generateIssueBody, getRiskLabel } from "@/lib/scanner/patches"
-import type { AuditTrailEvent, FindingCategory, ScanFinding, ScanReport, Severity } from "@/lib/scanner/types"
+import type { AuditTrailEvent, FindingCategory, ScanFinding, ScanPullRequest, ScanReport, Severity } from "@/lib/scanner/types"
 
-export function ScanResultsClient({ initialReport, authToken }: { initialReport: ScanReport; authToken?: string | null }) {
+export function ScanResultsClient({
+  initialReport,
+  authToken,
+  githubToken,
+}: {
+  initialReport: ScanReport
+  authToken?: string | null
+  githubToken?: string | null
+}) {
   const [report, setReport] = useState(initialReport)
   const [loadingAi, setLoadingAi] = useState(false)
+  const [creatingPr, setCreatingPr] = useState(false)
+  const [pullRequest, setPullRequest] = useState<ScanPullRequest | undefined>(initialReport.pullRequest)
   const [copied, setCopied] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const counts = useMemo(() => countSeverities(report.findings), [report.findings])
@@ -18,7 +28,7 @@ export function ScanResultsClient({ initialReport, authToken }: { initialReport:
     try {
       const response = await fetch(`/api/scan/${report.id}/explain`, {
         method: "POST",
-        headers: authHeaders(authToken),
+        headers: authHeaders({ authToken }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Could not generate AI explanations.")
@@ -27,6 +37,31 @@ export function ScanResultsClient({ initialReport, authToken }: { initialReport:
       setError(aiError instanceof Error ? aiError.message : "Could not generate AI explanations.")
     } finally {
       setLoadingAi(false)
+    }
+  }
+
+  const createPullRequest = async () => {
+    setError(null)
+
+    if (!githubToken) {
+      setError("Login with GitHub and scan a repository from your account before creating a PR.")
+      return
+    }
+
+    setCreatingPr(true)
+    try {
+      const response = await fetch(`/api/scan/${report.id}/pull-request`, {
+        method: "POST",
+        headers: authHeaders({ authToken, githubToken }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error ?? "Could not create GitHub PR.")
+      setReport(data.report)
+      setPullRequest(data.pullRequest)
+    } catch (prError) {
+      setError(prError instanceof Error ? prError.message : "Could not create GitHub PR.")
+    } finally {
+      setCreatingPr(false)
     }
   }
 
@@ -61,9 +96,18 @@ export function ScanResultsClient({ initialReport, authToken }: { initialReport:
           <button className="btn btn-outline" onClick={copyIssueBody} type="button">
             <Icon.doc style={{ width: 14, height: 14 }} /> <span>{copied === "issue" ? "Copied" : "Copy GitHub issue body"}</span>
           </button>
-          <button className="btn btn-accent" onClick={generateFixes} disabled={loadingAi} type="button">
-            <Icon.wand style={{ width: 14, height: 14 }} /> <span>{loadingAi ? "Generating..." : "Generate AI fixes"}</span>
+          <button className="btn btn-outline" onClick={generateFixes} disabled={loadingAi} type="button">
+            <Icon.wand style={{ width: 14, height: 14 }} /> <span>{loadingAi ? "Generating..." : "Generate patch previews"}</span>
           </button>
+          {pullRequest ? (
+            <a className="btn btn-accent" href={pullRequest.url} target="_blank" rel="noreferrer">
+              <Icon.branch style={{ width: 14, height: 14 }} /> <span>Open PR #{pullRequest.number}</span>
+            </a>
+          ) : (
+            <button className="btn btn-accent" onClick={createPullRequest} disabled={creatingPr} type="button">
+              <Icon.branch style={{ width: 14, height: 14 }} /> <span>{creatingPr ? "Creating PR..." : "Create GitHub PR"}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -91,6 +135,8 @@ export function ScanResultsClient({ initialReport, authToken }: { initialReport:
                 <span>{error}</span>
               </div>
             )}
+
+            {pullRequest && <PullRequestPanel pullRequest={pullRequest} />}
 
             <div className="app-score-row">
               <div className="score-card score-main app-score-card">
@@ -248,6 +294,30 @@ function FindingCard({ finding }: { finding: ScanFinding }) {
   )
 }
 
+function PullRequestPanel({ pullRequest }: { pullRequest: ScanPullRequest }) {
+  return (
+    <div className="github-pr-panel">
+      <div className="github-pr-main">
+        <Icon.branch style={{ width: 18, height: 18 }} />
+        <div>
+          <b>GitHub PR created</b>
+          <span>
+            Branch <code>{pullRequest.branch}</code> into <code>{pullRequest.base}</code>
+          </span>
+        </div>
+      </div>
+      <div className="github-pr-meta">
+        <span>{pullRequest.filesChanged.length} files changed</span>
+        <span>{pullRequest.appliedFixes.length} safe fixes applied</span>
+        <span>{pullRequest.skippedFixes.length} review-required</span>
+      </div>
+      <a className="btn btn-outline" href={pullRequest.url} target="_blank" rel="noreferrer">
+        Open PR #{pullRequest.number}
+      </a>
+    </div>
+  )
+}
+
 function ScoreRing({ value, tone }: { value: number; tone: "ok" | "warn" | "danger" }) {
   const radius = 26
   const circumference = 2 * Math.PI * radius
@@ -341,6 +411,9 @@ function formatMetadata(metadata: Record<string, unknown>) {
     .join(" · ")
 }
 
-function authHeaders(accessToken?: string | null) {
-  return accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
+function authHeaders({ authToken, githubToken }: { authToken?: string | null; githubToken?: string | null }) {
+  return {
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+    ...(githubToken ? { "X-GitHub-Token": githubToken } : {}),
+  }
 }

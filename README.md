@@ -12,6 +12,7 @@ Main flows:
 - `/report/[scanId]` renders the real scan report.
 - `/api/github/repos` lists repositories for a GitHub-authenticated user.
 - `/api/scan/[scanId]/explain` generates AI explanations and patch previews when AI Gateway, Claude/Anthropic, or DeepSeek is configured, and falls back deterministically otherwise.
+- `/api/scan/[scanId]/pull-request` creates a real GitHub remediation PR for authenticated scans when the GitHub token can push to the repository.
 
 The scanner never executes repository code, never runs `npm install` inside user projects, never accepts ZIP uploads, and only reads supported text files server-side through GitHub APIs.
 
@@ -23,6 +24,7 @@ Security limits:
 - GitHub repository scans are bounded by supported text file count, per-file size and total text size.
 - Public mode reads only public repositories. GitHub login mode lists and scans repositories through GitHub REST API metadata, tree and blob endpoints.
 - Secrets are redacted before responses and before AI prompts.
+- PR creation uses the user's GitHub OAuth token, creates a short-lived `vibeshield/scan-*` branch, applies only low-risk automated hygiene fixes, and leaves app-specific auth/rate-limit/code changes as review-required patch previews.
 
 ## Supabase persistence
 

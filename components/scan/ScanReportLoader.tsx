@@ -63,7 +63,15 @@ export function ScanReportLoader({ scanId }: { scanId: string }) {
     return () => controller.abort()
   }, [scanId, session?.access_token, sessionChecked])
 
-  if (report) return <ScanResultsClient initialReport={report} authToken={session?.access_token ?? null} />
+  if (report) {
+    return (
+      <ScanResultsClient
+        initialReport={report}
+        authToken={session?.access_token ?? null}
+        githubToken={session?.provider_token ?? null}
+      />
+    )
+  }
 
   return (
     <>

@@ -29,6 +29,26 @@ export interface FindingExplanation {
   patch?: PatchSuggestion
 }
 
+export interface ScanRepositoryRef {
+  owner: string
+  repo: string
+  ref: string
+  defaultBranch: string
+  private: boolean
+  htmlUrl: string
+}
+
+export interface ScanPullRequest {
+  url: string
+  number: number
+  branch: string
+  base: string
+  filesChanged: string[]
+  appliedFixes: string[]
+  skippedFixes: string[]
+  createdAt: string
+}
+
 export interface ScanFinding {
   id: string
   severity: Severity
@@ -60,6 +80,8 @@ export interface ScanReport {
   createdAt: string
   projectName: string
   framework?: string
+  repository?: ScanRepositoryRef
+  pullRequest?: ScanPullRequest
   ownerHash?: string
   ownerKind?: "supabase_user" | "anonymous"
   sourceType: "github"
