@@ -1,15 +1,13 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
+import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
+import type { Session } from "@supabase/supabase-js"
+import type { ScanReport } from "@/lib/scanner/types"
+import { createBrowserSupabaseClient } from "@/lib/supabase/client"
 import { Icon } from "./icons"
-
-type Repo = { name: string; status: "warn" | "ok"; href: string }
-
-const REPOS: Repo[] = [
-  { name: "GitHub login", status: "ok", href: "/scan" },
-  { name: "public GitHub URL", status: "ok", href: "/scan" },
-]
 
 type Item = {
   key: string
@@ -35,11 +33,62 @@ const PRIMARY: Item[] = [
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname() || ""
   const router = useRouter()
+  const supabase = useMemo(() => createBrowserSupabaseClient(), [])
+  const [session, setSession] = useState<Session | null>(null)
+  const [sessionChecked, setSessionChecked] = useState(!supabase)
+  const [reports, setReports] = useState<ScanReport[]>([])
+  const [historyState, setHistoryState] = useState<"idle" | "loading" | "error">("loading")
+  const profile = getGitHubProfile(session)
 
   const isActive = (it: Item) => {
     if (it.match) return it.match(pathname)
     return pathname === it.href
   }
+
+  useEffect(() => {
+    if (!supabase) return
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setSessionChecked(true)
+    })
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession)
+      setSessionChecked(true)
+    })
+
+    return () => data.subscription.unsubscribe()
+  }, [supabase])
+
+  useEffect(() => {
+    if (!sessionChecked) return
+
+    const controller = new AbortController()
+
+    async function loadRecentReports() {
+      setHistoryState("loading")
+
+      try {
+        const response = await fetch("/api/scans", {
+          headers: authHeaders(session?.access_token),
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error ?? "Could not load reports.")
+        setReports(data.reports ?? [])
+        setHistoryState("idle")
+      } catch {
+        if (controller.signal.aborted) return
+        setHistoryState("error")
+      }
+    }
+
+    void loadRecentReports()
+
+    return () => controller.abort()
+  }, [pathname, session?.access_token, sessionChecked])
 
   return (
     <>
@@ -75,29 +124,31 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             })}
           </nav>
 
-          <div className="side-section-label">Scan sources</div>
-          <div className="side-nav">
-            {REPOS.map((r) => (
-              <Link
-                key={r.name}
-                href={r.href}
-                className="repo-link"
-                data-active={pathname === r.href}
-                onClick={onClose}
-              >
-                <span className="dot" data-status={r.status} />
-                <span>{r.name}</span>
-              </Link>
-            ))}
-          </div>
+          <ReportHistoryNav
+            reports={reports}
+            state={historyState}
+            pathname={pathname}
+            onClose={onClose}
+          />
         </div>
 
         <div className="app-side-bottom">
           <div className="user-card">
-            <div className="avatar">GH</div>
+            {profile.avatarUrl ? (
+              <Image
+                className="avatar avatar-image"
+                src={profile.avatarUrl}
+                alt=""
+                width={30}
+                height={30}
+                unoptimized
+              />
+            ) : (
+              <div className="avatar">{profile.initials}</div>
+            )}
             <div className="info">
-              <b>GitHub-first</b>
-              <span>server-side analysis</span>
+              <b>{profile.name}</b>
+              <span>{profile.subtitle}</span>
             </div>
           </div>
         </div>
@@ -111,4 +162,114 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       />
     </>
   )
+}
+
+function ReportHistoryNav({
+  reports,
+  state,
+  pathname,
+  onClose,
+}: {
+  reports: ScanReport[]
+  state: "idle" | "loading" | "error"
+  pathname: string
+  onClose: () => void
+}) {
+  return (
+    <>
+      <div className="side-section-head">
+        <span>Report history</span>
+        <Link href="/scans" onClick={onClose}>All</Link>
+      </div>
+
+      <div className="side-report-list">
+        {state === "loading" && reports.length === 0 ? (
+          <div className="side-report-empty">Loading reports...</div>
+        ) : state === "error" ? (
+          <div className="side-report-empty">History unavailable</div>
+        ) : reports.length === 0 ? (
+          <div className="side-report-empty">No reports yet</div>
+        ) : (
+          reports.map((report) => (
+            <Link
+              key={report.id}
+              href={`/report/${report.id}`}
+              className="side-report-link"
+              data-active={pathname === `/report/${report.id}`}
+              onClick={onClose}
+            >
+              <span className="side-report-score" data-tone={scoreTone(report.riskScore)}>
+                {report.riskScore}
+              </span>
+              <span className="side-report-copy">
+                <b>{report.projectName}</b>
+                <em>{report.findings.length} findings · {formatShortDate(report.createdAt)}</em>
+              </span>
+            </Link>
+          ))
+        )}
+      </div>
+    </>
+  )
+}
+
+function scoreTone(score: number) {
+  if (score >= 50) return "danger"
+  if (score >= 20) return "warn"
+  return "ok"
+}
+
+function formatShortDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(value))
+}
+
+function authHeaders(accessToken?: string | null) {
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
+}
+
+function getGitHubProfile(session: Session | null) {
+  if (!session) {
+    return {
+      name: "Public mode",
+      subtitle: "paste a public repo",
+      initials: "GH",
+      avatarUrl: null,
+    }
+  }
+
+  const metadata = session.user.user_metadata ?? {}
+  const name =
+    stringValue(metadata.full_name) ||
+    stringValue(metadata.name) ||
+    stringValue(metadata.user_name) ||
+    stringValue(metadata.preferred_username) ||
+    session.user.email ||
+    "GitHub user"
+  const username =
+    stringValue(metadata.user_name) ||
+    stringValue(metadata.preferred_username) ||
+    stringValue(metadata.userName)
+
+  return {
+    name,
+    subtitle: username ? `@${username}` : "GitHub connected",
+    initials: initialsForName(name),
+    avatarUrl: stringValue(metadata.avatar_url) || stringValue(metadata.picture),
+  }
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function initialsForName(name: string) {
+  const [first, second] = name
+    .replace(/@.+$/, "")
+    .split(/\s+/)
+    .filter(Boolean)
+
+  return `${first?.[0] ?? "G"}${second?.[0] ?? ""}`.toUpperCase()
 }

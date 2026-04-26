@@ -1,3 +1,5 @@
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import path from "node:path"
 import { getSupabaseServiceClient, isSupabaseConfigured } from "@/lib/supabase/server"
 import type { ScanReport } from "./types"
 
@@ -5,6 +7,8 @@ const TABLE = "vibeshield_scan_reports"
 
 type StoreGlobal = typeof globalThis & {
   __vibeshieldScanStore?: Map<string, ScanReport>
+  __vibeshieldScanStoreLoaded?: boolean
+  __vibeshieldScanStoreLoadPromise?: Promise<void>
 }
 
 type ScanReportRow = {
@@ -31,14 +35,20 @@ function getMemoryStore() {
 }
 
 export function getStorageMode() {
-  return isSupabaseConfigured() ? "supabase" : "memory"
+  if (isSupabaseConfigured()) return "supabase"
+  if (localFileStoreEnabled()) return "local_file"
+  return "memory"
 }
 
 export async function saveScanReport(report: ScanReport) {
+  await ensureLocalStoreLoaded()
   getMemoryStore().set(report.id, report)
 
   const supabase = getSupabaseServiceClient()
-  if (!supabase) return report
+  if (!supabase) {
+    await persistLocalStore()
+    return report
+  }
 
   const row: Omit<ScanReportRow, "updated_at"> & { updated_at?: string } = {
     id: report.id,
@@ -62,6 +72,7 @@ export async function saveScanReport(report: ScanReport) {
 }
 
 export async function getScanReport(scanId: string) {
+  await ensureLocalStoreLoaded()
   const memoryReport = getMemoryStore().get(scanId)
   if (memoryReport) return memoryReport
 
@@ -90,6 +101,7 @@ export async function updateScanReport(scanId: string, updater: (report: ScanRep
 }
 
 export async function listScanReports(ownerHash?: string) {
+  await ensureLocalStoreLoaded()
   const memoryReports = [...getMemoryStore().values()].filter((report) => canListReport(report, ownerHash))
 
   if (getStorageMode() === "supabase" && process.env.VIBESHIELD_ENABLE_PUBLIC_SCAN_LIST !== "true") {
@@ -155,4 +167,95 @@ function mergeReports(primary: ScanReport[], secondary: ScanReport[]) {
 
 function sortReports(reports: ScanReport[]) {
   return reports.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+async function ensureLocalStoreLoaded() {
+  if (!localFileStoreEnabled()) return
+  if (storeGlobal.__vibeshieldScanStoreLoaded) return
+  if (storeGlobal.__vibeshieldScanStoreLoadPromise) {
+    await storeGlobal.__vibeshieldScanStoreLoadPromise
+    return
+  }
+
+  storeGlobal.__vibeshieldScanStoreLoadPromise = loadLocalStore()
+  await storeGlobal.__vibeshieldScanStoreLoadPromise
+}
+
+async function loadLocalStore() {
+  try {
+    const raw = await readFile(localStorePath(), "utf8")
+    const parsed = JSON.parse(raw) as { reports?: unknown }
+    const reports = Array.isArray(parsed.reports) ? parsed.reports : []
+    const store = getMemoryStore()
+
+    for (const report of reports) {
+      if (isPersistedScanReport(report)) store.set(report.id, report)
+    }
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      storeGlobal.__vibeshieldScanStoreLoaded = true
+      return
+    }
+
+    console.error("VibeShield local scan store read failed", error instanceof Error ? error.message : "unknown error")
+  } finally {
+    storeGlobal.__vibeshieldScanStoreLoaded = true
+    storeGlobal.__vibeshieldScanStoreLoadPromise = undefined
+  }
+}
+
+async function persistLocalStore() {
+  if (!localFileStoreEnabled()) return
+
+  const filePath = localStorePath()
+  const tmpPath = `${filePath}.tmp`
+  const reports = sortReports([...getMemoryStore().values()])
+
+  try {
+    await mkdir(path.dirname(filePath), { recursive: true })
+    await writeFile(
+      tmpPath,
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt: new Date().toISOString(),
+          reports,
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    )
+    await rename(tmpPath, filePath)
+  } catch (error) {
+    console.error("VibeShield local scan store write failed", error instanceof Error ? error.message : "unknown error")
+  }
+}
+
+function localFileStoreEnabled() {
+  if (isSupabaseConfigured()) return false
+  if (process.env.VIBESHIELD_DISABLE_LOCAL_FILE_STORE === "true") return false
+  return process.env.NODE_ENV !== "production" || process.env.VIBESHIELD_ENABLE_LOCAL_FILE_STORE === "true"
+}
+
+function localStorePath() {
+  const fileName = (process.env.VIBESHIELD_LOCAL_STORE_FILE || "scan-reports.json").replace(/[^\w.-]/g, "_")
+  return path.join(process.cwd(), ".vibeshield", fileName)
+}
+
+function isPersistedScanReport(value: unknown): value is ScanReport {
+  if (!value || typeof value !== "object") return false
+  const report = value as Partial<ScanReport>
+  return Boolean(
+    typeof report.id === "string" &&
+      typeof report.createdAt === "string" &&
+      typeof report.projectName === "string" &&
+      report.sourceType === "github" &&
+      Array.isArray(report.findings) &&
+      Array.isArray(report.auditTrail),
+  )
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return Boolean(error && typeof error === "object" && "code" in error)
 }

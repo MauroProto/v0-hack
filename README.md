@@ -28,7 +28,8 @@ Security limits:
 
 ## Supabase persistence
 
-Local development works without Supabase by using an in-memory report store.
+Local development works without Supabase by using a git-ignored local file store at `.vibeshield/scan-reports.json`.
+Production should use Supabase so reports and monthly quotas survive serverless instance changes.
 
 For v0/Vercel/Supabase persistence:
 
