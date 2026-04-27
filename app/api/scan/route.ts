@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { reviewProjectWithAi } from "@/lib/ai/reviewProject"
+import { getScannerLimitsForMode } from "@/lib/scanner/extract"
 import { scanProject } from "@/lib/scanner/scan"
 import { saveScanReport } from "@/lib/scanner/store"
+import { readJsonBodyWithLimit } from "@/lib/security/body"
 import { apiHeaders } from "@/lib/security/headers"
 import { attachReportOwner, getRequestIdentity, publicReport } from "@/lib/security/request"
 import {
   assertBurstAllowed,
-  assertContentLengthAllowed,
   consumeMonthlyScanQuota,
   isSecurityError,
   rateLimitHeaders,
@@ -28,6 +29,7 @@ const JsonScanSchema = z
     githubUrl: z.string().trim().min(1).optional(),
     repoFullName: z.string().trim().min(1).optional(),
     ref: z.string().trim().min(1).max(120).optional(),
+    analysisMode: z.enum(["rules", "normal", "max"]).default("normal"),
   })
   .refine((value) => value.githubUrl || value.repoFullName, {
     message: "Provide githubUrl or repoFullName.",
@@ -45,8 +47,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Use application/json. ZIP uploads are disabled for security." }, { status: 415, headers: apiHeaders() })
     }
 
-    assertContentLengthAllowed(request, 20_000)
-    const body = JsonScanSchema.parse(await request.json())
+    const body = JsonScanSchema.parse(await readJsonBodyWithLimit(request, 20_000))
     const token = getGitHubTokenFromRequest(request)
     const repo = body.repoFullName ? parseGitHubFullName(body.repoFullName) : parsePublicGitHubUrl(body.githubUrl ?? "")
     const quota = await consumeMonthlyScanQuota(identity)
@@ -55,12 +56,14 @@ export async function POST(request: Request) {
       ...repo,
       ref: body.ref,
       token,
+      limits: getScannerLimitsForMode(body.analysisMode),
     })
 
     const deterministicReport = scanProject({
       ...extracted,
       sourceType: "github",
       sourceLabel: extracted.sourceLabel,
+      analysisMode: body.analysisMode,
     })
     const reviewedReport = await reviewProjectWithAi(
       {
@@ -95,6 +98,7 @@ function getErrorStatus(error: unknown) {
   if (error instanceof SyntaxError) return 400
   if (error instanceof z.ZodError) return 400
   const message = getErrorMessage(error).toLowerCase()
+  if (message.includes("rate limit")) return 429
   if (message.includes("too large")) return 413
   if (message.includes("too many")) return 413
   if (message.includes("unsupported") || message.includes("github") || message.includes("repository")) return 400

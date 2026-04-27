@@ -1,4 +1,5 @@
 import path from "node:path"
+import type { ScanMode } from "./types"
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".ts",
@@ -48,6 +49,20 @@ export function getScannerLimits(): ScannerLimits {
     maxFiles: readPositiveInt(process.env.MAX_SCAN_FILES, 500),
     maxFileSizeBytes: readPositiveInt(process.env.MAX_SCAN_FILE_SIZE_BYTES, 500_000),
     maxTotalSizeBytes: readPositiveInt(process.env.MAX_SCAN_TOTAL_SIZE_BYTES, 10_000_000),
+  }
+}
+
+export function getScannerLimitsForMode(mode: ScanMode): ScannerLimits {
+  const base = getScannerLimits()
+  if (mode !== "max") return base
+
+  return {
+    maxFiles: Math.min(readPositiveInt(process.env.MAX_SCAN_FILES_MAX, Math.max(base.maxFiles * 2, 900)), 1_200),
+    maxFileSizeBytes: base.maxFileSizeBytes,
+    maxTotalSizeBytes: Math.min(
+      readPositiveInt(process.env.MAX_SCAN_TOTAL_SIZE_BYTES_MAX, Math.max(base.maxTotalSizeBytes * 2, 20_000_000)),
+      25_000_000,
+    ),
   }
 }
 

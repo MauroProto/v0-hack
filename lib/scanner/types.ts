@@ -1,4 +1,5 @@
 export type Severity = "critical" | "high" | "medium" | "low" | "info"
+export type ScanMode = "rules" | "normal" | "max"
 
 export type FindingCategory =
   | "secret_exposure"
@@ -83,9 +84,10 @@ export interface ScanReport {
   repository?: ScanRepositoryRef
   pullRequest?: ScanPullRequest
   ownerHash?: string
-  ownerKind?: "supabase_user" | "anonymous"
+  ownerKind?: "supabase_user" | "github_user" | "anonymous"
   sourceType: "github"
   sourceLabel: string
+  analysisMode: ScanMode
   status: "queued" | "running" | "completed" | "failed"
   riskScore: number
   filesInspected: number
@@ -115,6 +117,7 @@ export interface ScanInput {
   projectName: string
   sourceType: SourceType
   sourceLabel: string
+  analysisMode?: ScanMode
   files: ProjectFile[]
   auditTrail?: AuditTrailEvent[]
 }

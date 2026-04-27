@@ -1,39 +1,16 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
-import type { Session } from "@supabase/supabase-js"
+import { useEffect, useState } from "react"
 import { Icon } from "@/app/(app)/_components/icons"
-import { createBrowserSupabaseClient } from "@/lib/supabase/client"
 import type { ScanReport } from "@/lib/scanner/types"
 
 export function ScanHistoryClient() {
-  const supabase = useMemo(() => createBrowserSupabaseClient(), [])
-  const [session, setSession] = useState<Session | null>(null)
-  const [sessionChecked, setSessionChecked] = useState(!supabase)
   const [reports, setReports] = useState<ScanReport[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!supabase) return
-
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setSessionChecked(true)
-    })
-
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession)
-      setSessionChecked(true)
-    })
-
-    return () => data.subscription.unsubscribe()
-  }, [supabase])
-
-  useEffect(() => {
-    if (!sessionChecked) return
-
     const controller = new AbortController()
 
     async function loadReports() {
@@ -42,7 +19,6 @@ export function ScanHistoryClient() {
 
       try {
         const response = await fetch("/api/scans", {
-          headers: authHeaders(session?.access_token),
           cache: "no-store",
           signal: controller.signal,
         })
@@ -60,7 +36,7 @@ export function ScanHistoryClient() {
     void loadReports()
 
     return () => controller.abort()
-  }, [session?.access_token, sessionChecked])
+  }, [])
 
   return (
     <>
@@ -98,8 +74,8 @@ function ScanHistoryState({ loading, error }: { loading: boolean; error: string 
         <h2 className="empty-title">{loading ? "Loading scans" : error ? "Could not load scans" : "No scans yet"}</h2>
         <p className="empty-sub">
           {loading
-            ? "Fetching reports for your current browser session."
-            : error ?? "Login with GitHub or scan a public GitHub repo to create your first report."}
+              ? "Fetching reports for your current browser session."
+              : error ?? "Login with GitHub or scan a public GitHub repo to create your first report."}
         </p>
         {!loading && (
           <div className="empty-actions">
@@ -124,7 +100,7 @@ function ScanHistoryTable({ reports }: { reports: ScanReport[] }) {
           <b>{reports.length}</b> available for this identity
         </span>
         <span>·</span>
-        <span>static analysis only</span>
+        <span>static + hybrid AI analysis</span>
       </div>
 
       <div className="scan-table">
@@ -141,7 +117,7 @@ function ScanHistoryTable({ reports }: { reports: ScanReport[] }) {
             <Link key={report.id} href={`/report/${report.id}`} className="scan-row">
               <div className="scan-cell-repo">
                 <div className="scan-repo">{report.projectName}</div>
-                <div className="scan-branch mono">{report.framework ?? report.sourceType}</div>
+                <div className="scan-branch mono">{formatAnalysisMode(report.analysisMode)} · {report.framework ?? report.sourceType}</div>
               </div>
               <div className="scan-cell-commit mono">{report.sourceLabel}</div>
               <div className="scan-cell-score">
@@ -199,6 +175,7 @@ function formatDate(value: string) {
   }).format(new Date(value))
 }
 
-function authHeaders(accessToken?: string | null) {
-  return accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
+function formatAnalysisMode(mode: ScanReport["analysisMode"] | undefined) {
+  if (mode === "rules") return "rules"
+  return mode === "max" ? "max" : "normal"
 }

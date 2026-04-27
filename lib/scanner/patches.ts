@@ -41,6 +41,15 @@ export function createDeterministicPatch(finding: ScanFinding): PatchSuggestion 
   }
 
   if (finding.category === "ai_endpoint_risk") {
+    if (/execution bounds|tool-calling/i.test(finding.title)) {
+      return {
+        title: "Bound AI tool execution",
+        summary:
+          "Add explicit tool-call step limits, token limits, and per-user quota/budget checks before allowing the model to invoke tools.",
+        reviewRequired: true,
+      }
+    }
+
     return {
       title: "Add rate limiting before model calls",
       summary:
@@ -78,19 +87,32 @@ export function createDeterministicPatch(finding: ScanFinding): PatchSuggestion 
   return undefined
 }
 
-export function generateIssueBody(report: ScanReport) {
-  const topFindings = [...report.findings]
+export function filterReportFindings(report: ScanReport, findingIds?: string[]) {
+  if (!findingIds || findingIds.length === 0) return report
+
+  const allowed = new Set(findingIds)
+  const findings = report.findings.filter((finding) => allowed.has(finding.id))
+  return {
+    ...report,
+    riskScore: calculateRiskScore(findings),
+    findings,
+  }
+}
+
+export function generateIssueBody(report: ScanReport, findingIds?: string[]) {
+  const scopedReport = filterReportFindings(report, findingIds)
+  const topFindings = [...scopedReport.findings]
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
     .slice(0, 10)
 
   const lines = [
     "# VibeShield security scan",
     "",
-    `**Project:** ${report.projectName}`,
-    `**Source:** ${report.sourceLabel}`,
-    `**Risk score:** ${report.riskScore}/100 (${getRiskLabel(report.riskScore)})`,
-    `**Files inspected:** ${report.filesInspected}`,
-    `**Findings:** ${report.findings.length}`,
+    `**Project:** ${scopedReport.projectName}`,
+    `**Source:** ${scopedReport.sourceLabel}`,
+    `**Risk score:** ${scopedReport.riskScore}/100 (${getRiskLabel(scopedReport.riskScore)})`,
+    `**Files inspected:** ${scopedReport.filesInspected}`,
+    `**Findings included:** ${scopedReport.findings.length} of ${report.findings.length}`,
     "",
     "## Top findings",
     "",

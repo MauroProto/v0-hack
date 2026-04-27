@@ -216,7 +216,6 @@ function Hero() {
                 <span className="logo"><span className="logo-mono"><img src="/logos/windsurf.png" alt="Windsurf" /></span><span className="name">Windsurf</span></span>
                 <span className="logo"><img src="/logos/replit.png" alt="Replit" /><span className="name">Replit</span></span>
                 <span className="logo"><span className="logo-mono"><img src="/logos/tempo.png" alt="Tempo" /></span><span className="name">Tempo</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/codex.png" alt="Codex" /></span><span className="name">Codex</span></span>
               </Fragment>
             ))}
           </div>
@@ -294,13 +293,13 @@ type Finding = {
 }
 
 const FINDINGS: Finding[] = [
-  { sev: "critical", msg: "Exposed OpenAI API key committed in code", path: "lib/openai.ts", line: 3, age: "just now", ico: <I.key /> },
-  { sev: "critical", msg: "Unauthenticated route exposes user records", path: "app/api/users/route.ts", line: 17, age: "just now", ico: <I.lock /> },
-  { sev: "high", msg: "AI chat endpoint has no rate limit or auth guard", path: "app/api/chat/route.ts", line: 24, age: "5s ago", ico: <I.bolt /> },
-  { sev: "high", msg: "MCP tool executes shell without allow-list", path: "tools/shell.ts", line: 42, age: "9s ago", ico: <I.sparkle /> },
-  { sev: "medium", msg: "Supabase service role key read from NEXT_PUBLIC_*", path: "lib/db.ts", line: 8, age: "12s ago", ico: <I.key /> },
-  { sev: "medium", msg: "Missing CSRF protection on mutation route", path: "app/api/checkout/route.ts", line: 31, age: "14s ago", ico: <I.lock /> },
-  { sev: "low", msg: "User input passed directly to model context", path: "app/api/chat/route.ts", line: 51, age: "18s ago", ico: <I.bolt /> },
+  { sev: "critical", msg: "Secret exposure rule", path: "committed env values", line: 1, age: "scanner", ico: <I.key /> },
+  { sev: "critical", msg: "Missing auth rule", path: "sensitive API routes", line: 1, age: "scanner", ico: <I.lock /> },
+  { sev: "high", msg: "AI abuse guard rule", path: "model endpoints", line: 1, age: "scanner", ico: <I.bolt /> },
+  { sev: "high", msg: "Unsafe tool dispatch rule", path: "agent/tool handlers", line: 1, age: "scanner", ico: <I.sparkle /> },
+  { sev: "medium", msg: "Public env misuse rule", path: "NEXT_PUBLIC_* values", line: 1, age: "scanner", ico: <I.key /> },
+  { sev: "medium", msg: "Input validation rule", path: "JSON request handlers", line: 1, age: "scanner", ico: <I.lock /> },
+  { sev: "low", msg: "Production hardening rule", path: "Next.js/Vercel signals", line: 1, age: "scanner", ico: <I.bolt /> },
 ]
 
 function ScoreRing({ value }: { value: number }) {
@@ -362,8 +361,8 @@ function Dashboard() {
             <div className="dash-dots"><span /><span /><span /></div>
             <div className="dash-url">
               <I.lock style={{ width: 12, height: 12 }} />
-              <span>app.vibeshield.dev/scans/</span>
-              <span className="path">report/scan_7f3a91</span>
+              <span>app.vibeshield.dev/</span>
+              <span className="path">report/{'{scanId}'}</span>
             </div>
             <span className="pill" style={{ height: 22, fontSize: 11 }}>
               <span className="dot" /> scan complete
@@ -376,10 +375,10 @@ function Dashboard() {
               <div className="dash-head">
                 <div className="title">
                   <div className="crumb">
-                    VibeShield <I.chevron style={{ width: 12, height: 12 }} /> sample-next-app{" "}
-                    <I.chevron style={{ width: 12, height: 12 }} /> report preview
+                    VibeShield <I.chevron style={{ width: 12, height: 12 }} /> real scan output{" "}
+                    <I.chevron style={{ width: 12, height: 12 }} /> report interface
                   </div>
-                  <h3>Security report <span className="repo">· main @ 1f3c2a8</span></h3>
+                  <h3>Security report <span className="repo">· GitHub tree + blobs</span></h3>
                 </div>
                 <div className="actions">
                   <span className="btn btn-outline"><I.share /> Share</span>
@@ -451,15 +450,15 @@ function Dashboard() {
               </div>
 
               <div className="timeline">
-                <TimelineItem state="done" title="Loaded project archive" sub="184 files · TypeScript, Next.js · no code execution" time="00:00 → 00:03" />
-                <TimelineItem state="done" title="Detected framework signals" sub="Next.js App Router · AI SDK usage · client components" time="00:03 → 00:08" />
-                <TimelineItem state="done" title="Secret & key sweep" sub="Matched 14 providers · 1 exposed OpenAI key, 1 Supabase service role misplacement" time="00:08 → 00:19" />
-                <TimelineItem state="done" title="Route & auth graph" sub="Walked 31 routes · 6 lack an auth guard · 2 allow public writes" time="00:19 → 00:31" />
+	                <TimelineItem state="done" title="Read GitHub tree" sub="Server-side REST API · no ZIP upload · no code execution" time="stage 1" />
+	                <TimelineItem state="done" title="Detect framework signals" sub="Next.js, React, AI SDK and client component signals" time="stage 2" />
+	                <TimelineItem state="done" title="Secret & key sweep" sub="Provider key formats, env files and NEXT_PUBLIC misuse" time="stage 3" />
+	                <TimelineItem state="done" title="Route & auth graph" sub="API route, auth, validation and mutation patterns" time="stage 4" />
                 <TimelineItem
                   state="active"
                   title="AI endpoint & tool review"
                   sub="Analyzing chat routes, MCP tools and rate limits"
-                  time="00:31 → now"
+	                  time="stage 5"
                   code={
                     <>
                       <span className="c"># checking</span>{"\n"}
@@ -571,7 +570,7 @@ function Features() {
               <div className="share-card">
                 <div className="avatar" />
                 <div className="txt">
-                  <span>Maya copied <b style={{ color: "var(--fg)" }}>sample-next-app report</b> for review</span>
+	                  <span>Copy a generated <b style={{ color: "var(--fg)" }}>VibeShield report</b> for review</span>
                   <small>app.vibeshield.dev/report/{'{scanId}'}</small>
                 </div>
                 <span className="btn btn-outline" style={{ height: 28, fontSize: 12 }} aria-hidden="true">

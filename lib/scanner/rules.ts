@@ -14,9 +14,20 @@ const AI_ENDPOINT_SIGNALS =
   /\b(generateText|streamText|generateObject|streamObject|openai\.chat\.completions|anthropic\.messages\.create|model\s*:|tools\s*:)\b/i
 const AI_IMPORT_SIGNALS = /\bfrom\s+["']ai["']|from\s+["']@ai-sdk\/|from\s+["']openai["']|from\s+["']@anthropic-ai\//i
 const RATE_LIMIT_SIGNALS = /\b(rateLimit|ratelimit|upstash|limit\(|quota|budget|BotID|botid|verifyBot|turnstile|recaptcha)\b/i
+const AI_STEP_LIMIT_SIGNALS = /\b(maxSteps|maxToolRoundtrips|stopWhen|stepCountIs|toolChoice|maxTokens|budget|quota)\b/i
 const VALIDATION_SIGNALS = /\b(zod|\.parse\(|\.safeParse\(|yup|valibot|superstruct)\b/i
 const JSON_PARSE_SIGNALS = /\bawait\s+(req|request)\.json\(\)/i
 const TOOL_CONTEXT_SIGNALS = /\b(tools?|agents?|mcp|function calling|toolName|availableTools)\b/i
+const WEBHOOK_PATH_SIGNAL = /\/webhooks?\//i
+const WEBHOOK_PROVIDER_SIGNAL = /\b(stripe|github|clerk|svix|supabase|resend|polar|lemonsqueezy|webhook)\b/i
+const WEBHOOK_SIGNATURE_SIGNALS =
+  /\b(constructEvent|verifyWebhook|verifySignature|stripe-signature|svix-signature|x-hub-signature|x-signature|createHmac|timingSafeEqual|crypto\.subtle|Webhook\s*\()/i
+const PERMISSIVE_CORS_SIGNALS =
+  /\b(Access-Control-Allow-Origin["']?\s*[:,]\s*["']\*["']|origin\s*:\s*(true|["']\*["'])|cors\s*\(\s*\{[^}]*origin\s*:\s*(true|["']\*["']))/i
+const UNSAFE_DATABASE_QUERY_SIGNALS =
+  /\b(\$queryRawUnsafe|\$executeRawUnsafe|(?:db|pool|client|connection)\.query\s*\(\s*`[^`]*\$\{[^}]*\b(req|request|body|input|params|searchParams)\b)/i
+const INSTALL_SCRIPT_NAMES = new Set(["preinstall", "install", "postinstall", "prepare"])
+const RISKY_INSTALL_SCRIPT_SIGNALS = /\b(curl|wget|bash|sh|node\s+-e|npx|pnpm\s+dlx|bunx)\b/i
 
 const DANGEROUS_NEXT_PUBLIC_NAMES = [
   "NEXT_PUBLIC_OPENAI_API_KEY",
@@ -104,15 +115,20 @@ export function collectRuleFindings(files: ProjectFile[]): RuleScanResult {
     scanDangerousNextPublic(file, add)
     scanAdminRouteWithoutAuth(file, add)
     scanAiEndpointWithoutGuard(file, add)
+    scanAiToolCallingWithoutBounds(file, add)
     scanUnsafeToolCalling(file, add)
     scanMissingInputValidation(file, add)
+    scanWebhookWithoutSignature(file, add)
+    scanPermissiveCors(file, add)
+    scanCookieHardening(file, add)
+    scanUnsafeDatabaseQuery(file, add)
     scanDangerousCode(file, add)
     scanRustDangerousCode(file, add)
+    scanPackageScripts(file, add)
     scanSensitiveClientData(file, add)
   }
 
   scanVercelHardening(files, signals, add)
-  scanCoverageSignals(files, signals, add)
 
   return { findings, signals, stats }
 }
@@ -124,6 +140,9 @@ export function detectProjectSignals(files: ProjectFile[]): ProjectSignals {
   const hasPagesRouter = paths.some((path) => path.startsWith("pages/"))
   const hasNextConfig = paths.some((path) => /^next\.config\.(mjs|js|ts|cjs)$/.test(path))
   const hasVite = paths.some((path) => /^vite\.config\.(mjs|js|ts|cjs)$/.test(path))
+  const hasPythonManifest = paths.some((path) =>
+    /(^|\/)(pyproject\.toml|requirements\.txt|setup\.py|setup\.cfg|Pipfile)$/.test(path),
+  )
   const hasCargoToml = paths.some((path) => path === "Cargo.toml" || path.endsWith("/Cargo.toml"))
   const hasRust = hasCargoToml || paths.some((path) => path.endsWith(".rs"))
   const hasTauri =
@@ -140,6 +159,7 @@ export function detectProjectSignals(files: ProjectFile[]): ProjectSignals {
   else if (hasVite) framework = "React/Vite"
   else if (hasTauri) framework = "Tauri/Rust"
   else if (hasRust) framework = "Rust"
+  else if (hasPythonManifest) framework = "Python"
 
   return {
     framework,
@@ -165,7 +185,7 @@ function scanCommittedEnvFile(file: ProjectFile, add: (finding: RuleFinding) => 
   const name = basename(file.path)
   if (!ENV_FILE_NAMES.has(name)) return
 
-  const secretLike = hasSecretLikeContent(file.text)
+  const secretLike = hasSecretLikeContent(file)
   add({
     severity: secretLike ? "critical" : "medium",
     category: "secret_exposure",
@@ -187,7 +207,7 @@ function scanSecretPatterns(file: ProjectFile, add: (finding: RuleFinding) => vo
     for (const match of file.text.matchAll(pattern.regex)) {
       const index = match.index ?? 0
       const { line, lineNumber } = lineAtIndex(file.text, index)
-      if (isObviousPlaceholder(line)) continue
+      if (isObviousPlaceholder(line) || isExampleSecretPlaceholder(file.path, line)) continue
 
       add({
         severity: "critical",
@@ -208,8 +228,7 @@ function scanSecretPatterns(file: ProjectFile, add: (finding: RuleFinding) => vo
   file.text.split(/\r?\n/).forEach((line, index) => {
     if (!GENERIC_SECRET_NAMES.test(line)) return
     if (!/[=:]/.test(line)) return
-    if (isObviousPlaceholder(line)) return
-    if (!lineHasAssignedValue(line)) return
+    if (!lineHasConcreteSecretValue(file.path, line)) return
 
     add({
       severity: "critical",
@@ -229,6 +248,8 @@ function scanSecretPatterns(file: ProjectFile, add: (finding: RuleFinding) => vo
 
 function scanDangerousNextPublic(file: ProjectFile, add: (finding: RuleFinding) => void) {
   file.text.split(/\r?\n/).forEach((line, index) => {
+    if (isCommentOnlyLine(line)) return
+
     const matches = line.match(/\bNEXT_PUBLIC_[A-Z0-9_]+\b/g)
     if (!matches) return
 
@@ -237,16 +258,17 @@ function scanDangerousNextPublic(file: ProjectFile, add: (finding: RuleFinding) 
       const containsDanger = /SECRET|PRIVATE|SERVICE_ROLE|DATABASE_URL/.test(name)
       const tokenLike = /TOKEN/.test(name)
       if (!exactDanger && !containsDanger && !tokenLike) continue
+      const examplePlaceholder = isExampleSecretPlaceholder(file.path, line)
 
       add({
-        severity: tokenLike && !containsDanger && !exactDanger ? "high" : "critical",
+        severity: examplePlaceholder || (tokenLike && !containsDanger && !exactDanger) ? "high" : "critical",
         category: "public_env_misuse",
         title: "Dangerous NEXT_PUBLIC environment variable",
-        description: `${name} is exposed to browser bundles because it uses the NEXT_PUBLIC_ prefix.`,
+        description: `${name} is exposed to browser bundles because it uses the NEXT_PUBLIC_ prefix. In an example file this is still an unsafe env contract, not a leaked secret.`,
         filePath: file.path,
         lineStart: index + 1,
         evidence: redactSecrets(line.trim()),
-        confidence: 0.97,
+        confidence: examplePlaceholder ? 0.78 : 0.97,
         recommendation: "Move this value to server-only env vars and access it only from server routes/actions.",
         patchable: true,
         source: "rule",
@@ -296,6 +318,29 @@ function scanAiEndpointWithoutGuard(file: ProjectFile, add: (finding: RuleFindin
   })
 }
 
+function scanAiToolCallingWithoutBounds(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (!isApiRoute(file.path)) return
+  if (!/\btools\s*:/.test(file.text)) return
+  if (!/\b(generateText|streamText|generateObject|streamObject)\b/i.test(file.text)) return
+  if (AI_STEP_LIMIT_SIGNALS.test(file.text)) return
+
+  const hit = findLineMatching(file.text, /\btools\s*:/)
+  add({
+    severity: "medium",
+    category: "ai_endpoint_risk",
+    title: "AI tool-calling endpoint lacks explicit execution bounds",
+    description:
+      "This endpoint exposes tools to a model but does not show an explicit step, tool-round, token, quota, or budget limit. That increases excessive-agency and cost-abuse risk.",
+    filePath: file.path,
+    lineStart: hit?.lineNumber ?? firstHandlerLine(file.text),
+    evidence: redactSecrets(hit?.line.trim() ?? ""),
+    confidence: 0.78,
+    recommendation: "Set explicit tool-call step limits, token limits, and budget/quota checks before allowing model-controlled tool execution.",
+    patchable: true,
+    source: "rule",
+  })
+}
+
 function scanUnsafeToolCalling(file: ProjectFile, add: (finding: RuleFinding) => void) {
   if (!TOOL_CONTEXT_SIGNALS.test(file.text) && !/\/(agent|mcp|tool)s?\//i.test(`/${file.path}/`)) return
 
@@ -329,6 +374,101 @@ function scanUnsafeToolCalling(file: ProjectFile, add: (finding: RuleFinding) =>
   }
 }
 
+function scanWebhookWithoutSignature(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (!isApiRoute(file.path)) return
+  if (!WEBHOOK_PATH_SIGNAL.test(`/${normalizePath(file.path)}/`) && !/\bwebhooks?\b/i.test(file.text)) return
+  if (!/\bawait\s+(req|request)\.(text|json|arrayBuffer)\(\)|NextResponse\.json|Response\.json/i.test(file.text)) return
+  if (WEBHOOK_SIGNATURE_SIGNALS.test(file.text)) return
+
+  const hit =
+    findLineMatching(file.text, /\bawait\s+(req|request)\.(text|json|arrayBuffer)\(\)/i) ??
+    findLineMatching(file.text, WEBHOOK_PROVIDER_SIGNAL)
+
+  add({
+    severity: "high",
+    category: "input_validation",
+    title: "Webhook route lacks obvious signature verification",
+    description: "This webhook-style API route processes inbound provider data without a visible HMAC/signature verification step.",
+    filePath: file.path,
+    lineStart: hit?.lineNumber ?? firstHandlerLine(file.text),
+    evidence: redactSecrets(hit?.line.trim() ?? ""),
+    confidence: 0.8,
+    recommendation: "Verify the provider signature using the raw request body before parsing or trusting webhook payload fields.",
+    patchable: false,
+    source: "rule",
+  })
+}
+
+function scanPermissiveCors(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  const isRelevantConfig = /(?:next\.config\.|vercel\.json$|middleware\.|route\.)/i.test(file.path)
+  if (!isRelevantConfig) return
+
+  const hit = findLineMatching(file.text, PERMISSIVE_CORS_SIGNALS)
+  if (!hit) return
+
+  add({
+    severity: "medium",
+    category: "client_data_exposure",
+    title: "Permissive CORS policy detected",
+    description: "A wildcard or reflected CORS policy can expose authenticated browser-accessible responses to untrusted origins.",
+    filePath: file.path,
+    lineStart: hit.lineNumber,
+    evidence: redactSecrets(hit.line.trim()),
+    confidence: 0.78,
+    recommendation: "Restrict CORS to explicit trusted origins and avoid combining wildcard origins with credentials or sensitive routes.",
+    patchable: false,
+    source: "rule",
+  })
+}
+
+function scanCookieHardening(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file.path)) return
+
+  const lines = file.text.split(/\r?\n/)
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (!/\b(cookies\(\)\.set|response\.cookies\.set|Set-Cookie)\b/i.test(line)) continue
+
+    const window = lines.slice(index, index + 10).join("\n")
+    if (!/\b(session|token|auth|jwt|refresh|access)\b/i.test(window)) continue
+    if (/\bhttpOnly\s*:\s*true\b/i.test(window) && /\bsecure\s*:\s*true\b/i.test(window) && /\bsameSite\s*:/i.test(window)) continue
+
+    add({
+      severity: "medium",
+      category: "client_data_exposure",
+      title: "Session-like cookie missing hardened attributes",
+      description: "A session/auth/token cookie is set without all obvious httpOnly, secure, and sameSite protections nearby.",
+      filePath: file.path,
+      lineStart: index + 1,
+      evidence: redactSecrets(line.trim()),
+      confidence: 0.72,
+      recommendation: "Set session cookies with httpOnly, secure, sameSite, a narrow path, and the shortest practical expiration.",
+      patchable: false,
+      source: "rule",
+    })
+    return
+  }
+}
+
+function scanUnsafeDatabaseQuery(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  const hit = findLineMatching(file.text, UNSAFE_DATABASE_QUERY_SIGNALS)
+  if (!hit) return
+
+  add({
+    severity: "high",
+    category: "input_validation",
+    title: "Unsafe database query construction detected",
+    description: "This code uses an unsafe raw query helper or appears to interpolate request-controlled data into a SQL query.",
+    filePath: file.path,
+    lineStart: hit.lineNumber,
+    evidence: redactSecrets(hit.line.trim()),
+    confidence: 0.82,
+    recommendation: "Use parameterized queries or safe ORM methods, and validate request-controlled inputs before they reach the database layer.",
+    patchable: false,
+    source: "rule",
+  })
+}
+
 function scanMissingInputValidation(file: ProjectFile, add: (finding: RuleFinding) => void) {
   if (!isApiRoute(file.path)) return
   if (!JSON_PARSE_SIGNALS.test(file.text)) return
@@ -348,6 +488,38 @@ function scanMissingInputValidation(file: ProjectFile, add: (finding: RuleFindin
     patchable: true,
     source: "rule",
   })
+}
+
+function scanPackageScripts(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (basename(file.path) !== "package.json") return
+
+  let parsed: { scripts?: Record<string, unknown> }
+  try {
+    parsed = JSON.parse(file.text) as { scripts?: Record<string, unknown> }
+  } catch {
+    return
+  }
+
+  for (const [scriptName, scriptValue] of Object.entries(parsed.scripts ?? {})) {
+    if (!INSTALL_SCRIPT_NAMES.has(scriptName)) continue
+    if (typeof scriptValue !== "string") continue
+    if (!RISKY_INSTALL_SCRIPT_SIGNALS.test(scriptValue)) continue
+
+    const hit = findLineMatching(file.text, new RegExp(`"${escapeRegExp(scriptName)}"\\s*:`))
+    add({
+      severity: "high",
+      category: "dependency_signal",
+      title: "Risky package install script detected",
+      description: "Install lifecycle scripts that download or execute shell commands are high-risk supply-chain behavior in AI-generated projects.",
+      filePath: file.path,
+      lineStart: hit?.lineNumber,
+      evidence: redactSecrets(`${scriptName}: ${scriptValue}`),
+      confidence: 0.86,
+      recommendation: "Remove remote bootstrap commands from install scripts, pin trusted tooling, and document any required setup step explicitly.",
+      patchable: false,
+      source: "rule",
+    })
+  }
 }
 
 function scanDangerousCode(file: ProjectFile, add: (finding: RuleFinding) => void) {
@@ -426,7 +598,7 @@ function scanRustDangerousCode(file: ProjectFile, add: (finding: RuleFinding) =>
 function scanSensitiveClientData(file: ProjectFile, add: (finding: RuleFinding) => void) {
   if (!isClientComponent(file.text)) return
 
-  const hit = findLineMatching(file.text, CLIENT_SENSITIVE_NAMES)
+  const hit = findSensitiveClientDataLeak(file.text)
   if (!hit) return
 
   add({
@@ -444,28 +616,59 @@ function scanSensitiveClientData(file: ProjectFile, add: (finding: RuleFinding) 
   })
 }
 
-function scanCoverageSignals(files: ProjectFile[], signals: ProjectSignals, add: (finding: RuleFinding) => void) {
-  if (signals.isNextApp || signals.hasVite) return
+function findSensitiveClientDataLeak(text: string) {
+  const lines = text.split(/\r?\n/)
+  for (const [index, line] of lines.entries()) {
+    if (isSensitiveClientDataLeakLine(line)) return { line, lineNumber: index + 1 }
+  }
+  return null
+}
 
-  const anchor =
-    files.find((file) => basename(file.path) === "Cargo.toml") ??
-    files.find((file) => basename(file.path) === "package.json") ??
-    files.find((file) => basename(file.path).toUpperCase() === "README") ??
-    files[0]
-  if (!anchor) return
+function isSensitiveClientDataLeakLine(line: string) {
+  if (!CLIENT_SENSITIVE_NAMES.test(line)) return false
+  if (isCommentOnlyLine(line)) return false
 
-  add({
-    severity: "info",
-    category: "dependency_signal",
-    title: "Repository is outside primary Next.js/React coverage",
-    description: "VibeShield scanned supported text files server-side, but the highest-confidence MVP rules are optimized for Next.js, React, and AI endpoint repositories.",
-    filePath: anchor.path,
-    evidence: `Detected framework: ${signals.framework ?? "unknown"}`,
-    confidence: 0.9,
-    recommendation: "Treat this report as baseline static analysis. For this stack, review the surfaced secrets, dangerous-code signals, and configuration findings before shipping.",
-    patchable: false,
-    source: "rule",
-  })
+  const trimmed = line.trim()
+  if (!trimmed) return false
+  if (/\btype\s*=\s*["']password["']/i.test(trimmed)) return false
+  if (/\b(useState|useForm|register|htmlFor|placeholder|aria-label|label)\b/i.test(trimmed) && !hasNonEmptySensitiveLiteral(trimmed)) {
+    return false
+  }
+  if (/^<[^>]+>/.test(trimmed) && !hasSensitiveObjectLiteral(trimmed) && !hasSensitiveEnvRead(trimmed)) return false
+
+  return hasSensitiveEnvRead(trimmed) || hasSensitiveObjectLiteral(trimmed) || hasNonEmptySensitiveLiteral(trimmed)
+}
+
+function hasSensitiveEnvRead(line: string) {
+  return /\b(process\.env|import\.meta\.env|Deno\.env)\.?[A-Z0-9_]*(SECRET|TOKEN|PRIVATE|API_KEY|DATABASE_URL|SERVICE_ROLE)[A-Z0-9_]*/i.test(line)
+}
+
+function hasSensitiveObjectLiteral(line: string) {
+  const match = line.match(
+    /\b(password|token|apiKey|api_key|secret|ssn|creditCard|credit_card|customerEmail)\b\s*:\s*["'`]([^"'`]+)["'`]/i,
+  )
+  if (!match) return false
+  return isConcreteClientSensitiveValue(match[2])
+}
+
+function hasNonEmptySensitiveLiteral(line: string) {
+  const directAssignment = line.match(
+    /\b(password|token|apiKey|api_key|secret|ssn|creditCard|credit_card|customerEmail)\b\s*=\s*["'`]([^"'`]+)["'`]/i,
+  )
+  if (directAssignment && isConcreteClientSensitiveValue(directAssignment[2])) return true
+
+  const stateInitializer = line.match(
+    /\b(password|token|apiKey|api_key|secret|ssn|creditCard|credit_card|customerEmail)\b[\s\S]{0,80}\buseState\s*\(\s*["'`]([^"'`]+)["'`]/i,
+  )
+  return Boolean(stateInitializer && isConcreteClientSensitiveValue(stateInitializer[2]))
+}
+
+function isConcreteClientSensitiveValue(value: string) {
+  const trimmed = value.trim()
+  if (trimmed.length < 3) return false
+  if (isObviousPlaceholder(trimmed)) return false
+  if (/^(true|false|null|undefined)$/i.test(trimmed)) return false
+  return true
 }
 
 function scanVercelHardening(files: ProjectFile[], signals: ProjectSignals, add: (finding: RuleFinding) => void) {
@@ -544,16 +747,16 @@ export function redactSecrets(input: string) {
     )
 }
 
-function hasSecretLikeContent(text: string) {
-  if (
-    SECRET_PATTERNS.some((pattern) => {
-      pattern.regex.lastIndex = 0
-      return pattern.regex.test(text)
-    })
-  ) {
-    return true
+function hasSecretLikeContent(file: ProjectFile) {
+  for (const pattern of SECRET_PATTERNS) {
+    pattern.regex.lastIndex = 0
+    for (const match of file.text.matchAll(pattern.regex)) {
+      const { line } = lineAtIndex(file.text, match.index ?? 0)
+      if (!isObviousPlaceholder(line) && !isExampleSecretPlaceholder(file.path, line)) return true
+    }
   }
-  return text.split(/\r?\n/).some((line) => GENERIC_SECRET_NAMES.test(line) && lineHasAssignedValue(line) && !isObviousPlaceholder(line))
+
+  return file.text.split(/\r?\n/).some((line) => GENERIC_SECRET_NAMES.test(line) && lineHasConcreteSecretValue(file.path, line))
 }
 
 function hasAuthSignal(text: string) {
@@ -563,14 +766,160 @@ function hasAuthSignal(text: string) {
   return false
 }
 
-function lineHasAssignedValue(line: string) {
+function extractAssignedValue(line: string) {
   const match = line.match(/[=:]\s*['"]?([^'"\s#]+)/)
-  if (!match) return false
-  return match[1].length >= 6
+  return match?.[1] ?? ""
+}
+
+function lineHasConcreteSecretValue(path: string, line: string) {
+  if (isCommentOnlyLine(line)) return false
+  if (isObviousPlaceholder(line) || isExampleSecretPlaceholder(path, line)) return false
+  if (isDocumentationSecretExample(path, line)) return false
+
+  const assigned = extractAssignedValue(line)
+  if (assigned.length < 6) return false
+  if (/\b(process\.env|import\.meta\.env|Deno\.env|os\.environ|env\.)\b/i.test(assigned)) return false
+  if (/^[A-Z0-9_]+$/.test(assigned) && !isEnvLike(path)) return false
+  return true
+}
+
+export function isDocumentationSecretExample(path: string, line: string) {
+  if (!isDocumentationPath(path)) return false
+  if (!GENERIC_SECRET_NAMES.test(line)) return false
+
+  const assigned = extractAssignedValue(line)
+  if (!assigned) return true
+  if (isObviousPlaceholder(line)) return true
+  if (isLocalOrExampleAssignedValue(assigned)) return true
+  if (hasHighConfidenceSecretShape(assigned)) return false
+
+  return true
 }
 
 function isObviousPlaceholder(line: string) {
-  return /\b(your[_-]?|example|placeholder|changeme|replace_me|todo|dummy|null|undefined)\b/i.test(line)
+  return /\b(your[_-]?|example|placeholder|changeme|change_me|replace_me|todo|dummy|null|undefined|redacted|demo|fake|sample|not[_-]?real|test[_-]?key|xxxx+|local[_-]?only)\b/i.test(line)
+}
+
+function isExampleSecretPlaceholder(path: string, line: string) {
+  if (!isExampleOrTemplatePath(path) && !isEnvLike(path)) return false
+
+  const assigned = extractAssignedValue(line)
+  if (!assigned) return true
+  if (/^<[^>]+>$/.test(assigned)) return true
+  if (/^\$\{?[A-Z0-9_]+\}?$/i.test(assigned)) return true
+  if (/^\*+$/.test(assigned) || /^x+$/i.test(assigned) || /^\.+$/.test(assigned)) return true
+  if (/^(sk|sk-ant|ghp|github_pat|vercel|sk_live|sk_test)[_-]?(demo|fake|redacted|example|placeholder|test)/i.test(assigned)) {
+    return true
+  }
+  return isObviousPlaceholder(line)
+}
+
+function isExampleOrTemplatePath(path: string) {
+  const normalized = normalizePath(path).toLowerCase()
+  const name = basename(path).toLowerCase()
+  return (
+    name === ".env.example" ||
+    name === ".env.sample" ||
+    name === ".env.template" ||
+    normalized.includes("/examples/") ||
+    normalized.includes("/fixtures/") ||
+    normalized.includes("/__tests__/") ||
+    normalized.includes("/docs/")
+  )
+}
+
+function isDocumentationPath(path: string) {
+  const normalized = normalizePath(path).toLowerCase()
+  const name = basename(path).toLowerCase()
+  return (
+    name === "readme" ||
+    name.startsWith("readme.") ||
+    normalized.endsWith(".md") ||
+    normalized.endsWith(".mdx") ||
+    normalized.endsWith(".txt") ||
+    normalized.includes("/docs/")
+  )
+}
+
+function isLocalOrExampleAssignedValue(value: string) {
+  const normalized = value.trim().replace(/^`|`$/g, "")
+  if (!normalized) return true
+  if (/^<[^>]+>$/.test(normalized)) return true
+  if (/^\$\{?[A-Z0-9_]+\}?$/i.test(normalized)) return true
+  if (/^\*+$/.test(normalized) || /^x+$/i.test(normalized) || /^\.+$/.test(normalized)) return true
+  if (/\b(username|user|password|pass|passwd|dbname|database_name|host|hostname|project|tenant|your-|your_|example|sample|demo|fake|placeholder|redacted)\b/i.test(normalized)) {
+    return true
+  }
+
+  try {
+    const parsed = new URL(normalized)
+    const host = parsed.hostname.toLowerCase()
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "0.0.0.0" ||
+      host === "::1" ||
+      host === "example.com" ||
+      host.endsWith(".example.com") ||
+      host.endsWith(".local")
+    ) {
+      return true
+    }
+    if (isObviousPlaceholder(`${parsed.username} ${parsed.password} ${parsed.pathname}`)) return true
+  } catch {
+    // Non-URL values are handled by placeholder and high-confidence shape checks.
+  }
+
+  return false
+}
+
+function hasHighConfidenceSecretShape(value: string) {
+  const normalized = value.trim().replace(/^`|`$/g, "")
+
+  for (const pattern of SECRET_PATTERNS) {
+    pattern.regex.lastIndex = 0
+    if (pattern.regex.test(normalized)) return true
+  }
+
+  if (looksLikeRealDatabaseUrl(normalized)) return true
+  return looksLikeHighEntropyToken(normalized)
+}
+
+function looksLikeRealDatabaseUrl(value: string) {
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    return false
+  }
+
+  if (!/^(postgres|postgresql|mysql|mongodb(?:\+srv)?|redis):$/.test(parsed.protocol)) return false
+  if (isLocalOrExampleAssignedValue(value)) return false
+  if (!parsed.password || parsed.password.length < 8) return false
+  if (isObviousPlaceholder(`${parsed.username} ${parsed.password} ${parsed.pathname}`)) return false
+  return true
+}
+
+function looksLikeHighEntropyToken(value: string) {
+  const normalized = value.trim().replace(/^`|`$/g, "")
+  if (normalized.length < 32 || normalized.length > 512) return false
+  if (/^https?:\/\//i.test(normalized)) return false
+  if (isObviousPlaceholder(normalized)) return false
+
+  const hasLower = /[a-z]/.test(normalized)
+  const hasUpper = /[A-Z]/.test(normalized)
+  const hasDigit = /\d/.test(normalized)
+  const hasSymbol = /[-_./+=]/.test(normalized)
+  return [hasLower, hasUpper, hasDigit, hasSymbol].filter(Boolean).length >= 3
+}
+
+function isEnvLike(path: string) {
+  const name = basename(path).toLowerCase()
+  return name === ".env" || name.startsWith(".env.")
+}
+
+function isCommentOnlyLine(line: string) {
+  return /^\s*(#|\/\/|\/\*)/.test(line)
 }
 
 function firstNonEmptyLine(text: string) {
@@ -604,4 +953,8 @@ function basename(path: string) {
 
 function normalizePath(path: string) {
   return path.replaceAll("\\", "/").replace(/^\/+/, "")
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }

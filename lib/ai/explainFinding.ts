@@ -21,6 +21,7 @@ const ExplanationSchema = z.object({
 
 export type ExplainFindingContext = Pick<ScanReport, "projectName" | "framework" | "sourceType" | "sourceLabel"> & {
   fileSnippet?: string
+  repositoryPrivate?: boolean
 }
 
 export async function explainFinding(
@@ -28,6 +29,10 @@ export async function explainFinding(
   context: ExplainFindingContext,
 ): Promise<FindingExplanation> {
   const fallback = fallbackExplanation(finding)
+  if (context.repositoryPrivate && process.env.VIBESHIELD_ALLOW_PRIVATE_AI_REVIEW !== "true") {
+    return fallback
+  }
+
   const aiModel = resolveAiModel()
   if (!aiModel) return fallback
 

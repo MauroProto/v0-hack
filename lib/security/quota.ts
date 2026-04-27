@@ -47,6 +47,8 @@ export class SecurityError extends Error {
 }
 
 export async function assertBurstAllowed(identity: RequestIdentity, action: "scan" | "explain" | "pull_request") {
+  if (localRateLimitsDisabled()) return
+
   const limit = readPositiveInt(
     action === "scan"
       ? process.env.VIBESHIELD_SCAN_BURST_LIMIT
@@ -79,6 +81,16 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity): Promis
   const limit = readPositiveInt(process.env.VIBESHIELD_MONTHLY_SCAN_QUOTA, 20)
   const windowStart = getUtcMonthStart()
   const resetAt = getNextUtcMonthStart()
+
+  if (localRateLimitsDisabled()) {
+    return {
+      limit,
+      remaining: limit,
+      resetAt: resetAt.toISOString(),
+      period: "monthly",
+    }
+  }
+
   const supabase = getSupabaseServiceClient()
 
   if (!supabase && persistentQuotaRequired()) {
@@ -126,7 +138,7 @@ export function assertContentLengthAllowed(request: Request, maxBytes: number) {
   if (!rawLength) return
 
   const contentLength = Number(rawLength)
-  if (!Number.isFinite(contentLength)) {
+  if (!Number.isFinite(contentLength) || contentLength < 0) {
     throw new SecurityError("Invalid Content-Length header.", 400, "invalid_content_length")
   }
 
@@ -175,6 +187,16 @@ function persistentQuotaUnavailable() {
     503,
     "persistent_quota_unavailable",
   )
+}
+
+function localRateLimitsDisabled() {
+  if (process.env.VERCEL === "1") return false
+
+  const value = process.env.VIBESHIELD_DISABLE_LOCAL_RATE_LIMITS?.trim().toLowerCase()
+  if (value === "true") return true
+  if (value === "false") return false
+
+  return process.env.NODE_ENV !== "production"
 }
 
 function consumeMemoryCounter(counters: Map<string, Counter>, key: string, limit: number, resetAt: number) {

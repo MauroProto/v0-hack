@@ -37,6 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
         framework: current.framework,
         sourceType: current.sourceType,
         sourceLabel: current.sourceLabel,
+        repositoryPrivate: current.repository?.private,
       })
 
       findings.push({

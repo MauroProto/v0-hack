@@ -14,10 +14,60 @@ create table if not exists public.vibeshield_scan_reports (
 alter table public.vibeshield_scan_reports
   add column if not exists owner_hash text;
 
+alter table public.vibeshield_scan_reports
+  add column if not exists updated_at timestamptz not null default now();
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'vibeshield_scan_reports_owner_hash_shape'
+      and conrelid = 'public.vibeshield_scan_reports'::regclass
+  ) then
+    alter table public.vibeshield_scan_reports
+      add constraint vibeshield_scan_reports_owner_hash_shape
+      check (owner_hash is null or owner_hash ~ '^[a-f0-9]{64}$');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'vibeshield_scan_reports_report_object'
+      and conrelid = 'public.vibeshield_scan_reports'::regclass
+  ) then
+    alter table public.vibeshield_scan_reports
+      add constraint vibeshield_scan_reports_report_object
+      check (jsonb_typeof(report) = 'object');
+  end if;
+end
+$$;
+
 alter table public.vibeshield_scan_reports enable row level security;
+alter table public.vibeshield_scan_reports force row level security;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'vibeshield_scan_reports'
+      and policyname = 'vibeshield_scan_reports_deny_client_access'
+  ) then
+    create policy vibeshield_scan_reports_deny_client_access
+      on public.vibeshield_scan_reports
+      for all
+      to anon, authenticated
+      using (false)
+      with check (false);
+  end if;
+end
+$$;
 
 revoke all on table public.vibeshield_scan_reports from anon;
 revoke all on table public.vibeshield_scan_reports from authenticated;
+grant select, insert, update, delete on table public.vibeshield_scan_reports to service_role;
 
 create index if not exists vibeshield_scan_reports_created_at_idx
   on public.vibeshield_scan_reports (created_at desc);
@@ -32,7 +82,7 @@ create index if not exists vibeshield_scan_reports_source_type_idx
   on public.vibeshield_scan_reports (source_type);
 
 comment on table public.vibeshield_scan_reports is
-  'VibeShield MVP scan reports. RLS is enabled and no public policies are defined; Next.js route handlers access it with the Supabase service role key only.';
+  'VibeShield MVP scan reports. RLS is enabled with deny-all client policies; Next.js route handlers access it with the Supabase service role key only.';
 
 create table if not exists public.vibeshield_scan_usage (
   subject_hash text not null,
@@ -42,10 +92,57 @@ create table if not exists public.vibeshield_scan_usage (
   primary key (subject_hash, window_start)
 );
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'vibeshield_scan_usage_subject_hash_shape'
+      and conrelid = 'public.vibeshield_scan_usage'::regclass
+  ) then
+    alter table public.vibeshield_scan_usage
+      add constraint vibeshield_scan_usage_subject_hash_shape
+      check (subject_hash ~ '^[a-f0-9]{64}$');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'vibeshield_scan_usage_window_month_start'
+      and conrelid = 'public.vibeshield_scan_usage'::regclass
+  ) then
+    alter table public.vibeshield_scan_usage
+      add constraint vibeshield_scan_usage_window_month_start
+      check (window_start = date_trunc('month', window_start::timestamp)::date);
+  end if;
+end
+$$;
+
 alter table public.vibeshield_scan_usage enable row level security;
+alter table public.vibeshield_scan_usage force row level security;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'vibeshield_scan_usage'
+      and policyname = 'vibeshield_scan_usage_deny_client_access'
+  ) then
+    create policy vibeshield_scan_usage_deny_client_access
+      on public.vibeshield_scan_usage
+      for all
+      to anon, authenticated
+      using (false)
+      with check (false);
+  end if;
+end
+$$;
 
 revoke all on table public.vibeshield_scan_usage from anon;
 revoke all on table public.vibeshield_scan_usage from authenticated;
+grant select, insert, update, delete on table public.vibeshield_scan_usage to service_role;
 
 create index if not exists vibeshield_scan_usage_updated_at_idx
   on public.vibeshield_scan_usage (updated_at desc);
@@ -61,7 +158,7 @@ returns table (
   scan_count integer
 )
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 declare

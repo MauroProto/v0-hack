@@ -1,13 +1,22 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import type { Session } from "@supabase/supabase-js"
 import { Icon } from "@/app/(app)/_components/icons"
 import { ScanProgress } from "@/app/(app)/_components/scan-progress"
-import { createBrowserSupabaseClient } from "@/lib/supabase/client"
 
 type Mode = "public" | "github"
+type AnalysisMode = "rules" | "normal" | "max"
+
+const ANALYSIS_MODES: Array<{
+  id: AnalysisMode
+  label: string
+  detail: string
+}> = [
+  { id: "rules", label: "Rules", detail: "no agent" },
+  { id: "normal", label: "Normal", detail: "rules + agent" },
+  { id: "max", label: "Max", detail: "deeper agent" },
+]
 
 type GitHubRepo = {
   id: number
@@ -19,12 +28,20 @@ type GitHubRepo = {
   language?: string | null
 }
 
+type GitHubAuthSession = {
+  authenticated: boolean
+  id?: number
+  login?: string
+  name?: string
+  avatarUrl?: string
+}
+
 export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mode }) {
   const router = useRouter()
-  const supabase = useMemo(() => createBrowserSupabaseClient(), [])
   const [mode, setMode] = useState<Mode>(initialMode)
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("normal")
   const [githubUrl, setGithubUrl] = useState("")
-  const [session, setSession] = useState<Session | null>(null)
+  const [githubSession, setGitHubSession] = useState<GitHubAuthSession>({ authenticated: false })
   const [repos, setRepos] = useState<GitHubRepo[]>([])
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null)
   const [loading, setLoading] = useState<"scan" | "login" | "repos" | null>(null)
@@ -33,8 +50,24 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   const [scanFinished, setScanFinished] = useState(false)
   const [scanKey, setScanKey] = useState(0)
 
-  const githubToken = session?.provider_token ?? undefined
-  const accessToken = session?.access_token
+  const githubConnected = githubSession.authenticated
+
+  const loadRepos = useCallback(async () => {
+    setLoading("repos")
+    setError(null)
+
+    try {
+      const response = await fetch("/api/github/repos", { cache: "no-store" })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error ?? "Could not list repositories.")
+      setRepos(data.repos)
+      setSelectedRepo(data.repos?.[0] ?? null)
+    } catch (repoError) {
+      setError(repoError instanceof Error ? repoError.message : "Could not list repositories.")
+    } finally {
+      setLoading(null)
+    }
+  }, [])
 
   useEffect(() => {
     if (!scanFinished || !pendingScanId) return
@@ -58,24 +91,24 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   }, [pendingScanId, router, scanFinished])
 
   useEffect(() => {
-    if (!supabase) return
+    let cancelled = false
 
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      if (data.session?.provider_token) void loadRepos(data.session.access_token, data.session.provider_token)
-    })
+    fetch("/api/auth/github/session", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => {
+        if (cancelled) return
+        const nextSession = (data.session ?? { authenticated: false }) as GitHubAuthSession
+        setGitHubSession(nextSession)
+        if (nextSession.authenticated) void loadRepos()
+      })
+      .catch(() => {
+        if (!cancelled) setGitHubSession({ authenticated: false })
+      })
 
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession)
-      if (nextSession?.provider_token) void loadRepos(nextSession.access_token, nextSession.provider_token)
-      if (!nextSession) {
-        setRepos([])
-        setSelectedRepo(null)
-      }
-    })
-
-    return () => data.subscription.unsubscribe()
-  }, [supabase])
+    return () => {
+      cancelled = true
+    }
+  }, [loadRepos])
 
   const beginScan = () => {
     setError(null)
@@ -102,8 +135,8 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     try {
       const response = await fetch("/api/scan", {
         method: "POST",
-        headers: requestHeaders(githubToken, accessToken),
-        body: JSON.stringify({ githubUrl: normalizeGithubInput(githubUrl) }),
+        headers: requestHeaders(),
+        body: JSON.stringify({ githubUrl: normalizeGithubInput(githubUrl), analysisMode }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Scan failed.")
@@ -115,7 +148,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   }
 
   const startRepoScan = async (repo: GitHubRepo) => {
-    if (!githubToken) {
+    if (!githubConnected) {
       handleScanFailure("Reconnect GitHub before scanning private or account repositories.")
       return
     }
@@ -124,8 +157,8 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     try {
       const response = await fetch("/api/scan", {
         method: "POST",
-        headers: requestHeaders(githubToken, accessToken),
-        body: JSON.stringify({ repoFullName: repo.fullName, ref: repo.defaultBranch }),
+        headers: requestHeaders(),
+        body: JSON.stringify({ repoFullName: repo.fullName, ref: repo.defaultBranch, analysisMode }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Scan failed.")
@@ -139,51 +172,14 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   const signInWithGitHub = async () => {
     setError(null)
     setLoading("login")
-
-    try {
-      if (!supabase) throw new Error("Supabase browser auth is not configured yet.")
-
-      const { error: authError } = await supabase.auth.signInWithOAuth({
-        provider: "github",
-        options: {
-          scopes: "repo read:user user:email",
-          redirectTo: `${window.location.origin}/scan`,
-        },
-      })
-
-      if (authError) throw authError
-    } catch (authError) {
-      setLoading(null)
-      setError(authError instanceof Error ? authError.message : "GitHub login failed.")
-    }
+    window.location.assign("/api/auth/github/start")
   }
 
   const signOut = async () => {
-    await supabase?.auth.signOut()
-    setSession(null)
+    await fetch("/api/auth/github/session", { method: "DELETE" })
+    setGitHubSession({ authenticated: false })
     setRepos([])
     setSelectedRepo(null)
-  }
-
-  async function loadRepos(authToken?: string, providerToken?: string) {
-    setLoading("repos")
-    setError(null)
-
-    try {
-      if (!providerToken) throw new Error("GitHub provider token is missing. Sign in with GitHub again.")
-
-      const response = await fetch("/api/github/repos", {
-        headers: requestHeaders(providerToken, authToken),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error ?? "Could not list repositories.")
-      setRepos(data.repos)
-      setSelectedRepo(data.repos?.[0] ?? null)
-    } catch (repoError) {
-      setError(repoError instanceof Error ? repoError.message : "Could not list repositories.")
-    } finally {
-      setLoading(null)
-    }
   }
 
   return (
@@ -214,6 +210,24 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
         </div>
 
         <div className="scan-body">
+          <fieldset className="analysis-mode-field" aria-label="Analysis depth">
+            <legend>Mode</legend>
+            <div className="analysis-mode-grid">
+              {ANALYSIS_MODES.map((option) => (
+                <button
+                  className="analysis-mode-choice"
+                  data-active={analysisMode === option.id}
+                  key={option.id}
+                  type="button"
+                  onClick={() => setAnalysisMode(option.id)}
+                >
+                  <b>{option.label}</b>
+                  <span>{option.detail}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
           {mode === "public" ? (
             <div className="scan-input real-github-input">
               <input
@@ -227,10 +241,10 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
             <div className="github-repo-panel">
               <div className="github-repo-head">
                 <div>
-                  <b>{session?.user?.email ?? "Connect GitHub"}</b>
-                  <span>{session ? "Choose a repository from your GitHub account." : "Login lists repositories through GitHub API metadata."}</span>
+                  <b>{githubSession.name ?? githubSession.login ?? "Connect GitHub"}</b>
+                  <span>{githubConnected ? "Choose a repository from your GitHub account." : "Login lists repositories through GitHub API metadata."}</span>
                 </div>
-                {session ? (
+                {githubConnected ? (
                   <button className="btn btn-outline" type="button" onClick={signOut}>
                     Sign out
                   </button>
@@ -242,13 +256,13 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
                 )}
               </div>
 
-              {session && (
+              {githubConnected && (
                 <>
                   <div className="repo-toolbar">
                     <button
                       className="btn btn-outline"
                       type="button"
-                      onClick={() => loadRepos(accessToken, githubToken)}
+                      onClick={() => loadRepos()}
                       disabled={loading === "repos"}
                     >
                       <Icon.scan style={{ width: 14, height: 14 }} />
@@ -322,10 +336,8 @@ function normalizeGithubInput(value: string) {
   return `https://github.com/${trimmed}`
 }
 
-function requestHeaders(githubToken?: string, accessToken?: string) {
+function requestHeaders() {
   return {
     "Content-Type": "application/json",
-    ...(githubToken ? { "X-GitHub-Token": githubToken } : {}),
-    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
   }
 }

@@ -9,8 +9,8 @@ import {
   type ScannerLimits,
 } from "@/lib/scanner/extract"
 import { generateIssueBody } from "@/lib/scanner/patches"
+import { getGitHubSessionFromHeaders } from "@/lib/security/github-session"
 import type { ExtractedProject, ProjectFile, ScanFinding, ScanPullRequest, ScanReport, ScanRepositoryRef } from "@/lib/scanner/types"
-import JSZip from "jszip"
 
 export interface ParsedGitHubUrl {
   owner: string
@@ -89,10 +89,8 @@ type GitHubPullRequestApi = {
 }
 
 const GITHUB_API = "https://api.github.com"
-const GITHUB_CODELOAD = "https://codeload.github.com"
 const GITHUB_REPO_RE = /^https:\/\/github\.com\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})(?:\.git)?\/?$/
 const GITHUB_FULL_NAME_RE = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})$/
-const DEFAULT_PUBLIC_ARCHIVE_REFS = ["main", "master"]
 
 export function parsePublicGitHubUrl(input: string): ParsedGitHubUrl {
   const trimmed = input.trim()
@@ -111,22 +109,22 @@ export function parseGitHubFullName(input: string): ParsedGitHubUrl {
 }
 
 export function getGitHubTokenFromRequest(request: Request) {
-  const header = request.headers.get("x-github-token")
-  const token = header?.trim()
-  if (!token) return undefined
-  if (!/^[A-Za-z0-9_./:=+-]{20,500}$/.test(token)) {
-    throw new Error("Invalid GitHub token format.")
-  }
-
-  return token
+  return getGitHubSessionFromHeaders(request.headers)?.token ?? getLocalGitHubToken()
 }
 
 export async function listAuthenticatedGitHubRepos(token: string): Promise<GitHubRepositorySummary[]> {
-  const response = await githubFetch(
-    `${GITHUB_API}/user/repos?per_page=100&sort=updated&direction=desc&affiliation=owner,collaborator,organization_member`,
-    token,
-  )
-  const repos = (await response.json()) as GitHubRepoApi[]
+  const maxPages = readPositiveInt(process.env.VIBESHIELD_GITHUB_REPO_LIST_MAX_PAGES, 5)
+  const repos: GitHubRepoApi[] = []
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const response = await githubFetch(
+      `${GITHUB_API}/user/repos?per_page=100&page=${page}&sort=updated&direction=desc&affiliation=owner,collaborator,organization_member`,
+      token,
+    )
+    const pageRepos = (await response.json()) as GitHubRepoApi[]
+    repos.push(...pageRepos)
+    if (pageRepos.length < 100) break
+  }
 
   return repos.map((repo) => ({
     id: repo.id,
@@ -148,51 +146,43 @@ export async function extractProjectFromGitHubRepo(input: {
 }): Promise<ExtractedProject & { sourceLabel: string; private: boolean; defaultBranch: string; ref: string; htmlUrl: string }> {
   const { owner, repo } = normalizeRepoParts(input.owner, input.repo)
   const limits = input.limits ?? getScannerLimits()
-  try {
-    const repository = await getRepository(owner, repo, input.token)
-    const ref = sanitizeRef(input.ref || repository.default_branch)
+  const repository = await getRepository(owner, repo, input.token)
+  const ref = sanitizeRef(input.ref || repository.default_branch)
 
-    if (repository.private && !input.token) {
-      throw new Error("Private repositories require GitHub login.")
-    }
+  if (repository.private && !input.token) {
+    throw new Error("Private repositories require GitHub login.")
+  }
 
-    const tree = await getRepositoryTree(owner, repo, ref, input.token)
-    const files = await fetchProjectFiles(owner, repo, tree, input.token, limits)
+  const tree = await getRepositoryTree(owner, repo, ref, input.token)
+  const files = await fetchProjectFiles(owner, repo, tree, input.token, limits)
 
-    if (files.length === 0) {
-      throw new Error("No supported text files were found in the GitHub repository.")
-    }
+  if (files.length === 0) {
+    throw new Error("No supported text files were found in the GitHub repository.")
+  }
 
-    return {
-      projectName: repository.name,
-      sourceLabel: `github.com/${owner}/${repo}#${ref}`,
-      private: repository.private,
-      defaultBranch: repository.default_branch,
-      ref,
-      htmlUrl: repository.html_url,
-      files,
-      auditTrail: [
-        auditEvent("Connect to GitHub repository", "complete", {
-          repository: `${owner}/${repo}`,
-          private: repository.private,
-          ref,
-        }),
-        auditEvent("Fetch GitHub tree via REST API", "complete", {
-          entries: tree.length,
-          truncated: false,
-        }),
-        auditEvent("Fetch supported blobs from GitHub", "complete", {
-          files: files.length,
-          totalTextBytes: files.reduce((total, file) => total + file.size, 0),
-        }),
-      ],
-    }
-  } catch (error) {
-    if (!input.token && isGitHubRateLimitError(error)) {
-      return extractPublicProjectFromArchive({ owner, repo, ref: input.ref, limits })
-    }
-
-    throw error
+  return {
+    projectName: repository.name,
+    sourceLabel: `github.com/${owner}/${repo}#${ref}`,
+    private: repository.private,
+    defaultBranch: repository.default_branch,
+    ref,
+    htmlUrl: repository.html_url,
+    files,
+    auditTrail: [
+      auditEvent("Connect to GitHub repository", "complete", {
+        repository: `${owner}/${repo}`,
+        private: repository.private,
+        ref,
+      }),
+      auditEvent("Fetch GitHub tree via REST API", "complete", {
+        entries: tree.length,
+        truncated: false,
+      }),
+      auditEvent("Fetch supported blobs from GitHub", "complete", {
+        files: files.length,
+        totalTextBytes: files.reduce((total, file) => total + file.size, 0),
+      }),
+    ],
   }
 }
 
@@ -237,22 +227,28 @@ async function fetchProjectFiles(
 
   const files: ProjectFile[] = []
   let totalTextBytes = 0
+  const concurrency = Math.min(readPositiveInt(process.env.VIBESHIELD_GITHUB_BLOB_CONCURRENCY, 6), 10)
 
-  for (const candidate of candidates) {
-    const blob = await getBlob(owner, repo, candidate.sha, token)
-    const bytes = decodeBlob(blob)
+  for (let index = 0; index < candidates.length; index += concurrency) {
+    const batch = candidates.slice(index, index + concurrency)
+    const blobs = await Promise.all(batch.map((candidate) => getBlob(owner, repo, candidate.sha, token)))
 
-    if (bytes.byteLength > limits.maxFileSizeBytes || shouldSkipLargeLockfile(candidate.path, bytes.byteLength)) continue
-    if (isProbablyBinary(bytes)) continue
+    for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
+      const candidate = batch[batchIndex]
+      const bytes = decodeBlob(blobs[batchIndex])
 
-    totalTextBytes += bytes.byteLength
-    if (totalTextBytes > limits.maxTotalSizeBytes) {
-      throw new Error(`Project text files exceed ${limits.maxTotalSizeBytes} bytes.`)
+      if (bytes.byteLength > limits.maxFileSizeBytes || shouldSkipLargeLockfile(candidate.path, bytes.byteLength)) continue
+      if (isProbablyBinary(bytes)) continue
+
+      totalTextBytes += bytes.byteLength
+      if (totalTextBytes > limits.maxTotalSizeBytes) {
+        throw new Error(`Project text files exceed ${limits.maxTotalSizeBytes} bytes.`)
+      }
+
+      const text = decodeUtf8(bytes)
+      if (text === null) continue
+      files.push({ path: candidate.path, size: bytes.byteLength, text })
     }
-
-    const text = decodeUtf8(bytes)
-    if (text === null) continue
-    files.push({ path: candidate.path, size: bytes.byteLength, text })
   }
 
   return files
@@ -583,7 +579,11 @@ async function githubFetch(url: string, token?: string, init: RequestInit = {}) 
     const details = await response.text().catch(() => "")
     const message = extractGitHubErrorMessage(details)
     if (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0") {
-      throw new GitHubApiError("GitHub public API rate limit exceeded.", response.status, "github_rate_limited")
+      throw new GitHubApiError(
+        "GitHub public API rate limit exceeded. In local development, login with GitHub or set VIBESHIELD_GITHUB_TOKEN in .env.local.",
+        response.status,
+        "github_rate_limited",
+      )
     }
     if (response.status === 401 || response.status === 403) throw new Error("GitHub authorization failed.")
     if (response.status === 404) throw new GitHubApiError("GitHub repository or file was not found.", response.status, "github_not_found")
@@ -596,126 +596,19 @@ async function githubFetch(url: string, token?: string, init: RequestInit = {}) 
   return response
 }
 
-async function extractPublicProjectFromArchive(input: {
-  owner: string
-  repo: string
-  ref?: string
-  limits: ScannerLimits
-}): Promise<ExtractedProject & { sourceLabel: string; private: boolean; defaultBranch: string; ref: string; htmlUrl: string }> {
-  const refs = input.ref ? [sanitizeRef(input.ref)] : DEFAULT_PUBLIC_ARCHIVE_REFS
-  const errors: string[] = []
+function getLocalGitHubToken() {
+  if (process.env.VERCEL === "1") return undefined
 
-  for (const ref of refs) {
-    try {
-      const archiveBytes = await downloadPublicArchive(input.owner, input.repo, ref, input.limits)
-      const files = await extractFilesFromArchive(archiveBytes, input.limits)
+  const explicit = process.env.VIBESHIELD_ALLOW_LOCAL_GITHUB_TOKEN?.trim().toLowerCase()
+  const localAllowed = explicit === "true" || (explicit !== "false" && process.env.NODE_ENV !== "production")
+  if (!localAllowed) return undefined
 
-      if (files.length === 0) {
-        throw new Error("No supported text files were found in the GitHub repository archive.")
-      }
-
-      return {
-        projectName: input.repo,
-        sourceLabel: `github.com/${input.owner}/${input.repo}#${ref}`,
-        private: false,
-        defaultBranch: ref,
-        ref,
-        htmlUrl: `https://github.com/${input.owner}/${input.repo}`,
-        files,
-        auditTrail: [
-          auditEvent("Connect to GitHub public archive", "complete", {
-            repository: `${input.owner}/${input.repo}`,
-            private: false,
-            ref,
-          }),
-          auditEvent("Download GitHub archive via codeload", "complete", {
-            compressedBytes: archiveBytes.byteLength,
-          }),
-          auditEvent("Extract supported files from GitHub archive", "complete", {
-            files: files.length,
-            totalTextBytes: files.reduce((total, file) => total + file.size, 0),
-          }),
-        ],
-      }
-    } catch (error) {
-      if (error instanceof ArchiveNotFoundError) {
-        errors.push(error.message)
-        continue
-      }
-
-      throw error
-    }
-  }
-
-  throw new Error(errors[0] ?? "GitHub repository archive was not found.")
-}
-
-async function downloadPublicArchive(owner: string, repo: string, ref: string, limits: ScannerLimits) {
-  const maxArchiveBytes = readPositiveInt(process.env.MAX_SCAN_ARCHIVE_SIZE_BYTES, Math.max(limits.maxTotalSizeBytes * 2, 20_000_000))
-  const response = await fetch(`${GITHUB_CODELOAD}/${owner}/${repo}/zip/refs/heads/${encodeURIComponent(ref)}`, {
-    headers: {
-      "User-Agent": "VibeShield",
-    },
-    cache: "no-store",
-  })
-
-  if (response.status === 404) throw new ArchiveNotFoundError(`GitHub archive ref ${ref} was not found.`)
-  if (!response.ok) throw new Error(`GitHub archive download failed with status ${response.status}.`)
-
-  const contentLength = Number(response.headers.get("content-length") ?? 0)
-  if (Number.isFinite(contentLength) && contentLength > maxArchiveBytes) {
-    throw new Error(`GitHub archive is too large. Maximum compressed size is ${maxArchiveBytes} bytes.`)
-  }
-
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > maxArchiveBytes) {
-    throw new Error(`GitHub archive is too large. Maximum compressed size is ${maxArchiveBytes} bytes.`)
-  }
-
-  return bytes
-}
-
-async function extractFilesFromArchive(archiveBytes: Uint8Array, limits: ScannerLimits) {
-  const zip = await JSZip.loadAsync(archiveBytes)
-  const candidates = Object.values(zip.files)
-    .filter((entry) => !entry.dir)
-    .map((entry) => ({
-      path: stripArchiveRoot(entry.name),
-      entry,
-    }))
-    .filter((candidate) => shouldConsiderProjectPath(candidate.path))
-
-  if (candidates.length > limits.maxFiles) {
-    throw new Error(`Project has too many supported files. Limit is ${limits.maxFiles}.`)
-  }
-
-  const files: ProjectFile[] = []
-  let totalTextBytes = 0
-
-  for (const candidate of candidates) {
-    const declaredSize = getZipEntryDeclaredSize(candidate.entry)
-    if (declaredSize !== null) {
-      if (declaredSize > limits.maxFileSizeBytes || shouldSkipLargeLockfile(candidate.path, declaredSize)) continue
-      if (totalTextBytes + declaredSize > limits.maxTotalSizeBytes) {
-        throw new Error(`Project text files exceed ${limits.maxTotalSizeBytes} bytes.`)
-      }
-    }
-
-    const bytes = await candidate.entry.async("uint8array")
-    if (bytes.byteLength > limits.maxFileSizeBytes || shouldSkipLargeLockfile(candidate.path, bytes.byteLength)) continue
-    if (isProbablyBinary(bytes)) continue
-
-    totalTextBytes += bytes.byteLength
-    if (totalTextBytes > limits.maxTotalSizeBytes) {
-      throw new Error(`Project text files exceed ${limits.maxTotalSizeBytes} bytes.`)
-    }
-
-    const text = decodeUtf8(bytes)
-    if (text === null) continue
-    files.push({ path: candidate.path, size: bytes.byteLength, text })
-  }
-
-  return files
+  return (
+    process.env.VIBESHIELD_GITHUB_TOKEN?.trim() ||
+    process.env.GITHUB_TOKEN?.trim() ||
+    process.env.GH_TOKEN?.trim() ||
+    undefined
+  )
 }
 
 function withRequiredGitignoreLines(current: string) {
@@ -865,21 +758,6 @@ function encodeGitHubPath(path: string) {
   return path.split("/").map(encodeURIComponent).join("/")
 }
 
-function getZipEntryDeclaredSize(entry: unknown) {
-  const rawSize = (entry as { _data?: { uncompressedSize?: unknown } })._data?.uncompressedSize
-  return typeof rawSize === "number" && Number.isFinite(rawSize) && rawSize >= 0 ? rawSize : null
-}
-
-function stripArchiveRoot(entryName: string) {
-  const normalized = normalizeProjectPath(entryName)
-  const parts = normalized.split("/")
-  return parts.length > 1 ? parts.slice(1).join("/") : normalized
-}
-
-function isGitHubRateLimitError(error: unknown) {
-  return error instanceof GitHubApiError && error.code === "github_rate_limited"
-}
-
 function isGitHubNotFoundError(error: unknown) {
   return error instanceof GitHubApiError && error.code === "github_not_found"
 }
@@ -897,8 +775,6 @@ class GitHubApiError extends Error {
     super(message)
   }
 }
-
-class ArchiveNotFoundError extends Error {}
 
 function decodeBlob(blob: GitHubBlobApi) {
   if (blob.encoding !== "base64" || !blob.content) {

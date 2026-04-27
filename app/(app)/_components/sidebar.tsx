@@ -2,11 +2,9 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import type { Session } from "@supabase/supabase-js"
 import type { ScanReport } from "@/lib/scanner/types"
-import { createBrowserSupabaseClient } from "@/lib/supabase/client"
 import { Icon } from "./icons"
 
 type Item = {
@@ -19,7 +17,21 @@ type Item = {
   match?: (path: string) => boolean
 }
 
+type GitHubAuthSession = {
+  authenticated: boolean
+  login?: string
+  name?: string
+  avatarUrl?: string
+}
+
 const PRIMARY: Item[] = [
+  {
+    key: "pulse",
+    label: "Live pulse",
+    icon: "bolt",
+    href: "/pulse",
+    live: true,
+  },
   {
     key: "current",
     label: "New scan",
@@ -33,12 +45,10 @@ const PRIMARY: Item[] = [
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname() || ""
   const router = useRouter()
-  const supabase = useMemo(() => createBrowserSupabaseClient(), [])
-  const [session, setSession] = useState<Session | null>(null)
-  const [sessionChecked, setSessionChecked] = useState(!supabase)
+  const [githubSession, setGitHubSession] = useState<GitHubAuthSession>({ authenticated: false })
   const [reports, setReports] = useState<ScanReport[]>([])
   const [historyState, setHistoryState] = useState<"idle" | "loading" | "error">("loading")
-  const profile = getGitHubProfile(session)
+  const profile = getGitHubProfile(githubSession)
 
   const isActive = (it: Item) => {
     if (it.match) return it.match(pathname)
@@ -46,24 +56,20 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   }
 
   useEffect(() => {
-    if (!supabase) return
+    async function loadGitHubSession() {
+      try {
+        const response = await fetch("/api/auth/github/session", { cache: "no-store" })
+        const data = await response.json()
+        setGitHubSession(data.session ?? { authenticated: false })
+      } catch {
+        setGitHubSession({ authenticated: false })
+      }
+    }
 
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setSessionChecked(true)
-    })
-
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession)
-      setSessionChecked(true)
-    })
-
-    return () => data.subscription.unsubscribe()
-  }, [supabase])
+    void loadGitHubSession()
+  }, [pathname])
 
   useEffect(() => {
-    if (!sessionChecked) return
-
     const controller = new AbortController()
 
     async function loadRecentReports() {
@@ -71,7 +77,6 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
       try {
         const response = await fetch("/api/scans", {
-          headers: authHeaders(session?.access_token),
           cache: "no-store",
           signal: controller.signal,
         })
@@ -88,7 +93,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     void loadRecentReports()
 
     return () => controller.abort()
-  }, [pathname, session?.access_token, sessionChecked])
+  }, [pathname])
 
   return (
     <>
@@ -141,7 +146,6 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                 alt=""
                 width={30}
                 height={30}
-                unoptimized
               />
             ) : (
               <div className="avatar">{profile.initials}</div>
@@ -226,12 +230,8 @@ function formatShortDate(value: string) {
   }).format(new Date(value))
 }
 
-function authHeaders(accessToken?: string | null) {
-  return accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
-}
-
-function getGitHubProfile(session: Session | null) {
-  if (!session) {
+function getGitHubProfile(session: GitHubAuthSession) {
+  if (!session.authenticated) {
     return {
       name: "Public mode",
       subtitle: "paste a public repo",
@@ -240,24 +240,14 @@ function getGitHubProfile(session: Session | null) {
     }
   }
 
-  const metadata = session.user.user_metadata ?? {}
-  const name =
-    stringValue(metadata.full_name) ||
-    stringValue(metadata.name) ||
-    stringValue(metadata.user_name) ||
-    stringValue(metadata.preferred_username) ||
-    session.user.email ||
-    "GitHub user"
-  const username =
-    stringValue(metadata.user_name) ||
-    stringValue(metadata.preferred_username) ||
-    stringValue(metadata.userName)
+  const name = session.name || session.login || "GitHub user"
+  const username = session.login
 
   return {
     name,
     subtitle: username ? `@${username}` : "GitHub connected",
     initials: initialsForName(name),
-    avatarUrl: stringValue(metadata.avatar_url) || stringValue(metadata.picture),
+    avatarUrl: stringValue(session.avatarUrl),
   }
 }
 

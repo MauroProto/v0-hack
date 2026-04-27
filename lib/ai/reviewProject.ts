@@ -5,8 +5,8 @@ import { z } from "zod"
 import { resolveAiModel } from "@/lib/ai/model"
 import { auditEvent } from "@/lib/scanner/scan"
 import { calculateRiskScore } from "@/lib/scanner/patches"
-import { isApiRoute, redactSecrets } from "@/lib/scanner/rules"
-import type { FindingCategory, ProjectFile, ScanFinding, ScanReport, Severity } from "@/lib/scanner/types"
+import { isApiRoute, isDocumentationSecretExample, redactSecrets } from "@/lib/scanner/rules"
+import type { FindingCategory, ProjectFile, ScanFinding, ScanMode, ScanReport, Severity } from "@/lib/scanner/types"
 
 const SeveritySchema = z.enum(["critical", "high", "medium", "low", "info"])
 const CategorySchema = z.enum([
@@ -38,7 +38,7 @@ const AiReviewSchema = z.object({
         recommendation: z.string().min(1).max(700),
       }),
     )
-    .max(6),
+    .max(12),
 })
 
 type AiReviewOutput = z.infer<typeof AiReviewSchema>
@@ -51,7 +51,18 @@ type SnippetContext = {
   numberedText: string
 }
 
-const MAX_CONTEXT_CHARS = 28_000
+type AiReviewConfig = {
+  mode: ScanMode
+  label: string
+  maxFiles: number
+  maxContextChars: number
+  maxFindings: number
+  timeoutMs: number
+  rangePadding: number
+  maxInterestingLines: number
+  maxLinesPerFile: number
+  lineCharLimit: number
+}
 
 const STATIC_RULE_HARNESS = [
   {
@@ -71,8 +82,9 @@ const STATIC_RULE_HARNESS = [
   },
   {
     category: "ai_endpoint_risk",
-    objective: "Find AI/model endpoints without rate limits, quota checks, bot protection, or budget controls before model invocation.",
-    evidenceRequired: "A model call, AI SDK/OpenAI/Anthropic import, tools object, or model configuration line with no nearby guard.",
+    objective:
+      "Find AI/model endpoints without rate limits, quota checks, bot protection, budget controls, token caps, or bounded tool-call steps before model invocation.",
+    evidenceRequired: "A model call, AI SDK/OpenAI/Anthropic import, tools object, or model configuration line with no nearby guard or execution bound.",
   },
   {
     category: "unsafe_tool_calling",
@@ -94,10 +106,37 @@ const STATIC_RULE_HARNESS = [
     objective: "Find dynamic code execution, raw HTML rendering, OS command execution, unsafe Rust, or file writes from request input.",
     evidenceRequired: "A concrete line with eval, new Function, dangerouslySetInnerHTML, child_process, Command::new, unsafe, or risky file write.",
   },
+  {
+    category: "input_validation",
+    objective: "Find webhook handlers without signature/HMAC verification before parsing or trusting provider payloads.",
+    evidenceRequired: "A webhook route line that parses text/json/arrayBuffer or uses provider webhook payloads without a constructEvent/verifySignature/HMAC check nearby.",
+  },
+  {
+    category: "input_validation",
+    objective: "Find unsafe database query construction, especially raw query helpers or request-controlled string interpolation.",
+    evidenceRequired: "A concrete raw query or interpolated query line tied to request, params, body, input, or search params.",
+  },
+  {
+    category: "client_data_exposure",
+    objective: "Find browser/session exposure mistakes such as permissive CORS or session cookies missing httpOnly/secure/sameSite.",
+    evidenceRequired: "A concrete CORS wildcard/reflection line or session-cookie-setting line with missing hardening attributes.",
+  },
+  {
+    category: "dependency_signal",
+    objective: "Find high-risk supply-chain install scripts that download or execute shell commands during package installation.",
+    evidenceRequired: "A package.json install/preinstall/postinstall/prepare script that includes curl, wget, bash, sh, node -e, npx, pnpm dlx, or bunx.",
+  },
 ] as const
 
 export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile[]): Promise<ScanReport> {
   const startedAt = Date.now()
+
+  if (report.analysisMode === "rules") {
+    return appendAudit(report, "AI auditor skipped", "complete", {
+      reason: "rules_only_mode",
+      mode: "rules",
+    })
+  }
 
   if (process.env.VIBESHIELD_ENABLE_AI_REVIEW === "false") {
     return appendAudit(report, "AI auditor skipped", "complete", {
@@ -105,8 +144,18 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
     })
   }
 
-  const snippets = selectSnippetContexts(files, report)
+  const config = getAiReviewConfig(report.analysisMode ?? "normal")
+
+  if (report.repository?.private && process.env.VIBESHIELD_ALLOW_PRIVATE_AI_REVIEW !== "true") {
+    return appendAudit(report, "AI auditor skipped", "complete", {
+      reason: "private_repository_requires_explicit_ai_opt_in",
+    })
+  }
+
+  const snippets = selectSnippetContexts(files, report, config)
   const harnessedReport = appendAudit(report, "Build hybrid static-AI harness", "complete", {
+    mode: config.mode,
+    profile: config.label,
     ruleObjectives: STATIC_RULE_HARNESS.length,
     candidateFiles: snippets.length,
     contextChars: snippets.reduce((total, snippet) => total + snippet.numberedText.length, 0),
@@ -128,10 +177,14 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
     })
   }
 
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs)
+
   try {
     const { output } = await generateText({
       model: aiModel.model,
       providerOptions: aiModel.providerOptions,
+      abortSignal: controller.signal,
       output: Output.object({ schema: AiReviewSchema }),
       system: [
         "You are VibeShield's second-pass security auditor.",
@@ -139,6 +192,9 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
         "Review only the redacted source snippets and harness signals provided by the scanner.",
         "Find additional security or production-readiness issues the deterministic rules may have missed, then tie every claim to snippet evidence.",
         "Do not report style issues, generic advice, or findings without concrete file evidence.",
+        "Do not report an API key or secret from variable name alone. There must be a concrete non-placeholder value, dangerous NEXT_PUBLIC exposure, or a concrete unsafe use.",
+        "In README, docs, examples, and setup guides, env names with localhost URLs, username/password placeholders, redacted values, or install instructions are documentation, not secret exposure.",
+        "Treat demo, fake, redacted, sample, example, changeme, placeholder, xxxx, and empty env values as placeholders unless the unsafe contract itself is the issue.",
         "Do not repeat confirmed deterministic findings unless you identify a materially different issue.",
         "Never include full secrets. Evidence is already redacted and must stay redacted.",
         "Prefer no finding over a speculative finding.",
@@ -167,9 +223,15 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
           evidence: redactSecrets(finding.evidence ?? ""),
         })),
         instructions: {
-          maxFindings: 6,
+          analysisMode: config.mode,
+          reviewDepth: config.label,
+          maxFindings: config.maxFindings,
           requireEvidenceFromSnippets: true,
           allowedFiles: snippets.map((snippet) => snippet.file.path),
+          normalModeContract:
+            "Normal mode is still professional: prioritize high-confidence vulnerabilities and production blockers over broad advisory noise.",
+          maxModeContract:
+            "Max mode may spend more context on cross-file trust boundaries, webhook/auth/CORS/session/database paths, AI tool execution and supply-chain scripts.",
         },
         redactedSnippets: snippets.map((snippet) => ({
           filePath: snippet.file.path,
@@ -180,7 +242,7 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
       }),
     })
 
-    const aiFindings = normalizeAiFindings(output, snippets, harnessedReport.findings)
+    const aiFindings = normalizeAiFindings(output, snippets, harnessedReport.findings).slice(0, config.maxFindings)
     const findings = assignFindingIds([...harnessedReport.findings, ...aiFindings])
 
     return {
@@ -192,6 +254,7 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
         auditEvent("Run AI auditor model", "complete", {
           provider: aiModel.provider,
           model: aiModel.modelId,
+          mode: config.mode,
           reviewedFiles: snippets.length,
           acceptedFindings: aiFindings.length,
           durationMs: Date.now() - startedAt,
@@ -202,9 +265,12 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
     return appendAudit(harnessedReport, "Run AI auditor model", "failed", {
       provider: aiModel.provider,
       model: aiModel.modelId,
+      mode: config.mode,
       error: error instanceof Error ? error.message.slice(0, 240) : "AI review failed",
       durationMs: Date.now() - startedAt,
     })
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
@@ -218,6 +284,7 @@ function normalizeAiFindings(output: AiReviewOutput, snippets: SnippetContext[],
 
     const evidence = evidenceFromSnippet(candidate, snippet)
     if (!evidence) continue
+    if (candidate.category === "secret_exposure" && isDocumentationSecretExample(candidate.filePath, evidence)) continue
     if (isDuplicateFinding(candidate, existing) || isDuplicateFinding(candidate, findings)) continue
 
     findings.push({
@@ -254,8 +321,41 @@ function evidenceFromSnippet(candidate: AiReviewOutput["findings"][number], snip
   return redactedEvidence
 }
 
-function selectSnippetContexts(files: ProjectFile[], report: ScanReport) {
-  const maxFiles = readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_MAX_FILES, 18)
+function getAiReviewConfig(mode: ScanMode): AiReviewConfig {
+  const configuredNormalTimeout = readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_TIMEOUT_MS, 30_000)
+  const configuredMaxTimeout = readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_MAX_TIMEOUT_MS, 30_000)
+
+  if (mode === "max") {
+    return {
+      mode,
+      label: "max-depth hybrid review",
+      maxFiles: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_MAX_FILES_MAX, 42), 64),
+      maxContextChars: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_CONTEXT_CHARS_MAX, 58_000), 80_000),
+      maxFindings: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_FINDINGS_MAX, 10), 12),
+      timeoutMs: Math.min(configuredMaxTimeout, 45_000),
+      rangePadding: 28,
+      maxInterestingLines: 42,
+      maxLinesPerFile: 260,
+      lineCharLimit: 260,
+    }
+  }
+
+  return {
+    mode,
+    label: "targeted hybrid review",
+    maxFiles: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_MAX_FILES, 18), 32),
+    maxContextChars: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_CONTEXT_CHARS, 28_000), 40_000),
+    maxFindings: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_FINDINGS, 6), 8),
+    timeoutMs: Math.min(configuredNormalTimeout, 30_000),
+    rangePadding: 18,
+    maxInterestingLines: 24,
+    maxLinesPerFile: 180,
+    lineCharLimit: 220,
+  }
+}
+
+function selectSnippetContexts(files: ProjectFile[], report: ScanReport, config: AiReviewConfig) {
+  const maxFiles = config.maxFiles
   const existingFindingPaths = new Set(report.findings.map((finding) => finding.filePath))
   const scored = files
     .map((file) => scoreFile(file, existingFindingPaths))
@@ -268,18 +368,18 @@ function selectSnippetContexts(files: ProjectFile[], report: ScanReport) {
 
   for (const entry of scored) {
     const redactedText = redactSecrets(entry.file.text)
-    const numberedText = buildNumberedSnippet(entry.file, redactedText, report)
+    const numberedText = buildNumberedSnippet(entry.file, redactedText, report, config)
     if (!numberedText.trim()) continue
 
     const nextTotal = totalChars + numberedText.length
-    if (nextTotal > MAX_CONTEXT_CHARS && snippets.length > 0) break
+    if (nextTotal > config.maxContextChars && snippets.length > 0) break
 
     snippets.push({
       file: entry.file,
       score: entry.score,
       reasons: entry.reasons,
       redactedText,
-      numberedText: numberedText.slice(0, Math.max(800, MAX_CONTEXT_CHARS - totalChars)),
+      numberedText: numberedText.slice(0, Math.max(800, config.maxContextChars - totalChars)),
     })
     totalChars += numberedText.length
   }
@@ -304,19 +404,31 @@ function scoreFile(file: ProjectFile, existingFindingPaths: Set<string>) {
   if (/(\bpackage\.json|Cargo\.toml|next\.config\.|vite\.config\.|middleware\.)$/i.test(path)) add(45, "framework or dependency configuration")
   if (/\.(ts|tsx|js|jsx|mjs|cjs|rs)$/.test(path)) add(20, "source file")
   if (SECURITY_REVIEW_KEYWORDS.test(text)) add(45, "security-sensitive keywords")
-  if (/\b(Command::new|unsafe\s*\{|child_process|exec\s*\(|spawn\s*\(|eval\s*\(|dangerouslySetInnerHTML)\b/i.test(text)) add(50, "dangerous execution or rendering primitive")
-  if (/\b(generateText|streamText|openai|anthropic|deepseek|tools\s*:|toolName|mcp)\b/i.test(text)) add(45, "AI model or tool-calling surface")
+  if (DANGEROUS_PRIMITIVE_KEYWORDS.test(text)) add(50, "dangerous execution or rendering primitive")
+  if (AI_SURFACE_KEYWORDS.test(text)) add(45, "AI model or tool-calling surface")
+  if (WEBHOOK_OR_DATABASE_KEYWORDS.test(text) || /webhooks?/i.test(path)) add(40, "webhook or database trust boundary")
+  if (PACKAGE_SCRIPT_KEYWORDS.test(text) && /package\.json$/i.test(path)) add(38, "supply-chain install script")
 
   return { file, score, reasons }
 }
 
 const SECURITY_REVIEW_KEYWORDS =
-  /\b(auth|admin|internal|billing|token|secret|password|api[_-]?key|private[_-]?key|service[_-]?role|database_url|webhook|stripe|supabase|process\.env|headers\(|cookies\(|req\.json|request\.json|cors|origin)\b/i
+  /\b(auth|admin|internal|billing|token|secret|password|api[_-]?key|private[_-]?key|service[_-]?role|database_url|webhook|stripe|supabase|process\.env|headers\(|cookies\(|Set-Cookie|req\.json|request\.json|cors|origin|signature|hmac|sameSite|httpOnly)\b/i
+const DANGEROUS_PRIMITIVE_KEYWORDS =
+  /\b(Command::new|unsafe\s*\{|child_process|exec\s*\(|spawn\s*\(|eval\s*\(|dangerouslySetInnerHTML|\$queryRawUnsafe|\$executeRawUnsafe)\b/i
+const AI_SURFACE_KEYWORDS =
+  /\b(generateText|streamText|generateObject|streamObject|openai|anthropic|deepseek|tools\s*:|toolName|mcp|maxSteps|stopWhen|stepCountIs)\b/i
+const WEBHOOK_OR_DATABASE_KEYWORDS =
+  /\b(webhook|stripe-signature|svix-signature|x-hub-signature|constructEvent|verifySignature|createHmac|\$queryRawUnsafe|\$executeRawUnsafe|db\.query|pool\.query)\b/i
+const PACKAGE_SCRIPT_KEYWORDS = /\b(preinstall|postinstall|prepare|curl|wget|bash|node\s+-e|npx|pnpm\s+dlx|bunx)\b/i
 
-function buildNumberedSnippet(file: ProjectFile, redactedText: string, report: ScanReport) {
+function buildNumberedSnippet(file: ProjectFile, redactedText: string, report: ScanReport, config: AiReviewConfig) {
   const lines = redactedText.split(/\r?\n/)
-  const interestingLines = collectInterestingLines(file, lines, report)
-  const ranges = interestingLines.length > 0 ? mergeRanges(interestingLines.map((line) => [line - 18, line + 18])) : [[1, 100]]
+  const interestingLines = collectInterestingLines(file, lines, report, config)
+  const ranges =
+    interestingLines.length > 0
+      ? mergeRanges(interestingLines.map((line) => [line - config.rangePadding, line + config.rangePadding]))
+      : [[1, config.mode === "max" ? 160 : 100]]
   const output: string[] = []
   let emitted = 0
 
@@ -328,16 +440,16 @@ function buildNumberedSnippet(file: ProjectFile, redactedText: string, report: S
 
     for (let lineNumber = start; lineNumber <= end; lineNumber += 1) {
       const line = lines[lineNumber - 1]
-      output.push(`L${lineNumber}: ${line.slice(0, 220)}`)
+      output.push(`L${lineNumber}: ${line.slice(0, config.lineCharLimit)}`)
       emitted += 1
-      if (emitted >= 180) return output.join("\n")
+      if (emitted >= config.maxLinesPerFile) return output.join("\n")
     }
   }
 
   return output.join("\n")
 }
 
-function collectInterestingLines(file: ProjectFile, lines: string[], report: ScanReport) {
+function collectInterestingLines(file: ProjectFile, lines: string[], report: ScanReport, config: AiReviewConfig) {
   const lineNumbers = new Set<number>()
 
   for (const finding of report.findings) {
@@ -346,12 +458,15 @@ function collectInterestingLines(file: ProjectFile, lines: string[], report: Sca
 
   lines.forEach((line, index) => {
     if (SECURITY_REVIEW_KEYWORDS.test(line)) lineNumbers.add(index + 1)
-    if (/\b(Command::new|unsafe\s*\{|child_process|exec\s*\(|spawn\s*\(|eval\s*\(|dangerouslySetInnerHTML)\b/i.test(line)) {
+    if (DANGEROUS_PRIMITIVE_KEYWORDS.test(line)) {
+      lineNumbers.add(index + 1)
+    }
+    if (AI_SURFACE_KEYWORDS.test(line) || WEBHOOK_OR_DATABASE_KEYWORDS.test(line) || PACKAGE_SCRIPT_KEYWORDS.test(line)) {
       lineNumbers.add(index + 1)
     }
   })
 
-  return [...lineNumbers].sort((a, b) => a - b).slice(0, 24)
+  return [...lineNumbers].sort((a, b) => a - b).slice(0, config.maxInterestingLines)
 }
 
 function mergeRanges(ranges: number[][]) {

@@ -46,6 +46,9 @@ export async function saveScanReport(report: ScanReport) {
 
   const supabase = getSupabaseServiceClient()
   if (!supabase) {
+    if (persistentStorageRequired()) {
+      throw new Error("Persistent scan storage is not configured. Connect Supabase before accepting production scans.")
+    }
     await persistLocalStore()
     return report
   }
@@ -66,6 +69,9 @@ export async function saveScanReport(report: ScanReport) {
   const { error } = await supabase.from(TABLE).upsert(row, { onConflict: "id" })
   if (error) {
     console.error("VibeShield Supabase save failed", error.message)
+    if (persistentStorageRequired()) {
+      throw new Error("Persistent scan storage failed. The report was not saved.")
+    }
   }
 
   return report
@@ -236,6 +242,18 @@ function localFileStoreEnabled() {
   if (isSupabaseConfigured()) return false
   if (process.env.VIBESHIELD_DISABLE_LOCAL_FILE_STORE === "true") return false
   return process.env.NODE_ENV !== "production" || process.env.VIBESHIELD_ENABLE_LOCAL_FILE_STORE === "true"
+}
+
+function persistentStorageRequired() {
+  const value = process.env.VIBESHIELD_REQUIRE_PERSISTENT_STORAGE?.trim().toLowerCase()
+  if (value === "true") return true
+  if (value === "false") return false
+
+  const quotaValue = process.env.VIBESHIELD_REQUIRE_PERSISTENT_QUOTA?.trim().toLowerCase()
+  if (quotaValue === "true") return true
+  if (quotaValue === "false") return false
+
+  return process.env.NODE_ENV === "production"
 }
 
 function localStorePath() {

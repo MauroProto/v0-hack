@@ -1,40 +1,32 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
-import type { Session } from "@supabase/supabase-js"
+import { useEffect, useState } from "react"
 import { Icon } from "@/app/(app)/_components/icons"
-import { createBrowserSupabaseClient } from "@/lib/supabase/client"
 import type { ScanReport } from "@/lib/scanner/types"
 import { ScanResultsClient } from "./ScanResultsClient"
 
 export function ScanReportLoader({ scanId }: { scanId: string }) {
-  const supabase = useMemo(() => createBrowserSupabaseClient(), [])
-  const [session, setSession] = useState<Session | null>(null)
-  const [sessionChecked, setSessionChecked] = useState(!supabase)
+  const [githubConnected, setGitHubConnected] = useState(false)
   const [report, setReport] = useState<ScanReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!supabase) return
+    async function loadGitHubSession() {
+      try {
+        const response = await fetch("/api/auth/github/session", { cache: "no-store" })
+        const data = await response.json()
+        setGitHubConnected(Boolean(data.session?.authenticated))
+      } catch {
+        setGitHubConnected(false)
+      }
+    }
 
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setSessionChecked(true)
-    })
-
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession)
-      setSessionChecked(true)
-    })
-
-    return () => data.subscription.unsubscribe()
-  }, [supabase])
+    void loadGitHubSession()
+  }, [])
 
   useEffect(() => {
-    if (!sessionChecked) return
-
     const controller = new AbortController()
 
     async function loadReport() {
@@ -43,7 +35,6 @@ export function ScanReportLoader({ scanId }: { scanId: string }) {
 
       try {
         const response = await fetch(`/api/scan/${scanId}`, {
-          headers: authHeaders(session?.access_token),
           cache: "no-store",
           signal: controller.signal,
         })
@@ -61,14 +52,13 @@ export function ScanReportLoader({ scanId }: { scanId: string }) {
     void loadReport()
 
     return () => controller.abort()
-  }, [scanId, session?.access_token, sessionChecked])
+  }, [scanId])
 
   if (report) {
     return (
       <ScanResultsClient
         initialReport={report}
-        authToken={session?.access_token ?? null}
-        githubToken={session?.provider_token ?? null}
+        githubConnected={githubConnected}
       />
     )
   }
@@ -106,8 +96,4 @@ export function ScanReportLoader({ scanId }: { scanId: string }) {
       </div>
     </>
   )
-}
-
-function authHeaders(accessToken?: string | null) {
-  return accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
 }

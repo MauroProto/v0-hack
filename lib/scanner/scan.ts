@@ -4,6 +4,7 @@ import { collectRuleFindings } from "./rules"
 
 export function scanProject(input: ScanInput): ScanReport {
   const startedAt = new Date()
+  const analysisMode = input.analysisMode ?? "normal"
   const ruleResult = collectRuleFindings(input.files)
   const findings = ruleResult.findings
     .map<ScanFinding>((finding, index) => ({
@@ -21,6 +22,10 @@ export function scanProject(input: ScanInput): ScanReport {
 
   const auditTrail: AuditTrailEvent[] = [
     ...(input.auditTrail ?? []),
+    auditEvent("Select analysis depth", "complete", {
+      mode: analysisMode,
+      filesAccepted: input.files.length,
+    }),
     auditEvent("Fingerprint project", "complete", {
       framework: ruleResult.signals.framework ?? "unknown",
       files: input.files.length,
@@ -41,6 +46,7 @@ export function scanProject(input: ScanInput): ScanReport {
     framework: ruleResult.signals.framework,
     sourceType: input.sourceType,
     sourceLabel: input.sourceLabel,
+    analysisMode,
     status: "completed",
     riskScore: calculateRiskScore(findings),
     filesInspected: input.files.length,

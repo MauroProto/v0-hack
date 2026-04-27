@@ -1,12 +1,14 @@
 import "server-only"
 
 import { createHash } from "node:crypto"
+import { calculateRiskScore } from "@/lib/scanner/patches"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
-import type { ScanReport } from "@/lib/scanner/types"
+import { getGitHubSessionFromHeaders } from "@/lib/security/github-session"
+import type { AuditTrailEvent, ScanFinding, ScanReport } from "@/lib/scanner/types"
 
 export interface RequestIdentity {
   subjectHash: string
-  kind: "supabase_user" | "anonymous"
+  kind: "supabase_user" | "github_user" | "anonymous"
   label: string
 }
 
@@ -19,6 +21,15 @@ export async function getRequestIdentity(request: Request): Promise<RequestIdent
 }
 
 export async function getRequestIdentityFromHeaders(headers: HeaderSource): Promise<RequestIdentity> {
+  const githubSession = getGitHubSessionFromHeaders(headers)
+  if (githubSession) {
+    return {
+      subjectHash: hashSubject(`github_user:${githubSession.id}`),
+      kind: "github_user",
+      label: "GitHub user",
+    }
+  }
+
   const userId = await getSupabaseUserId(headers)
   if (userId) {
     return {
@@ -29,12 +40,11 @@ export async function getRequestIdentityFromHeaders(headers: HeaderSource): Prom
   }
 
   const ip = getClientIp(headers)
-  const userAgent = normalizeHeader(headers.get("user-agent"), 180) || "unknown-user-agent"
 
   return {
-    subjectHash: hashSubject(`anonymous:${ip}:${userAgent}`),
+    subjectHash: hashSubject(`anonymous_ip:${ip}`),
     kind: "anonymous",
-    label: "anonymous session",
+    label: "anonymous IP",
   }
 }
 
@@ -52,10 +62,44 @@ export function canAccessReport(report: ScanReport, identity: RequestIdentity) {
 }
 
 export function publicReport(report: ScanReport): ScanReport {
-  const safeReport = { ...report }
+  const findings = report.findings.filter((finding) => !isLegacyCoverageFinding(finding))
+  const removedLegacyFindings = report.findings.length - findings.length
+  const safeReport = {
+    ...report,
+    findings,
+    auditTrail:
+      removedLegacyFindings > 0
+        ? normalizeLegacyCoverageAuditTrail(report.auditTrail, findings)
+        : report.auditTrail,
+    riskScore: calculateRiskScore(findings),
+  }
   delete safeReport.ownerHash
   delete safeReport.ownerKind
   return safeReport
+}
+
+function normalizeLegacyCoverageAuditTrail(events: AuditTrailEvent[], findings: ScanFinding[]) {
+  const patchable = findings.filter((finding) => finding.patchable).length
+
+  return events.map((event) => {
+    if (!event.metadata) return event
+
+    const metadata = { ...event.metadata }
+    if (typeof metadata.findings === "number") metadata.findings = findings.length
+    if (typeof metadata.confirmedRuleFindings === "number") metadata.confirmedRuleFindings = findings.length
+    if (typeof metadata.patchable === "number") metadata.patchable = patchable
+
+    return { ...event, metadata }
+  })
+}
+
+function isLegacyCoverageFinding(finding: ScanFinding) {
+  return (
+    finding.category === "dependency_signal" &&
+    finding.severity === "info" &&
+    finding.title === "Repository is outside primary Next.js/React coverage" &&
+    /^Detected framework:/i.test(finding.evidence ?? "")
+  )
 }
 
 async function getSupabaseUserId(headers: HeaderSource) {
@@ -78,10 +122,10 @@ function getBearerToken(header: string | null) {
 
 function getClientIp(headers: HeaderSource) {
   const candidate =
-    firstForwardedIp(headers.get("x-forwarded-for")) ||
-    normalizeHeader(headers.get("x-real-ip"), 80) ||
+    normalizeHeader(headers.get("x-vercel-forwarded-for"), 80) ||
     normalizeHeader(headers.get("cf-connecting-ip"), 80) ||
-    normalizeHeader(headers.get("x-vercel-forwarded-for"), 80)
+    normalizeHeader(headers.get("x-real-ip"), 80) ||
+    firstForwardedIp(headers.get("x-forwarded-for"))
 
   return candidate || "unknown-ip"
 }
