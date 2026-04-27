@@ -597,10 +597,10 @@ async function githubFetch(url: string, token?: string, init: RequestInit = {}) 
 }
 
 function getLocalGitHubToken() {
-  if (process.env.VERCEL === "1") return undefined
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL === "1") return undefined
 
   const explicit = process.env.VIBESHIELD_ALLOW_LOCAL_GITHUB_TOKEN?.trim().toLowerCase()
-  const localAllowed = explicit === "true" || (explicit !== "false" && process.env.NODE_ENV !== "production")
+  const localAllowed = explicit !== "false"
   if (!localAllowed) return undefined
 
   return (

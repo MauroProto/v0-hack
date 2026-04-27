@@ -190,13 +190,13 @@ function persistentQuotaUnavailable() {
 }
 
 function localRateLimitsDisabled() {
-  if (process.env.VERCEL === "1") return false
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL === "1") return false
 
   const value = process.env.VIBESHIELD_DISABLE_LOCAL_RATE_LIMITS?.trim().toLowerCase()
   if (value === "true") return true
   if (value === "false") return false
 
-  return process.env.NODE_ENV !== "production"
+  return true
 }
 
 function consumeMemoryCounter(counters: Map<string, Counter>, key: string, limit: number, resetAt: number) {

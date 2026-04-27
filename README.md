@@ -51,7 +51,7 @@ GITHUB_REDIRECT_URI=http://localhost:3000/api/auth/github/callback
 
 Suggested OAuth scopes are `repo read:user user:email`. The `repo` scope is required for private repository scanning and remediation PR creation.
 
-For repeated local public-repo scans, `VIBESHIELD_GITHUB_TOKEN` can be set in `.env.local` to avoid GitHub's anonymous API rate limit. This is local-only; route handlers still prefer the user's encrypted GitHub OAuth session token when present.
+For repeated local public-repo scans, `VIBESHIELD_GITHUB_TOKEN` can be set in `.env.local` to avoid GitHub's anonymous API rate limit. This is local-only and is ignored in `NODE_ENV=production`/Vercel; route handlers still prefer the user's encrypted GitHub OAuth session token when present.
 
 ## Supabase persistence
 
