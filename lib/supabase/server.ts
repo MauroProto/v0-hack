@@ -1,6 +1,7 @@
 import "server-only"
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
+import { getSupabaseServiceKey, getSupabaseUrl, isSupabaseConfigured } from "./config"
 
 type SupabaseGlobal = typeof globalThis & {
   __vibeshieldSupabaseService?: SupabaseClient
@@ -8,9 +9,7 @@ type SupabaseGlobal = typeof globalThis & {
 
 const supabaseGlobal = globalThis as SupabaseGlobal
 
-export function isSupabaseConfigured() {
-  return Boolean(getSupabaseUrl() && getSupabaseServiceKey())
-}
+export { isSupabaseConfigured }
 
 export function getSupabaseServiceClient() {
   const url = getSupabaseUrl()
@@ -33,12 +32,4 @@ export function getSupabaseServiceClient() {
   }
 
   return supabaseGlobal.__vibeshieldSupabaseService
-}
-
-function getSupabaseUrl() {
-  return process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
-}
-
-function getSupabaseServiceKey() {
-  return process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY
 }

@@ -3,10 +3,69 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode, WheelEvent } from "react"
 import { Icon } from "@/app/(app)/_components/icons"
-import { generateIssueBody, getRiskLabel } from "@/lib/scanner/patches"
-import type { AuditTrailEvent, FindingCategory, ScanFinding, ScanPullRequest, ScanReport, Severity } from "@/lib/scanner/types"
+import { generateFullReportBody, generateIssueBody, getRiskLabel } from "@/lib/scanner/patches"
+import type { AuditTrailEvent, FindingCategory, FindingKind, ScanFinding, ScanPullRequest, ScanReport, Severity } from "@/lib/scanner/types"
 
 type SelectionMode = "issue" | "pull_request"
+type FindingFilter = "active" | "new" | "existing" | "suppressed" | "resolved" | "all"
+
+async function copyTextToClipboard(value: string) {
+  if (typeof window === "undefined" || typeof document === "undefined") return false
+
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value)
+      return true
+    } catch {
+      // Fall back to the textarea path below when browser permissions block Clipboard API.
+    }
+  }
+
+  const textarea = document.createElement("textarea")
+  textarea.value = value
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.inset = "0 auto auto 0"
+  textarea.style.width = "1px"
+  textarea.style.height = "1px"
+  textarea.style.opacity = "0"
+
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  try {
+    return document.execCommand("copy")
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
+async function fetchReportJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    })
+    const data = await response.json()
+    return { response, data }
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+function errorMessageForAiGeneration(error: unknown) {
+  if (error instanceof Error && error.name === "AbortError") {
+    return "Generating fixes took longer than expected. Retry in a moment; VibeShield now limits AI explanations so this should not hang indefinitely."
+  }
+
+  return error instanceof Error ? error.message : "Could not generate AI explanations."
+}
 
 export function ScanResultsClient({
   initialReport,
@@ -23,10 +82,14 @@ export function ScanResultsClient({
   const [error, setError] = useState<string | null>(null)
   const [selectionMode, setSelectionMode] = useState<SelectionMode | null>(null)
   const [detailFindingId, setDetailFindingId] = useState<string | null>(null)
-  const findingIds = useMemo(() => report.findings.map((finding) => finding.id), [report.findings])
-  const findingIdSet = useMemo(() => new Set(findingIds), [findingIds])
-  const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>(() => initialReport.findings.map((finding) => finding.id))
-  const counts = useMemo(() => countSeverities(report.findings), [report.findings])
+  const [findingFilter, setFindingFilter] = useState<FindingFilter>("active")
+  const activeFindings = useMemo(() => report.findings.filter((finding) => !finding.suppressed), [report.findings])
+  const issueFindingIds = useMemo(() => activeFindings.map((finding) => finding.id), [activeFindings])
+  const prFindingIds = issueFindingIds
+  const selectionFindingIds = selectionMode === "pull_request" ? prFindingIds : issueFindingIds
+  const findingIdSet = useMemo(() => new Set(selectionFindingIds), [selectionFindingIds])
+  const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>(() => initialReport.findings.filter((finding) => !finding.suppressed).map((finding) => finding.id))
+  const counts = useMemo(() => countSeverities(activeFindings), [activeFindings])
   const detailFinding = useMemo(
     () => report.findings.find((finding) => finding.id === detailFindingId),
     [detailFindingId, report.findings],
@@ -37,19 +100,23 @@ export function ScanResultsClient({
   )
   const selectedCount = activeSelectedFindingIds.length
   const outsidePrimaryCoverage = isOutsidePrimaryCoverage(report)
+  const visibleFindings = useMemo(() => filterFindings(report.findings, findingFilter), [findingFilter, report.findings])
+  const groupedFindings = useMemo(() => groupFindingsForDisplay(visibleFindings), [visibleFindings])
+  const vulnerabilityCount = report.findingGroups?.vulnerabilities ?? activeFindings.filter((finding) => (finding.kind ?? inferredKind(finding)) === "vulnerability").length
+  const riskBreakdown = report.riskBreakdown
+  const hasPrFindings = activeFindings.length > 0
 
   const generateFixes = async () => {
     setError(null)
     setLoadingAi(true)
     try {
-      const response = await fetch(`/api/scan/${report.id}/explain`, {
+      const { response, data } = await fetchReportJsonWithTimeout(`/api/scan/${report.id}/explain`, {
         method: "POST",
-      })
-      const data = await response.json()
+      }, 150_000)
       if (!response.ok) throw new Error(data.error ?? "Could not generate AI explanations.")
       setReport(data.report)
     } catch (aiError) {
-      setError(aiError instanceof Error ? aiError.message : "Could not generate AI explanations.")
+      setError(errorMessageForAiGeneration(aiError))
     } finally {
       setLoadingAi(false)
     }
@@ -57,14 +124,17 @@ export function ScanResultsClient({
 
   const openSelection = (mode: SelectionMode) => {
     setError(null)
-    if (report.findings.length === 0) {
-      setError("There are no findings to include.")
+    const selectableIds = mode === "pull_request" ? prFindingIds : issueFindingIds
+    if (selectableIds.length === 0) {
+      setError("This report has no active findings to include.")
       return
     }
 
-    if (activeSelectedFindingIds.length === 0 || activeSelectedFindingIds.length !== selectedFindingIds.length) {
-      setSelectedFindingIds(findingIds)
-    }
+    setSelectedFindingIds((current) => {
+      const allowed = new Set(selectableIds)
+      const kept = current.filter((findingId) => allowed.has(findingId))
+      return kept.length > 0 ? kept : selectableIds
+    })
 
     setSelectionMode(mode)
   }
@@ -89,7 +159,7 @@ export function ScanResultsClient({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ findingIds: findingIdsToInclude }),
+        body: JSON.stringify(pullRequestSelectionPayload(findingIdsToInclude, prFindingIds)),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Could not create GitHub PR.")
@@ -104,20 +174,34 @@ export function ScanResultsClient({
   }
 
   const copyIssueBody = async (findingIdsToInclude: string[]) => {
+    setError(null)
+
     if (findingIdsToInclude.length === 0) {
       setError("Select at least one finding before copying an issue body.")
       return
     }
 
-    await navigator.clipboard.writeText(generateIssueBody(report, findingIdsToInclude))
+    const copiedToClipboard = await copyTextToClipboard(generateIssueBody(report, findingIdsToInclude))
+    if (!copiedToClipboard) {
+      setError("Your browser blocked automatic clipboard access. Select the findings again and use the browser copy permission prompt if it appears.")
+      return
+    }
+
     setCopied("issue")
     setSelectionMode(null)
     window.setTimeout(() => setCopied(null), 2500)
   }
 
-  const copyShareLink = async () => {
-    await navigator.clipboard.writeText(window.location.href)
-    setCopied("share")
+  const copyFullReport = async () => {
+    setError(null)
+
+    const copiedToClipboard = await copyTextToClipboard(generateFullReportBody(report))
+    if (!copiedToClipboard) {
+      setError("Your browser blocked automatic clipboard access for the full report.")
+      return
+    }
+
+    setCopied("report")
     window.setTimeout(() => setCopied(null), 2500)
   }
 
@@ -136,14 +220,15 @@ export function ScanResultsClient({
   }
 
   const copyDetailText = async (kind: string, value: string) => {
+    setError(null)
+    const copiedToClipboard = await copyTextToClipboard(value)
+    if (!copiedToClipboard) {
+      setError("Your browser blocked automatic clipboard access for this item.")
+      return
+    }
+
     setCopied(kind)
     window.setTimeout(() => setCopied(null), 3000)
-
-    try {
-      await navigator.clipboard.writeText(value)
-    } catch {
-      // Keep the action responsive even when browser clipboard permission is unavailable.
-    }
   }
 
   return (
@@ -159,22 +244,29 @@ export function ScanResultsClient({
           </span>
         </div>
         <div className="actions">
-          <button className="btn btn-outline" onClick={copyShareLink} type="button">
-            <Icon.share style={{ width: 14, height: 14 }} /> <span>{copied === "share" ? "Copied" : "Copy report link"}</span>
-          </button>
-          <button className="btn btn-outline" onClick={() => openSelection("issue")} type="button">
-            <Icon.doc style={{ width: 14, height: 14 }} /> <span>{copied === "issue" ? "Copied" : "Copy GitHub issue body"}</span>
+          <button className="btn btn-outline" onClick={copyFullReport} type="button">
+            <Icon.doc style={{ width: 14, height: 14 }} /> <span>{copied === "report" ? "Copied" : "Copy full report"}</span>
           </button>
           <button className="btn btn-outline" onClick={generateFixes} disabled={loadingAi} type="button">
-            <Icon.wand style={{ width: 14, height: 14 }} /> <span>{loadingAi ? "Generating..." : "Generate patch previews"}</span>
+            <Icon.wand style={{ width: 14, height: 14 }} /> <span>{loadingAi ? "Generating..." : "Generate fixes"}</span>
           </button>
           {pullRequest ? (
             <a className="btn btn-accent" href={pullRequest.url} target="_blank" rel="noreferrer">
               <Icon.branch style={{ width: 14, height: 14 }} /> <span>Open PR #{pullRequest.number}</span>
             </a>
           ) : (
-            <button className="btn btn-accent" onClick={() => openSelection("pull_request")} disabled={creatingPr} type="button">
-              <Icon.branch style={{ width: 14, height: 14 }} /> <span>{creatingPr ? "Creating PR..." : "Create GitHub PR"}</span>
+            <button
+              className="btn btn-accent"
+              onClick={() => openSelection("pull_request")}
+              disabled={creatingPr || !hasPrFindings}
+              title={
+                hasPrFindings
+                  ? "Create a PR with the selected scan report and any safe repository hygiene changes."
+                  : "No active findings are available for a PR."
+              }
+              type="button"
+            >
+              <Icon.branch style={{ width: 14, height: 14 }} /> <span>{creatingPr ? "Creating..." : "Create PR"}</span>
             </button>
           )}
         </div>
@@ -232,57 +324,92 @@ export function ScanResultsClient({
                 </div>
               </div>
               <div className="score-card sev-crit app-score-card">
-                <div className="lbl">Critical</div>
-                <div className="val val-lg">{counts.critical}</div>
-                <div className="sub">Secrets and deploy blockers</div>
+                <div className="lbl">Vulnerabilities</div>
+                <div className="val val-lg">{vulnerabilityCount}</div>
+                <div className="sub">Confirmed security findings</div>
               </div>
-              <div className="score-card sev-med app-score-card">
-                <div className="lbl">High · Medium</div>
-                <div className="val val-lg">
-                  {counts.high} <small>/ {counts.medium}</small>
-                </div>
-                <div className="sub">Auth, AI endpoint and validation gaps</div>
-              </div>
-              <div className="score-card sev-low app-score-card">
-                <div className="lbl">Low · Info</div>
-                <div className="val val-lg">{counts.low + counts.info}</div>
-                <div className="sub">Production hardening notes</div>
-              </div>
+              {riskBreakdown ? (
+                <>
+                  <RiskBucketCard label="Runtime / agent" bucket={riskBreakdown.runtimeAgentRisk} />
+                  <RiskBucketCard label="CI / supply chain" bucket={riskBreakdown.repoPostureRisk} />
+                </>
+              ) : (
+                <>
+                  <div className="score-card sev-med app-score-card">
+                    <div className="lbl">High · Medium</div>
+                    <div className="val val-lg">
+                      {counts.high} <small>/ {counts.medium}</small>
+                    </div>
+                    <div className="sub">Auth, AI endpoint and validation gaps</div>
+                  </div>
+                  <div className="score-card sev-low app-score-card">
+                    <div className="lbl">Low · Info</div>
+                    <div className="val val-lg">{counts.low + counts.info}</div>
+                    <div className="sub">Production hardening notes</div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="app-findings-head">
               <h4>Findings</h4>
               <div className="filter">
-                <span className="chip" data-active="true">
+                <button className="chip" data-active={findingFilter === "active"} onClick={() => setFindingFilter("active")} type="button">
+                  Active <span className="n">{activeFindings.length}</span>
+                </button>
+                <button className="chip" data-active={findingFilter === "new"} onClick={() => setFindingFilter("new")} type="button">
+                  New <span className="n">{report.baselineSummary?.new ?? 0}</span>
+                </button>
+                <button className="chip" data-active={findingFilter === "existing"} onClick={() => setFindingFilter("existing")} type="button">
+                  Existing <span className="n">{report.baselineSummary?.existing ?? 0}</span>
+                </button>
+                <button className="chip" data-active={findingFilter === "suppressed"} onClick={() => setFindingFilter("suppressed")} type="button">
+                  Suppressed <span className="n">{report.baselineSummary?.suppressed ?? countSuppressed(report.findings)}</span>
+                </button>
+                <button className="chip" data-active={findingFilter === "resolved"} onClick={() => setFindingFilter("resolved")} type="button">
+                  Resolved <span className="n">{report.baselineSummary?.resolved ?? 0}</span>
+                </button>
+                <button className="chip" data-active={findingFilter === "all"} onClick={() => setFindingFilter("all")} type="button">
                   All <span className="n">{report.findings.length}</span>
+                </button>
+                <span className="chip">
+                  Vulnerabilities <span className="n">{vulnerabilityCount}</span>
                 </span>
                 <span className="chip">
-                  Critical <span className="n">{counts.critical}</span>
+                  AI risks <span className="n">{countCategory(activeFindings, "ai_endpoint_risk")}</span>
                 </span>
                 <span className="chip">
-                  AI risks <span className="n">{countCategory(report.findings, "ai_endpoint_risk")}</span>
+                  Dependencies <span className="n">{countCategory(activeFindings, "dependency_vulnerability")}</span>
                 </span>
                 <span className="chip">
-                  Secrets <span className="n">{countCategory(report.findings, "secret_exposure")}</span>
+                  Secrets <span className="n">{countCategory(activeFindings, "secret_exposure")}</span>
                 </span>
                 <span className="chip">
-                  Routes <span className="n">{report.apiRoutesInspected}</span>
+                  Hardening <span className="n">{report.findingGroups?.hardening ?? 0}</span>
                 </span>
               </div>
             </div>
 
             <div className="findings real-findings">
-              {report.findings.length === 0 ? (
+              {visibleFindings.length === 0 ? (
                 <div className="finding-empty">
                   <Icon.shield style={{ width: 22, height: 22 }} />
                   <div>
-                    <b>No deterministic findings.</b>
-                    <span>Static rules did not find obvious issues in the supported files.</span>
+                    <b>No findings in this filter.</b>
+                    <span>{findingFilter === "resolved" ? "Resolved findings are summarized from the saved baseline and are no longer present in current code." : "Try another report filter."}</span>
                   </div>
                 </div>
               ) : (
-                report.findings.map((finding) => (
-                  <FindingCard key={finding.id} finding={finding} onOpen={() => openFindingDetail(finding.id)} />
+                groupedFindings.map((group) => (
+                  <section className="finding-section" key={group.key}>
+                    <div className="finding-section-title">
+                      <span>{group.label}</span>
+                      <b>{group.findings.length}</b>
+                    </div>
+                    {group.findings.map((finding) => (
+                      <FindingCard key={finding.id} finding={finding} onOpen={() => openFindingDetail(finding.id)} />
+                    ))}
+                  </section>
                 ))
               )}
             </div>
@@ -313,6 +440,18 @@ export function ScanResultsClient({
                 <span>AI endpoints</span>
                 <b>{report.aiEndpointsInspected}</b>
               </div>
+              <div>
+                <span>Server actions</span>
+                <b>{report.repoInventory?.serverActions ?? 0}</b>
+              </div>
+              <div>
+                <span>Dependencies</span>
+                <b>{report.dependencySummary?.packages ?? 0}</b>
+              </div>
+              <div>
+                <span>OSV vulns</span>
+                <b>{report.dependencySummary?.vulnerablePackages ?? 0}</b>
+              </div>
             </div>
 
             <div className="timeline">
@@ -327,13 +466,13 @@ export function ScanResultsClient({
       {selectionMode && (
         <FindingSelectionDialog
           mode={selectionMode}
-          findings={report.findings}
+          findings={activeFindings}
           selectedFindingIds={activeSelectedFindingIds}
           selectedCount={selectedCount}
           creatingPr={creatingPr}
           githubConnected={Boolean(githubConnected)}
           onClose={() => setSelectionMode(null)}
-          onSelectAll={() => setSelectedFindingIds(findingIds)}
+          onSelectAll={() => setSelectedFindingIds(selectionFindingIds)}
           onClear={() => setSelectedFindingIds([])}
           onToggle={(findingId) =>
             setSelectedFindingIds((current) =>
@@ -360,6 +499,11 @@ export function ScanResultsClient({
           onSelectFinding={openFindingDetail}
           onCopy={copyDetailText}
           onPreparePr={(findingId) => {
+            const finding = report.findings.find((item) => item.id === findingId)
+            if (!finding || finding.suppressed) {
+              setError("Only active findings can be included in a PR.")
+              return
+            }
             setSelectedFindingIds([findingId])
             setDetailFindingId(null)
             setSelectionMode("pull_request")
@@ -368,6 +512,17 @@ export function ScanResultsClient({
       )}
     </>
   )
+}
+
+function pullRequestSelectionPayload(findingIdsToInclude: string[], allActiveFindingIds: string[]) {
+  if (findingIdsToInclude.length === allActiveFindingIds.length) {
+    const selected = new Set(findingIdsToInclude)
+    if (allActiveFindingIds.every((findingId) => selected.has(findingId))) {
+      return { includeAllActive: true }
+    }
+  }
+
+  return { findingIds: findingIdsToInclude }
 }
 
 function FindingSelectionDialog({
@@ -399,6 +554,7 @@ function FindingSelectionDialog({
   const isPrMode = mode === "pull_request"
   const title = isPrMode ? "Choose PR scope" : "Choose issue scope"
   const confirmLabel = isPrMode ? (creatingPr ? "Creating PR..." : "Create PR with selected") : "Copy selected issue body"
+  const compactConfirmLabel = isPrMode ? (creatingPr ? "Creating..." : "Create PR") : "Copy selected"
   const disabled = selectedCount === 0 || (isPrMode && (!githubConnected || creatingPr))
 
   return (
@@ -436,12 +592,15 @@ function FindingSelectionDialog({
           <span>
             {selectedCount} of {findings.length} selected
           </span>
-          <div>
+          <div className="finding-select-toolbar-actions">
             <button type="button" onClick={onSelectAll}>
               Select all
             </button>
             <button type="button" onClick={onClear}>
               Clear
+            </button>
+            <button className="selection-primary-action" type="button" onClick={onConfirm} disabled={disabled}>
+              {compactConfirmLabel}
             </button>
           </div>
         </div>
@@ -480,6 +639,24 @@ function FindingSelectionDialog({
   )
 }
 
+function RiskBucketCard({
+  label,
+  bucket,
+}: {
+  label: string
+  bucket: NonNullable<ScanReport["riskBreakdown"]>["runtimeAgentRisk"]
+}) {
+  return (
+    <div className={`score-card app-score-card ${bucketToneClass(bucket.label)}`}>
+      <div className="lbl">{label}</div>
+      <div className="val val-lg">
+        {bucket.score} <small>/ 100</small>
+      </div>
+      <div className="sub">{bucket.label}</div>
+    </div>
+  )
+}
+
 function FindingCard({ finding, onOpen }: { finding: ScanFinding; onOpen: () => void }) {
   const findingIcon = renderFindingIcon(finding)
 
@@ -510,6 +687,10 @@ function FindingCard({ finding, onOpen }: { finding: ScanFinding; onOpen: () => 
           {finding.lineStart && <b>:{finding.lineStart}</b>}
         </div>
         <div className="finding-facts">
+          {finding.suppressed && <span>suppressed</span>}
+          {finding.baselineState && <span>{finding.baselineState}</span>}
+          {finding.triage && <span>triage: {finding.triage.verdict.replaceAll("_", " ")}</span>}
+          <span>{labelForKind(finding.kind ?? inferredKind(finding))}</span>
           <span>{labelForCategory(finding.category)}</span>
           <span>{Math.round(finding.confidence * 100)}% confidence</span>
           <span>{finding.source}</span>
@@ -668,13 +849,20 @@ function FindingDetailWorkbench({
                 <span className="dot" /> {finding.severity}
               </span>
               <span className="tag">{labelForCategory(finding.category)}</span>
+              <span className="tag">{labelForKind(finding.kind ?? inferredKind(finding))}</span>
               <span className="tag">{Math.round(finding.confidence * 100)}% confidence</span>
+              {finding.reachability && <span className="tag">reachability: {finding.reachability}</span>}
+              {finding.cwe && <span className="tag">{finding.cwe}</span>}
               <span className="tag">{finding.source}</span>
-              {finding.patchable && <span className="tag">review-required patch</span>}
+              {finding.triage && <span className="tag">triage: {finding.triage.verdict.replaceAll("_", " ")}</span>}
+              {finding.triage?.priority && <span className="tag">priority: {finding.triage.priority}</span>}
+              {finding.suppressed && <span className="tag">suppressed</span>}
+              {finding.baselineState && <span className="tag">baseline: {finding.baselineState}</span>}
+              {finding.patchable && !finding.suppressed && <span className="tag">review-required patch</span>}
             </div>
 
             <div className="fd-actions">
-              {finding.patchable && (
+              {finding.patchable && !finding.suppressed && (
                 <button className="btn btn-outline" type="button" onClick={() => onPreparePr(finding.id)}>
                   <Icon.branch style={{ width: 14, height: 14 }} />
                   <span>Prepare PR scope</span>
@@ -700,9 +888,21 @@ function FindingDetailWorkbench({
               <p className="prose">{summary}</p>
             </DetailSection>
 
+            {finding.triage && (
+              <DetailSection title="AI triage">
+                <TriageBlock finding={finding} />
+              </DetailSection>
+            )}
+
             <DetailSection title="Where it is">
               <EvidenceBlock finding={finding} />
             </DetailSection>
+
+            {finding.evidenceTrace?.length ? (
+              <DetailSection title="Evidence trace">
+                <TraceBlock finding={finding} />
+              </DetailSection>
+            ) : null}
 
             <DetailSection title="Why it matters">
               <p className="prose">{impact}</p>
@@ -757,6 +957,42 @@ function DetailSection({ title, children }: { title: string; children: ReactNode
   )
 }
 
+function TriageBlock({ finding }: { finding: ScanFinding }) {
+  const triage = finding.triage
+  if (!triage) return null
+
+  return (
+    <div className="triage-block">
+      <p className="prose">
+        <b>{triage.verdict.replaceAll("_", " ")}</b>: {triage.reason}
+      </p>
+      {triage.attackScenario && (
+        <p className="prose">
+          <b>Attack scenario:</b> {triage.attackScenario}
+        </p>
+      )}
+      <div className="triage-controls">
+        {triage.detectedControls?.length ? (
+          <div>
+            <span>Detected controls</span>
+            {triage.detectedControls.map((control) => (
+              <code key={control}>{control}</code>
+            ))}
+          </div>
+        ) : null}
+        {triage.missingControls?.length ? (
+          <div>
+            <span>Missing or unclear controls</span>
+            {triage.missingControls.map((control) => (
+              <code key={control}>{control}</code>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function EvidenceBlock({ finding }: { finding: ScanFinding }) {
   const evidence = finding.evidence || finding.description
   const startLine = Math.max(1, (finding.lineStart ?? 1) - 2)
@@ -779,6 +1015,25 @@ function EvidenceBlock({ finding }: { finding: ScanFinding }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function TraceBlock({ finding }: { finding: ScanFinding }) {
+  return (
+    <div className="traceblock">
+      {finding.evidenceTrace?.map((step, index) => (
+        <div className="trace-row" key={`${step.kind}-${step.filePath}-${step.lineStart}-${index}`}>
+          <span className="trace-kind">{step.kind}</span>
+          <span className="trace-main">
+            <b>{step.label}</b>
+            <em>
+              {step.filePath}:{step.lineStart}
+            </em>
+            {step.code && <code>{step.code}</code>}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -870,6 +1125,9 @@ function impactForFinding(finding: ScanFinding) {
   }
   if (finding.category === "dependency_signal") {
     return "Supply-chain and dependency signals are not always vulnerabilities by themselves, but they mark code paths that should be reviewed before production release."
+  }
+  if (finding.category === "supply_chain_posture") {
+    return "Install scripts, release workflows, and mutable third-party references are supply-chain trust boundaries. They are not always exploitable vulnerabilities, but they should be hardened before professional distribution."
   }
   return "This finding affects production readiness. Review the evidence, confirm the app context, and apply the recommendation before shipping."
 }
@@ -1063,6 +1321,50 @@ function countCategory(findings: ScanFinding[], category: FindingCategory) {
   return findings.filter((finding) => finding.category === category).length
 }
 
+function countSuppressed(findings: ScanFinding[]) {
+  return findings.filter((finding) => finding.suppressed).length
+}
+
+function filterFindings(findings: ScanFinding[], filter: FindingFilter) {
+  if (filter === "all") return findings
+  if (filter === "active") return findings.filter((finding) => !finding.suppressed)
+  if (filter === "suppressed") return findings.filter((finding) => finding.suppressed)
+  if (filter === "new") return findings.filter((finding) => !finding.suppressed && finding.baselineState === "new")
+  if (filter === "existing") return findings.filter((finding) => !finding.suppressed && finding.baselineState === "existing")
+  return []
+}
+
+function groupFindingsForDisplay(findings: ScanFinding[]) {
+  const sections: Array<{ key: string; label: string; matcher: (finding: ScanFinding) => boolean; findings: ScanFinding[] }> = [
+    { key: "ai", label: "AI and agent risks", matcher: (finding) => finding.category.startsWith("ai_") || finding.category === "unsafe_tool_calling" || finding.category === "mcp_risk", findings: [] },
+    { key: "dependencies", label: "Dependency vulnerabilities", matcher: (finding) => finding.category === "dependency_vulnerability" || finding.category === "dependency_signal", findings: [] },
+    { key: "supply-chain", label: "Supply chain posture", matcher: (finding) => finding.category === "supply_chain_posture", findings: [] },
+    { key: "vulnerabilities", label: "Security vulnerabilities", matcher: (finding) => (finding.kind ?? inferredKind(finding)) === "vulnerability", findings: [] },
+    { key: "hardening", label: "Hardening", matcher: (finding) => (finding.kind ?? inferredKind(finding)) === "hardening" || (finding.kind ?? inferredKind(finding)) === "platform_recommendation", findings: [] },
+    { key: "posture", label: "Repository posture", matcher: (finding) => (finding.kind ?? inferredKind(finding)) === "repo_posture", findings: [] },
+    { key: "info", label: "Informational", matcher: (finding) => (finding.kind ?? inferredKind(finding)) === "info", findings: [] },
+  ]
+  const assigned = new Set<string>()
+
+  for (const section of sections) {
+    section.findings = findings.filter((finding) => {
+      if (assigned.has(finding.id) || !section.matcher(finding)) return false
+      assigned.add(finding.id)
+      return true
+    })
+  }
+
+  return sections.filter((section) => section.findings.length > 0)
+}
+
+function inferredKind(finding: ScanFinding): FindingKind {
+  if (finding.category === "vercel_hardening" || finding.category === "platform_hardening") return "platform_recommendation"
+  if (finding.category === "repo_security_posture" || finding.category === "supply_chain_posture") return "repo_posture"
+  if (finding.category === "dependency_signal" && !/vulnerab/i.test(finding.title)) return "repo_posture"
+  if (finding.severity === "info") return "info"
+  return "vulnerability"
+}
+
 function isOutsidePrimaryCoverage(report: ScanReport) {
   const framework = report.framework ?? ""
   if (/Next\.js|React\/Vite/i.test(framework)) return false
@@ -1073,6 +1375,12 @@ function scoreTone(score: number): "ok" | "warn" | "danger" {
   if (score >= 50) return "danger"
   if (score >= 20) return "warn"
   return "ok"
+}
+
+function bucketToneClass(label: string) {
+  if (label === "Critical" || label === "High") return "sev-crit"
+  if (label === "Moderate") return "sev-med"
+  return "sev-low"
 }
 
 function renderFindingIcon(finding: ScanFinding) {
@@ -1086,6 +1394,12 @@ function renderFindingIcon(finding: ScanFinding) {
 
 function labelForCategory(category: FindingCategory) {
   return category.replaceAll("_", " ")
+}
+
+function labelForKind(kind: FindingKind) {
+  if (kind === "repo_posture") return "repo posture"
+  if (kind === "platform_recommendation") return "platform"
+  return kind.replaceAll("_", " ")
 }
 
 function formatDate(value: string) {

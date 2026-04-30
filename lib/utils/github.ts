@@ -3,12 +3,13 @@ import {
   decodeUtf8,
   getScannerLimits,
   isProbablyBinary,
+  maxBytesForProjectPath,
   normalizeProjectPath,
+  compareProjectPathPriority,
   shouldConsiderProjectPath,
   shouldSkipLargeLockfile,
   type ScannerLimits,
 } from "@/lib/scanner/extract"
-import { generateIssueBody } from "@/lib/scanner/patches"
 import { getGitHubSessionFromHeaders } from "@/lib/security/github-session"
 import type { ExtractedProject, ProjectFile, ScanFinding, ScanPullRequest, ScanReport, ScanRepositoryRef } from "@/lib/scanner/types"
 
@@ -36,6 +37,15 @@ type GitHubRepoApi = {
   html_url: string
   updated_at: string
   language?: string | null
+  owner?: {
+    login?: string
+  }
+  parent?: {
+    full_name?: string
+  }
+  source?: {
+    full_name?: string
+  }
   permissions?: {
     admin?: boolean
     maintain?: boolean
@@ -88,9 +98,16 @@ type GitHubPullRequestApi = {
   }
 }
 
+type GitHubUserApi = {
+  login?: string
+}
+
 const GITHUB_API = "https://api.github.com"
 const GITHUB_REPO_RE = /^https:\/\/github\.com\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})(?:\.git)?\/?$/
 const GITHUB_FULL_NAME_RE = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})$/
+const RETRYABLE_GITHUB_STATUSES = new Set([408, 500, 502, 503, 504])
+const DEFAULT_GITHUB_FETCH_RETRIES = 2
+const DEFAULT_GITHUB_RETRY_DELAY_MS = 450
 
 export function parsePublicGitHubUrl(input: string): ParsedGitHubUrl {
   const trimmed = input.trim()
@@ -154,7 +171,8 @@ export async function extractProjectFromGitHubRepo(input: {
   }
 
   const tree = await getRepositoryTree(owner, repo, ref, input.token)
-  const files = await fetchProjectFiles(owner, repo, tree, input.token, limits)
+  const fetchResult = await fetchProjectFiles(owner, repo, tree, input.token, limits)
+  const files = fetchResult.files
 
   if (files.length === 0) {
     throw new Error("No supported text files were found in the GitHub repository.")
@@ -180,7 +198,14 @@ export async function extractProjectFromGitHubRepo(input: {
       }),
       auditEvent("Fetch supported blobs from GitHub", "complete", {
         files: files.length,
-        totalTextBytes: files.reduce((total, file) => total + file.size, 0),
+        supportedFiles: fetchResult.supportedFiles,
+        selectedFiles: fetchResult.selectedFiles,
+        skippedByFileLimit: fetchResult.skippedByFileLimit,
+        skippedByTotalSizeLimit: fetchResult.skippedByTotalSizeLimit,
+        skippedUnsupportedEncoding: fetchResult.skippedUnsupportedEncoding,
+        totalTextBytes: fetchResult.totalTextBytes,
+        partialCoverage:
+          fetchResult.skippedByFileLimit > 0 || fetchResult.skippedByTotalSizeLimit > 0 || fetchResult.skippedUnsupportedEncoding > 0,
       }),
     ],
   }
@@ -210,7 +235,7 @@ async function fetchProjectFiles(
   token: string | undefined,
   limits: ScannerLimits,
 ) {
-  const candidates = tree
+  const supportedCandidates = tree
     .filter((entry) => entry.type === "blob" && entry.path && entry.sha)
     .map((entry) => ({
       path: normalizeProjectPath(entry.path ?? ""),
@@ -218,15 +243,14 @@ async function fetchProjectFiles(
       sha: entry.sha ?? "",
     }))
     .filter((entry) => shouldConsiderProjectPath(entry.path))
-    .filter((entry) => entry.size <= limits.maxFileSizeBytes && !shouldSkipLargeLockfile(entry.path, entry.size))
-    .slice(0, limits.maxFiles + 1)
-
-  if (candidates.length > limits.maxFiles) {
-    throw new Error(`Project has too many supported files. Limit is ${limits.maxFiles}.`)
-  }
+    .filter((entry) => entry.size <= maxBytesForProjectPath(entry.path, limits.maxFileSizeBytes) && !shouldSkipLargeLockfile(entry.path, entry.size))
+    .sort((a, b) => compareProjectPathPriority(a.path, b.path))
+  const candidates = supportedCandidates.slice(0, limits.maxFiles)
 
   const files: ProjectFile[] = []
   let totalTextBytes = 0
+  let skippedByTotalSizeLimit = 0
+  let skippedUnsupportedEncoding = 0
   const concurrency = Math.min(readPositiveInt(process.env.VIBESHIELD_GITHUB_BLOB_CONCURRENCY, 6), 10)
 
   for (let index = 0; index < candidates.length; index += concurrency) {
@@ -236,22 +260,35 @@ async function fetchProjectFiles(
     for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
       const candidate = batch[batchIndex]
       const bytes = decodeBlob(blobs[batchIndex])
+      if (!bytes) {
+        skippedUnsupportedEncoding += 1
+        continue
+      }
 
-      if (bytes.byteLength > limits.maxFileSizeBytes || shouldSkipLargeLockfile(candidate.path, bytes.byteLength)) continue
+      if (bytes.byteLength > maxBytesForProjectPath(candidate.path, limits.maxFileSizeBytes) || shouldSkipLargeLockfile(candidate.path, bytes.byteLength)) continue
       if (isProbablyBinary(bytes)) continue
 
-      totalTextBytes += bytes.byteLength
-      if (totalTextBytes > limits.maxTotalSizeBytes) {
-        throw new Error(`Project text files exceed ${limits.maxTotalSizeBytes} bytes.`)
+      if (totalTextBytes + bytes.byteLength > limits.maxTotalSizeBytes) {
+        skippedByTotalSizeLimit += 1
+        continue
       }
 
       const text = decodeUtf8(bytes)
       if (text === null) continue
+      totalTextBytes += bytes.byteLength
       files.push({ path: candidate.path, size: bytes.byteLength, text })
     }
   }
 
-  return files
+  return {
+    files,
+    supportedFiles: supportedCandidates.length,
+    selectedFiles: candidates.length,
+    skippedByFileLimit: Math.max(0, supportedCandidates.length - candidates.length),
+    skippedByTotalSizeLimit,
+    skippedUnsupportedEncoding,
+    totalTextBytes,
+  }
 }
 
 async function getBlob(owner: string, repo: string, sha: string, token?: string) {
@@ -282,7 +319,15 @@ export async function createRemediationPullRequest(input: {
   report: ScanReport
   token: string
 }): Promise<ScanPullRequest> {
-  const repository = repositoryRefFromReport(input.report)
+  const report = {
+    ...input.report,
+    findings: input.report.findings.filter((finding) => !finding.suppressed),
+  }
+  if (report.findings.length === 0) {
+    throw new Error("Select at least one active finding before creating a PR.")
+  }
+
+  const repository = repositoryRefFromReport(report)
   if (!repository) {
     throw new Error("This report does not include enough GitHub repository metadata to create a PR.")
   }
@@ -291,29 +336,32 @@ export async function createRemediationPullRequest(input: {
   const repo = repository.repo
   const base = sanitizeRef(repository.ref || repository.defaultBranch)
   const repositoryInfo = await getRepository(owner, repo, input.token)
-
-  if (repositoryInfo.permissions && !repositoryInfo.permissions.push && !repositoryInfo.permissions.admin && !repositoryInfo.permissions.maintain) {
-    throw new Error("GitHub token does not have permission to push a branch to this repository.")
-  }
-
   const baseSha = await getBranchHeadSha(owner, repo, base, input.token)
-  const branch = await createUniqueBranch(owner, repo, input.token, baseSha, input.report.id)
+  const target = await resolvePullRequestTarget({
+    owner,
+    repo,
+    token: input.token,
+    repositoryInfo,
+  })
+  const branch = await createUniqueBranch(target.writeOwner, target.writeRepo, input.token, baseSha, report.id)
   const filesChanged: string[] = []
   const appliedFixes: string[] = []
-  const skippedFixes = summarizeReviewRequiredFindings(input.report.findings)
+  const skippedFixes = summarizeReviewRequiredFindings(report.findings)
 
-  const gitignoreChanged = await hardenGitignore(owner, repo, branch, input.token)
-  if (gitignoreChanged) {
-    filesChanged.push(".gitignore")
-    appliedFixes.push("Updated .gitignore so local environment files stay out of future commits.")
+  if (shouldApplyGitignoreHardening(report.findings)) {
+    const gitignoreChanged = await hardenGitignore(target.writeOwner, target.writeRepo, branch, input.token)
+    if (gitignoreChanged) {
+      filesChanged.push(".gitignore")
+      appliedFixes.push("Updated .gitignore because this scan selected a committed environment-file finding.")
+    }
   }
 
-  const envChanges = await removeCommittedEnvironmentFiles(owner, repo, branch, input.token, input.report)
+  const envChanges = await removeCommittedEnvironmentFiles(target.writeOwner, target.writeRepo, branch, input.token, report)
   filesChanged.push(...envChanges.filesChanged)
   appliedFixes.push(...envChanges.appliedFixes)
 
-  const reportPath = `.github/vibeshield/security-scan-${input.report.id}.md`
-  const reportMarkdown = buildRemediationReportMarkdown(input.report, {
+  const reportPath = `.github/security-reports/static-analysis-${report.id}.md`
+  const reportMarkdown = buildRemediationReportMarkdown(report, {
     branch,
     base,
     appliedFixes,
@@ -322,13 +370,13 @@ export async function createRemediationPullRequest(input: {
   })
 
   await putRepositoryFile({
-    owner,
-    repo,
+    owner: target.writeOwner,
+    repo: target.writeRepo,
     token: input.token,
     branch,
     path: reportPath,
     content: reportMarkdown,
-    message: "Add VibeShield security remediation report",
+    message: "Add static security review report",
   })
   filesChanged.push(reportPath)
 
@@ -337,12 +385,14 @@ export async function createRemediationPullRequest(input: {
     repo,
     token: input.token,
     branch,
+    head: target.prHeadOwner ? `${target.prHeadOwner}:${branch}` : branch,
     base,
-    title: `VibeShield security remediation for ${input.report.projectName}`,
-    body: buildPullRequestBody(input.report, {
+    title: "Add static security review report",
+    body: buildPullRequestBody(report, {
       appliedFixes,
       skippedFixes,
       filesChanged,
+      forkFullName: target.forkFullName,
     }),
   })
 
@@ -366,8 +416,95 @@ async function getBranchHeadSha(owner: string, repo: string, ref: string, token:
   return sha
 }
 
+async function resolvePullRequestTarget(input: {
+  owner: string
+  repo: string
+  token: string
+  repositoryInfo: GitHubRepoApi
+}) {
+  if (canPushToRepository(input.repositoryInfo)) {
+    return {
+      writeOwner: input.owner,
+      writeRepo: input.repo,
+      prHeadOwner: undefined,
+      forkFullName: undefined,
+    }
+  }
+
+  if (input.repositoryInfo.private) {
+    throw new Error("GitHub token does not have permission to push a branch to this private repository.")
+  }
+
+  const fork = await ensureUserFork(input.owner, input.repo, input.token)
+  const [forkOwner, forkRepo] = fork.full_name.split("/")
+  if (!forkOwner || !forkRepo) {
+    throw new Error("GitHub fork metadata was incomplete.")
+  }
+
+  return {
+    writeOwner: forkOwner,
+    writeRepo: forkRepo,
+    prHeadOwner: forkOwner,
+    forkFullName: fork.full_name,
+  }
+}
+
+function canPushToRepository(repository: GitHubRepoApi) {
+  if (!repository.permissions) return false
+  return Boolean(repository.permissions.push || repository.permissions.admin || repository.permissions.maintain)
+}
+
+async function ensureUserFork(owner: string, repo: string, token: string): Promise<GitHubRepoApi> {
+  const user = await getAuthenticatedGitHubUser(token)
+  const existing = await getExistingUserFork(owner, repo, user.login, token)
+  if (existing) return existing
+
+  const response = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/forks`, token, {
+    method: "POST",
+    body: JSON.stringify({}),
+  })
+  const fork = (await response.json()) as GitHubRepoApi
+  const forkFullName = fork.full_name || `${user.login}/${repo}`
+  return waitForForkRepository(forkFullName, token)
+}
+
+async function getAuthenticatedGitHubUser(token: string) {
+  const response = await githubFetch(`${GITHUB_API}/user`, token)
+  const data = (await response.json()) as GitHubUserApi
+  if (!data.login) throw new Error("GitHub user could not be resolved for fork creation.")
+  return { login: data.login }
+}
+
+async function getExistingUserFork(owner: string, repo: string, userLogin: string, token: string) {
+  try {
+    const candidate = await getRepository(userLogin, repo, token)
+    const sourceFullName = candidate.source?.full_name ?? candidate.parent?.full_name
+    if (sourceFullName?.toLowerCase() === `${owner}/${repo}`.toLowerCase()) return candidate
+    return null
+  } catch (error) {
+    if (isGitHubNotFoundError(error)) return null
+    throw error
+  }
+}
+
+async function waitForForkRepository(fullName: string, token: string) {
+  const [owner, repo] = fullName.split("/")
+  if (!owner || !repo) throw new Error("GitHub fork metadata was incomplete.")
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      return await getRepository(owner, repo, token)
+    } catch (error) {
+      if (!isGitHubNotFoundError(error) || attempt === 7) throw error
+      await sleep(750 + attempt * 500)
+    }
+  }
+
+  throw new Error("GitHub fork was created but was not ready yet. Retry creating the PR in a moment.")
+}
+
 async function createUniqueBranch(owner: string, repo: string, token: string, baseSha: string, scanId: string) {
-  const prefix = `vibeshield/scan-${scanId.slice(0, 8)}`
+  const prefix = `security/review-${scanId.slice(0, 8)}`
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const branch = attempt === 0 ? prefix : `${prefix}-${attempt + 1}`
@@ -386,7 +523,7 @@ async function createUniqueBranch(owner: string, repo: string, token: string, ba
     }
   }
 
-  throw new Error("Could not create a unique VibeShield branch in this repository.")
+  throw new Error("Could not create a unique security review branch in this repository.")
 }
 
 async function hardenGitignore(owner: string, repo: string, branch: string, token: string) {
@@ -466,7 +603,7 @@ async function mergeEnvExample(owner: string, repo: string, branch: string, toke
   if (missing.length === 0) return false
 
   const separator = current.trim().length > 0 ? "\n\n" : ""
-  const next = `${current.replace(/\s*$/, "")}${separator}# Added by VibeShield. Values intentionally omitted.\n${missing
+  const next = `${current.replace(/\s*$/, "")}${separator}# Added by security review. Values intentionally omitted.\n${missing
     .map((key) => `${key}=`)
     .join("\n")}\n`
 
@@ -544,6 +681,7 @@ async function openPullRequest(input: {
   repo: string
   token: string
   branch: string
+  head?: string
   base: string
   title: string
   body: string
@@ -552,7 +690,7 @@ async function openPullRequest(input: {
     method: "POST",
     body: JSON.stringify({
       title: input.title.slice(0, 240),
-      head: input.branch,
+      head: input.head ?? input.branch,
       base: input.base,
       body: input.body.slice(0, 60_000),
       draft: false,
@@ -564,36 +702,51 @@ async function openPullRequest(input: {
 async function githubFetch(url: string, token?: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
   headers.set("Accept", "application/vnd.github+json")
-  headers.set("User-Agent", "VibeShield")
+  headers.set("User-Agent", "StaticSecurityReview")
   headers.set("X-GitHub-Api-Version", "2022-11-28")
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   if (token) headers.set("Authorization", `Bearer ${token}`)
 
-  const response = await fetch(url, {
-    ...init,
-    headers,
-    cache: "no-store",
-  })
+  const maxRetries = Math.min(readPositiveInt(process.env.VIBESHIELD_GITHUB_FETCH_RETRIES, DEFAULT_GITHUB_FETCH_RETRIES), 5)
+  const baseDelayMs = readPositiveInt(process.env.VIBESHIELD_GITHUB_RETRY_DELAY_MS, DEFAULT_GITHUB_RETRY_DELAY_MS)
 
-  if (!response.ok) {
-    const details = await response.text().catch(() => "")
-    const message = extractGitHubErrorMessage(details)
-    if (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0") {
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    let response: Response
+    try {
+      response = await fetch(url, {
+        ...init,
+        headers,
+        cache: "no-store",
+      })
+    } catch {
+      if (attempt < maxRetries) {
+        await sleep(githubRetryDelayMs(attempt, baseDelayMs))
+        continue
+      }
+
       throw new GitHubApiError(
-        "GitHub public API rate limit exceeded. In local development, login with GitHub or set VIBESHIELD_GITHUB_TOKEN in .env.local.",
-        response.status,
-        "github_rate_limited",
+        "GitHub could not be reached while reading the repository. Retry the scan in a moment.",
+        502,
+        "github_network_failed",
       )
     }
-    if (response.status === 401 || response.status === 403) throw new Error("GitHub authorization failed.")
-    if (response.status === 404) throw new GitHubApiError("GitHub repository or file was not found.", response.status, "github_not_found")
-    if (response.status === 422) {
-      throw new GitHubApiError(`GitHub API validation failed${message ? `: ${message}` : ""}.`, response.status, "github_validation_failed")
+
+    if (response.ok) return response
+
+    if (shouldRetryGitHubResponse(response, attempt, maxRetries)) {
+      await response.body?.cancel().catch(() => undefined)
+      await sleep(githubRetryDelayMs(attempt, baseDelayMs))
+      continue
     }
-    throw new Error(`GitHub API request failed with status ${response.status}${message ? `: ${message}` : ""}.`)
+
+    await throwGitHubResponseError(response)
   }
 
-  return response
+  throw new GitHubApiError(
+    "GitHub is temporarily unavailable while reading this repository. Retry the scan in a moment.",
+    502,
+    "github_temporarily_unavailable",
+  )
 }
 
 function getLocalGitHubToken() {
@@ -623,7 +776,7 @@ function withRequiredGitignoreLines(current: string) {
   if (missing.length === 0) return current
 
   const prefix = current.trim().length > 0 ? `${current.replace(/\s*$/, "")}\n\n` : ""
-  return `${prefix}# VibeShield: keep local secrets out of git\n${missing.join("\n")}\n`
+  return `${prefix}# Keep local secrets out of git\n${missing.join("\n")}\n`
 }
 
 function committedEnvironmentFindingPaths(findings: ScanFinding[]) {
@@ -669,46 +822,51 @@ function buildRemediationReportMarkdown(
     skippedFixes: string[]
   },
 ) {
-  const patchPreviews = report.findings
-    .filter((finding) => finding.patch)
-    .slice(0, 12)
-    .flatMap((finding) => [
-      `### ${finding.id} - ${finding.title}`,
-      "",
-      `- Severity: \`${finding.severity}\``,
-      `- Category: \`${finding.category}\``,
-      `- File: \`${formatFindingLocation(finding)}\``,
-      `- Recommendation: ${finding.recommendation}`,
-      `- Patch preview: ${finding.patch?.summary ?? "No patch preview available."}`,
-      "",
-      finding.patch?.unifiedDiff ? `\`\`\`diff\n${finding.patch.unifiedDiff.slice(0, 2500)}\n\`\`\`\n` : "",
-    ])
-
   return [
-    generateIssueBody(report),
+    "# Static security review report",
     "",
-    "## GitHub PR remediation",
+    "This report was generated from static repository analysis. It is intended for maintainer review and does not claim that every finding has been automatically fixed.",
+    "",
+    "## Scan metadata",
+    "",
+    `- Project: \`${report.projectName}\``,
+    `- Source: \`${report.sourceLabel}\``,
+    `- Scan ID: \`${report.id}\``,
+    `- Mode: \`${report.analysisMode ?? "unknown"}\``,
+    `- Risk score: **${report.riskScore}/100**`,
+    `- Findings included: **${report.findings.length}**`,
+    `- Files inspected: **${report.filesInspected}**`,
+    `- Baseline: **${formatPullRequestBaseline(report)}**`,
+    "",
+    ...formatPullRequestRiskBreakdown(report),
+    "## Findings requiring review",
+    "",
+    ...formatPullRequestFindings(report),
+    "",
+    "## GitHub PR follow-up",
     "",
     `**Branch:** \`${pr.branch}\``,
     `**Base:** \`${pr.base}\``,
     "",
-    "### Applied automatically",
+    "### Low-risk changes applied",
     "",
     ...(pr.appliedFixes.length > 0 ? pr.appliedFixes.map((item) => `- ${item}`) : ["- No code files were changed automatically."]),
     "",
-    "### Files changed by this PR",
+    "### Files changed",
     "",
     ...pr.filesChanged.map((file) => `- \`${file}\``),
     "",
-    "### Review-required fixes",
+    "### Findings requiring human review",
     "",
-    ...pr.skippedFixes.map((item) => `- ${item}`),
+    ...(pr.skippedFixes.length > 0 ? pr.skippedFixes.map((item) => `- ${item}`) : ["- No selected findings require additional manual notes in this PR."]),
     "",
-    "## Patch previews",
+    "## Review policy",
     "",
-    ...(patchPreviews.length > 0 ? patchPreviews : ["No patch previews were generated for this scan."]),
+    "- This pull request does not include speculative code patches.",
+    "- Architecture-sensitive findings, including auth, rate limits, agent tools, MCP, CI permissions, and supply-chain posture, remain maintainer-reviewed.",
+    "- Local-only report links are intentionally omitted because public maintainers cannot open them.",
     "",
-    "_VibeShield only applies low-risk repository hygiene automatically. Auth, rate-limit, validation and tool-calling fixes remain review-required because they depend on the target app architecture._",
+    "_Generated from static security analysis._",
     "",
   ].join("\n")
 }
@@ -719,15 +877,24 @@ function buildPullRequestBody(
     filesChanged: string[]
     appliedFixes: string[]
     skippedFixes: string[]
+    forkFullName?: string
   },
 ) {
   return [
-    `VibeShield scanned \`${report.sourceLabel}\` and opened this remediation PR.`,
+    "## Summary",
     "",
-    `Risk score: **${report.riskScore}/100**`,
-    `Findings: **${report.findings.length}**`,
+    `This PR adds a static security review report for \`${report.sourceLabel}\` and applies only low-risk repository hygiene changes when available.`,
     "",
-    "## Applied automatically",
+    "It does not claim to fully remediate every finding. Items that require product, auth, rate-limit, agent, MCP, or CI policy decisions are listed for human review.",
+    "",
+    "## Scan metadata",
+    "",
+    `- Risk score: **${report.riskScore}/100**`,
+    `- Findings included: **${report.findings.length}**`,
+    `- Baseline: **${formatPullRequestBaseline(report)}**`,
+    ...(pr.forkFullName ? [`- Head fork: \`${pr.forkFullName}\``] : []),
+    "",
+    "## Changes in this PR",
     "",
     ...(pr.appliedFixes.length > 0 ? pr.appliedFixes.map((item) => `- ${item}`) : ["- No safe automatic code changes were available for this report."]),
     "",
@@ -735,19 +902,101 @@ function buildPullRequestBody(
     "",
     ...pr.filesChanged.map((file) => `- \`${file}\``),
     "",
-    "## Still needs review",
+    "## Findings requiring review",
     "",
-    ...pr.skippedFixes.map((item) => `- ${item}`),
+    ...(pr.skippedFixes.length > 0 ? pr.skippedFixes.map((item) => `- ${item}`) : ["- No selected findings require additional manual notes in this PR."]),
     "",
-    "VibeShield intentionally does not insert placeholder auth or rate-limit code that could break production. The full report and patch previews are included in `.github/vibeshield/`.",
+    "## Notes",
+    "",
+    "- The full review report is included under `.github/security-reports/`.",
+    "- This is a report-first pull request. It does not include speculative or placeholder fixes.",
+    "- Placeholder fixes that could break production behavior are intentionally avoided.",
+    "- Review all security-sensitive changes before merging.",
   ].join("\n")
+}
+
+function formatPullRequestBaseline(report: ScanReport) {
+  const summary = report.baselineSummary
+  if (!summary) return "no saved baseline"
+  return `${summary.new} new / ${summary.existing} existing / ${summary.resolved} resolved / ${summary.suppressed} suppressed`
 }
 
 function summarizeReviewRequiredFindings(reportFindings: ScanFinding[]) {
   return reportFindings
-    .filter((finding) => finding.patchable)
+    .filter((finding) => !finding.suppressed)
     .slice(0, 12)
-    .map((finding) => `${finding.id} ${finding.title} in ${formatFindingLocation(finding)} requires project-specific review.`)
+    .map(
+      (finding) =>
+        `${finding.id} ${finding.title} in ${formatFindingLocation(finding)} is review-required; no automatic code change was applied for it.`,
+    )
+}
+
+function shouldApplyGitignoreHardening(findings: ScanFinding[]) {
+  return findings.some((finding) => {
+    if (finding.suppressed || finding.category !== "secret_exposure") return false
+    if (!isCommittedEnvironmentPath(finding.filePath)) return false
+    return /committed environment file|environment file detected/i.test(`${finding.title}\n${finding.description}\n${finding.recommendation}`)
+  })
+}
+
+function isCommittedEnvironmentPath(filePath: string) {
+  const name = filePath.split("/").pop() ?? filePath
+  return /^\.env(?:$|\.|-)/.test(name)
+}
+
+function formatPullRequestRiskBreakdown(report: ScanReport) {
+  const breakdown = report.riskBreakdown
+  if (!breakdown) return []
+  return [
+    "## Risk breakdown",
+    "",
+    `- Runtime / agent risk: **${breakdown.runtimeAgentRisk.label}** (${breakdown.runtimeAgentRisk.score}/100)`,
+    `- CI / supply-chain posture: **${breakdown.repoPostureRisk.label}** (${breakdown.repoPostureRisk.score}/100)`,
+    `- Dependency risk: **${breakdown.dependencyRisk.label}** (${breakdown.dependencyRisk.score}/100)`,
+    `- Secrets risk: **${breakdown.secretsRisk.label}** (${breakdown.secretsRisk.score}/100)`,
+    "",
+  ]
+}
+
+function formatPullRequestFindings(report: ScanReport) {
+  const findings = [...report.findings].sort(compareFindingsForPullRequest).slice(0, 20)
+  if (findings.length === 0) return ["No active findings were selected for this pull request.", ""]
+
+  return findings.flatMap((finding, index) => [
+    `### ${index + 1}. ${finding.title}`,
+    "",
+    `- Severity: \`${finding.severity}\``,
+    `- Category: \`${finding.category}\``,
+    `- Rule: \`${finding.ruleId ?? "unknown"}\``,
+    `- Location: \`${formatFindingLocation(finding)}\``,
+    `- Confidence: ${Math.round(finding.confidence * 100)}%${finding.confidenceReason ? ` - ${finding.confidenceReason}` : ""}`,
+    `- Recommendation: ${finding.recommendation}`,
+    ...(finding.evidence ? [`- Evidence: \`${finding.evidence}\``] : []),
+    "",
+  ])
+}
+
+function compareFindingsForPullRequest(a: ScanFinding, b: ScanFinding) {
+  const severityDelta = severityRank(b.severity) - severityRank(a.severity)
+  if (severityDelta !== 0) return severityDelta
+  return b.confidence - a.confidence
+}
+
+function severityRank(severity: ScanFinding["severity"]) {
+  switch (severity) {
+    case "critical":
+      return 5
+    case "high":
+      return 4
+    case "medium":
+      return 3
+    case "low":
+      return 2
+    case "info":
+      return 1
+    default:
+      return 0
+  }
 }
 
 function formatFindingLocation(finding: ScanFinding) {
@@ -766,6 +1015,40 @@ function isGitHubValidationError(error: unknown) {
   return error instanceof GitHubApiError && error.code === "github_validation_failed"
 }
 
+function shouldRetryGitHubResponse(response: Response, attempt: number, maxRetries: number) {
+  if (attempt >= maxRetries) return false
+  if (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0") return false
+  return RETRYABLE_GITHUB_STATUSES.has(response.status)
+}
+
+async function throwGitHubResponseError(response: Response): Promise<never> {
+  const details = await response.text().catch(() => "")
+  const message = extractGitHubErrorMessage(details)
+
+  if (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0") {
+    throw new GitHubApiError(
+      "GitHub public API rate limit exceeded. In local development, login with GitHub or set VIBESHIELD_GITHUB_TOKEN in .env.local.",
+      response.status,
+      "github_rate_limited",
+    )
+  }
+
+  if (response.status === 401 || response.status === 403) throw new Error("GitHub authorization failed.")
+  if (response.status === 404) throw new GitHubApiError("GitHub repository or file was not found.", response.status, "github_not_found")
+  if (response.status === 422) {
+    throw new GitHubApiError(`GitHub API validation failed${message ? `: ${message}` : ""}.`, response.status, "github_validation_failed")
+  }
+  if (RETRYABLE_GITHUB_STATUSES.has(response.status)) {
+    throw new GitHubApiError(
+      "GitHub is temporarily unavailable while reading this repository. Retry the scan in a moment.",
+      502,
+      "github_temporarily_unavailable",
+    )
+  }
+
+  throw new Error(`GitHub API request failed with status ${response.status}${message ? `: ${message}` : ""}.`)
+}
+
 class GitHubApiError extends Error {
   constructor(
     message: string,
@@ -777,11 +1060,11 @@ class GitHubApiError extends Error {
 }
 
 function decodeBlob(blob: GitHubBlobApi) {
-  if (blob.encoding !== "base64" || !blob.content) {
-    throw new Error("Unsupported GitHub blob encoding.")
-  }
+  if (!blob.content) return null
+  if (blob.encoding === "base64") return Buffer.from(blob.content.replace(/\s/g, ""), "base64")
+  if (blob.encoding === "utf-8") return Buffer.from(blob.content, "utf8")
 
-  return Buffer.from(blob.content.replace(/\s/g, ""), "base64")
+  return null
 }
 
 function normalizeRepoParts(owner: string, repoInput: string): ParsedGitHubUrl {
@@ -808,12 +1091,26 @@ function readPositiveInt(value: string | undefined, fallback: number) {
   return Math.floor(parsed)
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function githubRetryDelayMs(attempt: number, baseDelayMs: number) {
+  return baseDelayMs * 2 ** attempt
+}
+
 function extractGitHubErrorMessage(raw: string) {
   if (!raw) return ""
+  if (looksLikeHtml(raw)) return ""
   try {
     const parsed = JSON.parse(raw) as { message?: unknown }
     return typeof parsed.message === "string" ? parsed.message.replace(/\s+/g, " ").slice(0, 220) : ""
   } catch {
     return raw.replace(/\s+/g, " ").slice(0, 220)
   }
+}
+
+function looksLikeHtml(raw: string) {
+  const trimmed = raw.trimStart().slice(0, 120).toLowerCase()
+  return trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html") || trimmed.includes("<body")
 }

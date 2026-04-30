@@ -9,7 +9,7 @@ const STAGES: { title: string; sub: string; duration: number }[] = [
   { title: "Fingerprint project", sub: "Frameworks · AI SDK usage · client vs. server boundaries", duration: 3 },
   { title: "Run deterministic security rules", sub: "Secret sweep · env leaks · auth gaps · AI endpoint guards · unsafe code", duration: 8 },
   { title: "AI review", sub: "Validating findings · plain-English explanations & recommendations", duration: 8 },
-  { title: "Generate patch previews", sub: "Conservative, review-required suggestions", duration: 3 },
+  { title: "Generate patch previews", sub: "Conservative, review-required suggestions · Max mode can take several minutes", duration: 3 },
 ]
 
 const fmt = (s: number) =>
@@ -26,7 +26,6 @@ export function ScanProgress({ done = false }: Props) {
   const starts: number[] = []
   let acc = 0
   for (const s of STAGES) { starts.push(acc); acc += s.duration }
-  const totalSec = acc
 
   useEffect(() => {
     if (done || step >= STAGES.length - 1) return
@@ -39,12 +38,14 @@ export function ScanProgress({ done = false }: Props) {
 
   useEffect(() => {
     const t0 = Date.now()
-    const i = setInterval(() => setNow(Math.min((Date.now() - t0) / 1000, totalSec)), 250)
+    const i = setInterval(() => setNow((Date.now() - t0) / 1000), 250)
     return () => clearInterval(i)
-  }, [totalSec])
+  }, [])
 
   const complete = done
   const renderedStep = done ? STAGES.length : step
+  const totalExpected = starts[starts.length - 1] + STAGES[STAGES.length - 1].duration
+  const takingLonger = !done && now > totalExpected + 12
 
   return (
     <div className="scan-progress" style={{ marginTop: 18 }}>
@@ -52,9 +53,14 @@ export function ScanProgress({ done = false }: Props) {
         <h4>Scan agent</h4>
         <span className="live">
           <span className="dot" />
-          {complete ? `complete · ${fmt(totalSec)}` : `live · ${fmt(now)}`}
+          {complete ? `complete · ${fmt(now)}` : takingLonger ? `working · ${fmt(now)}` : `live · ${fmt(now)}`}
         </span>
       </div>
+      {takingLonger && (
+        <div className="scan-progress-note">
+          Still working on the server. Large repositories and Max mode may wait on GitHub or AI provider responses.
+        </div>
+      )}
       <div className="timeline">
         {STAGES.map((s, i) => {
           const state: "done" | "active" | "pending" =

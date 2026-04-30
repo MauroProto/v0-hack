@@ -1,12 +1,15 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { getSupabaseServiceClient, isSupabaseConfigured } from "@/lib/supabase/server"
-import type { ScanReport } from "./types"
+import { isSupabaseConfigured } from "@/lib/supabase/config"
+import type { ScanBaseline, ScanReport } from "./types"
+import { baselineIdFor } from "./reportPolicy"
 
 const TABLE = "vibeshield_scan_reports"
+const BASELINES_TABLE = "vibeshield_repo_baselines"
 
 type StoreGlobal = typeof globalThis & {
   __vibeshieldScanStore?: Map<string, ScanReport>
+  __vibeshieldBaselineStore?: Map<string, ScanBaseline>
   __vibeshieldScanStoreLoaded?: boolean
   __vibeshieldScanStoreLoadPromise?: Promise<void>
 }
@@ -24,6 +27,15 @@ type ScanReportRow = {
   report: ScanReport
 }
 
+type ScanBaselineRow = {
+  id: string
+  created_at: string
+  updated_at: string
+  owner_hash: string | null
+  source_label: string
+  baseline: ScanBaseline
+}
+
 const storeGlobal = globalThis as StoreGlobal
 
 function getMemoryStore() {
@@ -32,6 +44,14 @@ function getMemoryStore() {
   }
 
   return storeGlobal.__vibeshieldScanStore
+}
+
+function getBaselineStore() {
+  if (!storeGlobal.__vibeshieldBaselineStore) {
+    storeGlobal.__vibeshieldBaselineStore = new Map<string, ScanBaseline>()
+  }
+
+  return storeGlobal.__vibeshieldBaselineStore
 }
 
 export function getStorageMode() {
@@ -44,7 +64,7 @@ export async function saveScanReport(report: ScanReport) {
   await ensureLocalStoreLoaded()
   getMemoryStore().set(report.id, report)
 
-  const supabase = getSupabaseServiceClient()
+  const supabase = await getSupabaseClient()
   if (!supabase) {
     if (persistentStorageRequired()) {
       throw new Error("Persistent scan storage is not configured. Connect Supabase before accepting production scans.")
@@ -82,7 +102,7 @@ export async function getScanReport(scanId: string) {
   const memoryReport = getMemoryStore().get(scanId)
   if (memoryReport) return memoryReport
 
-  const supabase = getSupabaseServiceClient()
+  const supabase = await getSupabaseClient()
   if (!supabase) return undefined
 
   const { data, error } = await supabase.from(TABLE).select("report").eq("id", scanId).maybeSingle()
@@ -106,6 +126,64 @@ export async function updateScanReport(scanId: string, updater: (report: ScanRep
   return next
 }
 
+export async function saveScanBaseline(baseline: ScanBaseline) {
+  await ensureLocalStoreLoaded()
+  const now = new Date().toISOString()
+  const next: ScanBaseline = {
+    ...baseline,
+    updatedAt: now,
+  }
+  getBaselineStore().set(next.id, next)
+
+  const supabase = await getSupabaseClient()
+  if (!supabase) {
+    if (persistentStorageRequired()) {
+      throw new Error("Persistent baseline storage is not configured. Connect Supabase before accepting production scans.")
+    }
+    await persistLocalStore()
+    return next
+  }
+
+  const row: ScanBaselineRow = {
+    id: next.id,
+    created_at: next.createdAt,
+    updated_at: next.updatedAt,
+    owner_hash: next.ownerHash ?? null,
+    source_label: next.sourceLabel,
+    baseline: next,
+  }
+
+  const { error } = await supabase.from(BASELINES_TABLE).upsert(row, { onConflict: "id" })
+  if (error) {
+    console.error("VibeShield Supabase baseline save failed", error.message)
+    if (persistentStorageRequired()) {
+      throw new Error("Persistent baseline storage failed. The baseline was not saved.")
+    }
+  }
+
+  return next
+}
+
+export async function getScanBaseline(sourceLabel: string, ownerHash?: string) {
+  await ensureLocalStoreLoaded()
+  const id = baselineIdFor(sourceLabel, ownerHash)
+  const memoryBaseline = getBaselineStore().get(id)
+  if (memoryBaseline) return memoryBaseline
+
+  const supabase = await getSupabaseClient()
+  if (!supabase) return undefined
+
+  const { data, error } = await supabase.from(BASELINES_TABLE).select("baseline").eq("id", id).maybeSingle()
+  if (error) {
+    console.error("VibeShield Supabase baseline read failed", error.message)
+    return undefined
+  }
+
+  const baseline = (data as Pick<ScanBaselineRow, "baseline"> | null)?.baseline
+  if (baseline) getBaselineStore().set(id, baseline)
+  return baseline
+}
+
 export async function listScanReports(ownerHash?: string) {
   await ensureLocalStoreLoaded()
   const memoryReports = [...getMemoryStore().values()].filter((report) => canListReport(report, ownerHash))
@@ -116,7 +194,7 @@ export async function listScanReports(ownerHash?: string) {
     return sortReports(memoryReports)
   }
 
-  const supabase = getSupabaseServiceClient()
+  const supabase = await getSupabaseClient()
   if (!supabase) return sortReports(memoryReports)
 
   const { data, error } = await supabase
@@ -140,7 +218,7 @@ export async function listScanReports(ownerHash?: string) {
 async function listSupabaseOwnerReports(ownerHash?: string) {
   if (!ownerHash) return []
 
-  const supabase = getSupabaseServiceClient()
+  const supabase = await getSupabaseClient()
   if (!supabase) return undefined
 
   const { data, error } = await supabase
@@ -190,12 +268,18 @@ async function ensureLocalStoreLoaded() {
 async function loadLocalStore() {
   try {
     const raw = await readFile(localStorePath(), "utf8")
-    const parsed = JSON.parse(raw) as { reports?: unknown }
+    const parsed = JSON.parse(raw) as { reports?: unknown; baselines?: unknown }
     const reports = Array.isArray(parsed.reports) ? parsed.reports : []
+    const baselines = Array.isArray(parsed.baselines) ? parsed.baselines : []
     const store = getMemoryStore()
+    const baselineStore = getBaselineStore()
 
     for (const report of reports) {
       if (isPersistedScanReport(report)) store.set(report.id, report)
+    }
+
+    for (const baseline of baselines) {
+      if (isPersistedScanBaseline(baseline)) baselineStore.set(baseline.id, baseline)
     }
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
@@ -216,6 +300,7 @@ async function persistLocalStore() {
   const filePath = localStorePath()
   const tmpPath = `${filePath}.tmp`
   const reports = sortReports([...getMemoryStore().values()])
+  const baselines = [...getBaselineStore().values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 
   try {
     await mkdir(path.dirname(filePath), { recursive: true })
@@ -226,6 +311,7 @@ async function persistLocalStore() {
           version: 1,
           updatedAt: new Date().toISOString(),
           reports,
+          baselines,
         },
         null,
         2,
@@ -242,6 +328,12 @@ function localFileStoreEnabled() {
   if (isSupabaseConfigured()) return false
   if (process.env.VIBESHIELD_DISABLE_LOCAL_FILE_STORE === "true") return false
   return process.env.NODE_ENV !== "production" || process.env.VIBESHIELD_ENABLE_LOCAL_FILE_STORE === "true"
+}
+
+async function getSupabaseClient() {
+  if (!isSupabaseConfigured()) return null
+  const { getSupabaseServiceClient } = await import("@/lib/supabase/server")
+  return getSupabaseServiceClient()
 }
 
 function persistentStorageRequired() {
@@ -271,6 +363,18 @@ function isPersistedScanReport(value: unknown): value is ScanReport {
       report.sourceType === "github" &&
       Array.isArray(report.findings) &&
       Array.isArray(report.auditTrail),
+  )
+}
+
+function isPersistedScanBaseline(value: unknown): value is ScanBaseline {
+  if (!value || typeof value !== "object") return false
+  const baseline = value as Partial<ScanBaseline>
+  return Boolean(
+    typeof baseline.id === "string" &&
+      typeof baseline.sourceLabel === "string" &&
+      typeof baseline.createdAt === "string" &&
+      typeof baseline.updatedAt === "string" &&
+      Array.isArray(baseline.fingerprints),
   )
 }
 

@@ -44,7 +44,9 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   const [githubSession, setGitHubSession] = useState<GitHubAuthSession>({ authenticated: false })
   const [repos, setRepos] = useState<GitHubRepo[]>([])
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null)
-  const [loading, setLoading] = useState<"scan" | "login" | "repos" | null>(null)
+  const [scanLoading, setScanLoading] = useState(false)
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [reposLoading, setReposLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pendingScanId, setPendingScanId] = useState<string | null>(null)
   const [scanFinished, setScanFinished] = useState(false)
@@ -53,7 +55,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   const githubConnected = githubSession.authenticated
 
   const loadRepos = useCallback(async () => {
-    setLoading("repos")
+    setReposLoading(true)
     setError(null)
 
     try {
@@ -65,7 +67,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     } catch (repoError) {
       setError(repoError instanceof Error ? repoError.message : "Could not list repositories.")
     } finally {
-      setLoading(null)
+      setReposLoading(false)
     }
   }, [])
 
@@ -115,12 +117,12 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     setPendingScanId(null)
     setScanFinished(false)
     setScanKey((k) => k + 1)
-    setLoading("scan")
+    setScanLoading(true)
   }
 
   const handleScanFailure = (message: string) => {
     setError(message)
-    setLoading(null)
+    setScanLoading(false)
     setScanFinished(false)
     setPendingScanId(null)
   }
@@ -133,17 +135,16 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     beginScan()
 
     try {
-      const response = await fetch("/api/scan", {
+      const { response, data } = await fetchJsonWithTimeout("/api/scan", {
         method: "POST",
         headers: requestHeaders(),
         body: JSON.stringify({ githubUrl: normalizeGithubInput(githubUrl), analysisMode }),
-      })
-      const data = await response.json()
+      }, scanTimeoutMs(analysisMode))
       if (!response.ok) throw new Error(data.error ?? "Scan failed.")
       setPendingScanId(data.scanId)
       setScanFinished(true)
     } catch (scanError) {
-      handleScanFailure(scanError instanceof Error ? scanError.message : "Scan failed.")
+      handleScanFailure(errorMessageForScan(scanError, analysisMode))
     }
   }
 
@@ -155,23 +156,22 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     beginScan()
 
     try {
-      const response = await fetch("/api/scan", {
+      const { response, data } = await fetchJsonWithTimeout("/api/scan", {
         method: "POST",
         headers: requestHeaders(),
         body: JSON.stringify({ repoFullName: repo.fullName, ref: repo.defaultBranch, analysisMode }),
-      })
-      const data = await response.json()
+      }, scanTimeoutMs(analysisMode))
       if (!response.ok) throw new Error(data.error ?? "Scan failed.")
       setPendingScanId(data.scanId)
       setScanFinished(true)
     } catch (scanError) {
-      handleScanFailure(scanError instanceof Error ? scanError.message : "Scan failed.")
+      handleScanFailure(errorMessageForScan(scanError, analysisMode))
     }
   }
 
   const signInWithGitHub = async () => {
     setError(null)
-    setLoading("login")
+    setLoginLoading(true)
     window.location.assign("/api/auth/github/start")
   }
 
@@ -249,9 +249,9 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
                     Sign out
                   </button>
                 ) : (
-                  <button className="btn btn-accent" type="button" onClick={signInWithGitHub} disabled={loading === "login"}>
+                  <button className="btn btn-accent" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
                     <Icon.branch style={{ width: 14, height: 14 }} />
-                    {loading === "login" ? "Redirecting..." : "Login with GitHub"}
+                    {loginLoading ? "Redirecting..." : "Login with GitHub"}
                   </button>
                 )}
               </div>
@@ -263,10 +263,10 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
                       className="btn btn-outline"
                       type="button"
                       onClick={() => loadRepos()}
-                      disabled={loading === "repos"}
+                      disabled={reposLoading}
                     >
                       <Icon.scan style={{ width: 14, height: 14 }} />
-                      {loading === "repos" ? "Refreshing..." : "Refresh repos"}
+                      {reposLoading ? "Refreshing..." : "Refresh repos"}
                     </button>
                   </div>
                   <div className="repo-list">
@@ -298,7 +298,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
             </div>
           )}
 
-          {loading === "scan" && (
+          {scanLoading && (
             <ScanProgress
               key={scanKey}
               done={scanFinished}
@@ -307,19 +307,19 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
 
           <div className="scan-actions-row">
             {mode === "public" ? (
-              <button className="btn btn-outline" onClick={startPublicScan} disabled={loading !== null} type="button">
+              <button className="btn btn-outline" onClick={startPublicScan} disabled={scanLoading} type="button">
                 <Icon.bolt style={{ width: 14, height: 14 }} />
-                {loading === "scan" ? "Scanning..." : "Scan public repository"}
+                {scanLoading ? "Scanning..." : "Scan public repository"}
               </button>
             ) : (
               <button
                 className="btn btn-outline"
                 onClick={() => selectedRepo && startRepoScan(selectedRepo)}
-                disabled={loading !== null || !selectedRepo}
+                disabled={scanLoading || !selectedRepo}
                 type="button"
               >
                 <Icon.bolt style={{ width: 14, height: 14 }} />
-                {loading === "scan" ? "Scanning..." : "Scan selected repository"}
+                {scanLoading ? "Scanning..." : "Scan selected repository"}
               </button>
             )}
           </div>
@@ -340,4 +340,36 @@ function requestHeaders() {
   return {
     "Content-Type": "application/json",
   }
+}
+
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    })
+    const data = await response.json()
+    return { response, data }
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+function scanTimeoutMs(mode: AnalysisMode) {
+  if (mode === "max") return 390_000
+  if (mode === "normal") return 150_000
+  return 90_000
+}
+
+function errorMessageForScan(error: unknown, mode: AnalysisMode) {
+  if (error instanceof Error && error.name === "AbortError") {
+    return mode === "max"
+      ? "Max scan is taking longer than expected. Try Normal mode for this repository, or retry Max after narrowing the project."
+      : "Scan is taking longer than expected. Retry in a moment or use Rules mode for a faster deterministic pass."
+  }
+
+  return error instanceof Error ? error.message : "Scan failed."
 }

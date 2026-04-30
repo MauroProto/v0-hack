@@ -2,6 +2,7 @@ import "server-only"
 
 import { createHash } from "node:crypto"
 import { calculateRiskScore } from "@/lib/scanner/patches"
+import { withReportDerivedFields } from "@/lib/scanner/enrich"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
 import { getGitHubSessionFromHeaders } from "@/lib/security/github-session"
 import type { AuditTrailEvent, ScanFinding, ScanReport } from "@/lib/scanner/types"
@@ -64,7 +65,7 @@ export function canAccessReport(report: ScanReport, identity: RequestIdentity) {
 export function publicReport(report: ScanReport): ScanReport {
   const findings = report.findings.filter((finding) => !isLegacyCoverageFinding(finding))
   const removedLegacyFindings = report.findings.length - findings.length
-  const safeReport = {
+  const safeReport = withReportDerivedFields({
     ...report,
     findings,
     auditTrail:
@@ -72,7 +73,7 @@ export function publicReport(report: ScanReport): ScanReport {
         ? normalizeLegacyCoverageAuditTrail(report.auditTrail, findings)
         : report.auditTrail,
     riskScore: calculateRiskScore(findings),
-  }
+  })
   delete safeReport.ownerHash
   delete safeReport.ownerKind
   return safeReport

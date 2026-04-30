@@ -6,7 +6,13 @@ const ENV_FILE_NAMES = new Set([".env", ".env.local", ".env.production", ".env.d
 
 const SENSITIVE_API_SEGMENTS = /\/(admin|internal|billing|users|secrets)\//i
 const AUTH_SIGNALS =
-  /\b(auth\(|getServerSession|currentUser|clerkClient|verifyToken|getSession|requireAuth|withAuth|middleware|validateSession|session\s*[:=]|jwtVerify)\b/i
+  /\b(?:auth\s*\(|getServerSession\s*\(|currentUser\s*\(|clerkClient|verifyToken\s*\(|getSession\s*\(|requireAuth\s*\(|withAuth\s*\(|middleware|validateSession\s*\(|session\s*[:=]|jwtVerify\s*\()/i
+const STRONG_AUTH_GUARD_SIGNALS =
+  /\b(requireAuth|withAuth|assertAuthenticated|assertAuthorized|requireUser|requireAdmin|ensureAuth|ensureUser|requireSession|requireRole|requirePermission)\s*\(/i
+const AUTH_DENY_SIGNALS =
+  /\b(status\s*:\s*(401|403)|Unauthorized|Forbidden|Access denied|redirect\s*\(\s*["'][^"']*(login|signin|auth)|notFound\s*\()/i
+const AUTH_CONDITION_SIGNALS =
+  /if\s*\(\s*(?:!\s*(session|user|currentUser|viewer|account|token|authResult)\b(?:\??\.[A-Za-z_$][\w$]*)*|(?:session|user|currentUser|viewer|account|token|authResult)(?:\??\.[A-Za-z_$][\w$]*)*\s*(?:={2,3}|!)\s*(?:null|undefined)|[^)]*\b(role|permission|ownerId|userId|organizationId|teamId|isAdmin|canAccess|canManage|hasPermission)\b[^)]*)\)/i
 const COOKIES_SESSION_SIGNAL = /\bcookies\(\)/i
 const HEADERS_TOKEN_SIGNAL = /\bheaders\(\)/i
 const SESSION_OR_TOKEN_SIGNAL = /\b(session|token|authorization|bearer|jwt|auth)\b/i
@@ -28,6 +34,9 @@ const UNSAFE_DATABASE_QUERY_SIGNALS =
   /\b(\$queryRawUnsafe|\$executeRawUnsafe|(?:db|pool|client|connection)\.query\s*\(\s*`[^`]*\$\{[^}]*\b(req|request|body|input|params|searchParams)\b)/i
 const INSTALL_SCRIPT_NAMES = new Set(["preinstall", "install", "postinstall", "prepare"])
 const RISKY_INSTALL_SCRIPT_SIGNALS = /\b(curl|wget|bash|sh|node\s+-e|npx|pnpm\s+dlx|bunx)\b/i
+const REMOTE_INSTALL_PIPE_TO_SHELL =
+  /\b(?:curl|wget)\b[^\n|;&]*(?:https?:\/\/|raw\.githubusercontent\.com|github\.com)[^\n|;&]*\|\s*(?:sudo\s+)?(?:bash|sh)\b/i
+const SHA_REF_RE = /^[a-f0-9]{40}$/i
 
 const DANGEROUS_NEXT_PUBLIC_NAMES = [
   "NEXT_PUBLIC_OPENAI_API_KEY",
@@ -117,11 +126,19 @@ export function collectRuleFindings(files: ProjectFile[]): RuleScanResult {
     scanAiEndpointWithoutGuard(file, add)
     scanAiToolCallingWithoutBounds(file, add)
     scanUnsafeToolCalling(file, add)
+    scanAgentToolingRisks(file, add)
     scanMissingInputValidation(file, add)
     scanWebhookWithoutSignature(file, add)
     scanPermissiveCors(file, add)
     scanCookieHardening(file, add)
     scanUnsafeDatabaseQuery(file, add)
+    scanRequestTaintToDangerousSink(file, add)
+    scanUnsafeRedirect(file, add)
+    scanServerActionRisks(file, add)
+    scanSupabaseRisks(file, add)
+    scanPrismaSchemaRisks(file, add)
+    scanGitHubActionsRisks(file, add)
+    scanRemoteInstallPipeToShell(file, add)
     scanDangerousCode(file, add)
     scanRustDangerousCode(file, add)
     scanPackageScripts(file, add)
@@ -207,17 +224,22 @@ function scanSecretPatterns(file: ProjectFile, add: (finding: RuleFinding) => vo
     for (const match of file.text.matchAll(pattern.regex)) {
       const index = match.index ?? 0
       const { line, lineNumber } = lineAtIndex(file.text, index)
-      if (isObviousPlaceholder(line) || isExampleSecretPlaceholder(file.path, line)) continue
+      if (shouldIgnoreSecretPatternMatch(file.path, line)) continue
 
       add({
+        kind: "vulnerability",
         severity: "critical",
         category: "secret_exposure",
+        ruleId: "secret.provider-token.committed",
         title: `${pattern.name} appears to be exposed`,
         description: `A value matching ${pattern.name} was found in source-controlled project files.`,
         filePath: file.path,
         lineStart: lineNumber,
         evidence: redactSecrets(line.trim()),
         confidence: pattern.name === "JWT-like token" ? 0.78 : 0.94,
+        confidenceReason: "Provider-format credential value was found outside documentation, tests, fixtures, placeholders, and redaction detector code.",
+        reachability: "reachable",
+        exploitability: "high",
         recommendation: "Revoke and rotate this credential, remove it from the repository, and read it only from server-side environment variables.",
         patchable: true,
         source: "rule",
@@ -227,18 +249,23 @@ function scanSecretPatterns(file: ProjectFile, add: (finding: RuleFinding) => vo
 
   file.text.split(/\r?\n/).forEach((line, index) => {
     if (!GENERIC_SECRET_NAMES.test(line)) return
-    if (!/[=:]/.test(line)) return
+    if (!extractSecretAssignment(line)) return
     if (!lineHasConcreteSecretValue(file.path, line)) return
 
     add({
+      kind: "vulnerability",
       severity: "critical",
       category: "secret_exposure",
+      ruleId: "secret.high-risk-name.assigned-value",
       title: "High-risk secret name with assigned value",
       description: "A high-risk secret variable name appears with a committed value.",
       filePath: file.path,
       lineStart: index + 1,
       evidence: redactSecrets(line.trim()),
       confidence: 0.82,
+      confidenceReason: "A sensitive env/secret variable is assigned a concrete non-placeholder value.",
+      reachability: "reachable",
+      exploitability: "high",
       recommendation: "Move the value to a server-only environment variable, rotate it if it was real, and commit only placeholders.",
       patchable: true,
       source: "rule",
@@ -259,6 +286,7 @@ function scanDangerousNextPublic(file: ProjectFile, add: (finding: RuleFinding) 
       const tokenLike = /TOKEN/.test(name)
       if (!exactDanger && !containsDanger && !tokenLike) continue
       const examplePlaceholder = isExampleSecretPlaceholder(file.path, line)
+      if (isDocumentationPublicEnvPlaceholder(file.path, line)) continue
 
       add({
         severity: examplePlaceholder || (tokenLike && !containsDanger && !exactDanger) ? "high" : "critical",
@@ -277,21 +305,33 @@ function scanDangerousNextPublic(file: ProjectFile, add: (finding: RuleFinding) 
   })
 }
 
+function isDocumentationPublicEnvPlaceholder(path: string, line: string) {
+  if (!isDocumentationPath(path)) return false
+  const assigned = extractAssignedValue(line)
+  if (!assigned) return true
+  return isObviousPlaceholder(line) || isLocalOrExampleAssignedValue(assigned)
+}
+
 function scanAdminRouteWithoutAuth(file: ProjectFile, add: (finding: RuleFinding) => void) {
   if (!isApiRoute(file.path)) return
   if (!SENSITIVE_API_SEGMENTS.test(`/${normalizePath(file.path)}/`)) return
-  if (hasAuthSignal(file.text)) return
+  const hasAuthCall = hasAuthSignal(file.text)
+  if (hasEffectiveAuthGuard(file.text)) return
 
   add({
     severity: "high",
-    category: "missing_auth",
-    title: "Sensitive API route lacks an obvious auth guard",
-    description: "This admin/internal-style API route does not show an authentication or authorization check before handling data.",
+    category: hasAuthCall ? "missing_authorization" : "missing_auth",
+    title: hasAuthCall ? "Sensitive API route calls auth without enforcing access" : "Sensitive API route lacks an obvious auth guard",
+    description: hasAuthCall
+      ? "This admin/internal-style API route calls an auth helper, but does not show a clear deny path, role check, or ownership check before handling data."
+      : "This admin/internal-style API route does not show an authentication or authorization check before handling data.",
     filePath: file.path,
     lineStart: firstHandlerLine(file.text),
     evidence: redactSecrets(findLineMatching(file.text, /\bexport\s+(async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)|NextResponse\.json|Response\.json/)?.line ?? ""),
     confidence: 0.82,
-    recommendation: "Add a server-side authentication/authorization guard before returning data or performing mutations.",
+    recommendation: hasAuthCall
+      ? "Check the session/user result and return 401/403 before returning sensitive data or performing mutations. Add role and ownership checks where needed."
+      : "Add a server-side authentication/authorization guard before returning data or performing mutations.",
     patchable: true,
     source: "rule",
   })
@@ -371,6 +411,144 @@ function scanUnsafeToolCalling(file: ProjectFile, add: (finding: RuleFinding) =>
       source: "rule",
     })
     return
+  }
+}
+
+function scanAgentToolingRisks(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (!file.path.endsWith(".rs")) return
+  const normalized = normalizePath(file.path).toLowerCase()
+
+  if (isAgentShellToolFile(normalized, file.text)) {
+    const sink = findLineMatching(file.text, /\bCommand::new\s*\(\s*["'](?:bash|sh|cmd(?:\.exe)?)["']\s*\)[^\n]*(?:-c|\/C|cmd_str|command|input)/i) ??
+      findLineMatching(file.text, /\b(?:bash|sh|cmd(?:\.exe)?)\b[\s\S]{0,120}\b(?:cmd_str|command|input)\b/i)
+    const source = findLineMatching(file.text, /\bcommand\s*:\s*String\b|\bcommand["']?\s*:\s*\{|\bBashToolInput\b/i)
+    if (sink) {
+      const mitigations = detectAgentShellMitigations(file.text)
+      const detectedControls = mitigations.detected.map((item) => item.label)
+      const missingControls = mitigations.missing.map((item) => item.label)
+      const hasStrongControl = mitigations.detected.some((item) => item.key === "approval" || item.key === "sandbox")
+      const hasAnyControl = mitigations.detected.length > 0
+      add({
+        kind: "vulnerability",
+        severity: hasAnyControl ? "high" : "critical",
+        category: "unsafe_tool_calling",
+        ruleId: "agent.shell.tool-command-execution",
+        title: "Agent-controlled shell execution surface",
+        description:
+          [
+            "This repository exposes a shell command tool that can execute a model/user-provided command through a system shell.",
+            "That is a core agent risk surface.",
+            `Detected controls: ${detectedControls.length ? detectedControls.join(", ") : "none visible"}.`,
+            `Missing or unclear controls: ${missingControls.length ? missingControls.join(", ") : "none"}.`,
+          ].join(" "),
+        filePath: file.path,
+        lineStart: sink.lineNumber,
+        evidence: redactSecrets(sink.line.trim()),
+        confidence: 0.9,
+        confidenceReason: hasStrongControl
+          ? "Shell execution from a command-shaped tool input was found; approval/sandbox language is present but still requires architectural review."
+          : hasAnyControl
+          ? "Shell execution from a command-shaped tool input was found; partial controls are visible but approval/sandbox/env isolation were not all proven."
+          : "Shell execution from a command-shaped tool input was found without obvious approval/sandbox guard keywords.",
+        reachability: "reachable",
+        exploitability: "high",
+        cwe: "CWE-78",
+        owasp: "LLM06 Excessive Agency",
+        evidenceTrace: [
+          ...(source ? [{
+            filePath: file.path,
+            lineStart: source.lineNumber,
+            kind: "source" as const,
+            label: "Agent/tool command input",
+            code: redactSecrets(source.line.trim()),
+          }] : []),
+          {
+            filePath: file.path,
+            lineStart: sink.lineNumber,
+            kind: "sink",
+            label: "Shell execution sink",
+            code: redactSecrets(sink.line.trim()),
+          },
+          ...mitigations.detected.map((control) => ({
+            filePath: file.path,
+            lineStart: control.lineNumber,
+            kind: "guard" as const,
+            label: `${control.label} detected`,
+            code: redactSecrets(control.line.trim()),
+          })),
+        ],
+        recommendation:
+          "Require explicit user approval for shell commands, run inside a constrained sandbox, strip secrets from the environment, add timeouts, and block remote bootstrap/exfiltration commands by policy.",
+        patchable: false,
+        source: "rule",
+      })
+    }
+  }
+
+  if (isMcpRustFile(normalized, file.text)) {
+    const configCommand = findLineMatching(file.text, /\bCommand::new\s*\(\s*&?config\.command\b/i)
+    if (configCommand) {
+      add({
+        kind: "vulnerability",
+        severity: "high",
+        category: "mcp_risk",
+        ruleId: "mcp.process.config-command",
+        title: "MCP server process is spawned from configuration",
+        description:
+          "An MCP server command is launched from config. That can be legitimate, but it makes MCP configuration a supply-chain execution boundary that needs trust controls and clear review.",
+        filePath: file.path,
+        lineStart: configCommand.lineNumber,
+        evidence: redactSecrets(configCommand.line.trim()),
+        confidence: 0.86,
+        confidenceReason: "MCP-related Rust code starts a process from config.command.",
+        reachability: "reachable",
+        exploitability: "high",
+        cwe: "CWE-78",
+        owasp: "LLM06 Excessive Agency",
+        evidenceTrace: compactTrace([
+          traceFromHit(file.path, "source", "MCP configuration model", findLineMatching(file.text, /\bMcpConfig\b|mcp\.json|config\.command/i)),
+          traceFromHit(file.path, "propagator", "Configured MCP command", findLineMatching(file.text, /\bconfig\.command\b/i)),
+          traceFromHit(file.path, "sink", "Process spawn from MCP config", configCommand),
+        ]),
+        recommendation: "Treat MCP config as executable trust policy: require explicit user consent, validate command paths, and prefer allowlisted server definitions.",
+        patchable: false,
+        source: "rule",
+      })
+    }
+
+    const fullEnv = /\bstd::env::vars\s*\(\s*\)/.test(file.text) && /\.envs\s*\(\s*&?env\b/.test(file.text)
+    if (fullEnv) {
+      const envHit = findLineMatching(file.text, /\.envs\s*\(\s*&?env\b/) ?? findLineMatching(file.text, /\bstd::env::vars\s*\(\s*\)/)
+      const envSource = findLineMatching(file.text, /\bstd::env::vars\s*\(\s*\)/)
+      const envExtend = findLineMatching(file.text, /\benv\.extend\s*\(\s*config\.env\b/i)
+      add({
+        kind: "vulnerability",
+        severity: "high",
+        category: "mcp_risk",
+        ruleId: "mcp.process.inherits-full-env",
+        title: "MCP child process inherits the full environment",
+        description:
+          "The MCP child process appears to inherit the parent process environment. A malicious or compromised MCP server could receive provider keys, GitHub tokens, database URLs, or other local secrets.",
+        filePath: file.path,
+        lineStart: envHit?.lineNumber,
+        evidence: redactSecrets(envHit?.line.trim() ?? "std::env::vars() -> Command.envs(env)"),
+        confidence: 0.88,
+        confidenceReason: "MCP code collects std::env::vars() and passes that map to Command.envs().",
+        reachability: "reachable",
+        exploitability: "high",
+        cwe: "CWE-200",
+        owasp: "LLM02 Sensitive Information Disclosure",
+        evidenceTrace: compactTrace([
+          traceFromHit(file.path, "source", "Parent process environment", envSource),
+          traceFromHit(file.path, "propagator", "MCP config env merged into child env", envExtend),
+          traceFromHit(file.path, "sink", "Full env passed to MCP child process", envHit),
+        ]),
+        recommendation:
+          "Pass only an explicit env allowlist to MCP servers, strip provider/API tokens by default, and require per-server consent for any secret-bearing variables.",
+        patchable: false,
+        source: "rule",
+      })
+    }
   }
 }
 
@@ -455,39 +633,456 @@ function scanUnsafeDatabaseQuery(file: ProjectFile, add: (finding: RuleFinding) 
   if (!hit) return
 
   add({
+    kind: "vulnerability",
     severity: "high",
-    category: "input_validation",
+    category: "sql_injection",
+    ruleId: "database.raw-query.request-input",
     title: "Unsafe database query construction detected",
     description: "This code uses an unsafe raw query helper or appears to interpolate request-controlled data into a SQL query.",
     filePath: file.path,
     lineStart: hit.lineNumber,
     evidence: redactSecrets(hit.line.trim()),
     confidence: 0.82,
+    confidenceReason: "Raw query helper or request-controlled interpolation was found in a database query expression.",
+    reachability: isApiRoute(file.path) ? "reachable" : "unknown",
+    exploitability: "high",
+    cwe: "CWE-89",
     recommendation: "Use parameterized queries or safe ORM methods, and validate request-controlled inputs before they reach the database layer.",
     patchable: false,
     source: "rule",
   })
 }
 
+function scanRequestTaintToDangerousSink(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file.path)) return
+  const lines = file.text.split(/\r?\n/)
+  const sources = new Map<string, { line: string; lineNumber: number }>()
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const sourceMatch = line.match(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*await\s+(?:req|request)\.(?:json|formData)\(\)/)
+    if (sourceMatch) sources.set(sourceMatch[1], { line, lineNumber: index + 1 })
+    if (/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:req|request)\.nextUrl\.searchParams/.test(line)) {
+      const name = line.match(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/)?.[1]
+      if (name) sources.set(name, { line, lineNumber: index + 1 })
+    }
+  }
+
+  if (sources.size === 0) return
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (!/(\$queryRawUnsafe|\$executeRawUnsafe|exec\s*\(|spawn\s*\(|redirect\s*\(|fetch\s*\(|dangerouslySetInnerHTML|eval\s*\(|new\s+Function\s*\()/i.test(line)) {
+      continue
+    }
+
+    for (const [name, source] of sources) {
+      if (!new RegExp(`\\b${escapeRegExp(name)}\\b`).test(line)) continue
+      const sanitizerWindow = lines.slice(source.lineNumber - 1, index + 1).join("\n")
+      if (VALIDATION_SIGNALS.test(sanitizerWindow) || /allowlist|allowedOrigins|trustedHosts|parameterized/i.test(sanitizerWindow)) continue
+
+      add({
+        kind: "vulnerability",
+        severity: /(\$queryRawUnsafe|\$executeRawUnsafe)/.test(line) ? "high" : "medium",
+        category: /(\$queryRawUnsafe|\$executeRawUnsafe)/.test(line) ? "sql_injection" : "input_validation",
+        ruleId: "taint.intrafile.request-to-dangerous-sink",
+        title: "Request-controlled data reaches a dangerous sink",
+        description: "A value parsed from the request appears to flow into a dangerous operation without a visible validator or allowlist.",
+        filePath: file.path,
+        lineStart: index + 1,
+        evidence: redactSecrets(line.trim()),
+        confidence: 0.82,
+        confidenceReason: "Intra-file source-to-sink trace found request input reused in a dangerous operation with no sanitizer in between.",
+        reachability: "reachable",
+        exploitability: "high",
+        evidenceTrace: [
+          { filePath: file.path, lineStart: source.lineNumber, kind: "source", label: "Request input source", code: redactSecrets(source.line.trim()) },
+          { filePath: file.path, lineStart: index + 1, kind: "sink", label: "Dangerous sink", code: redactSecrets(line.trim()) },
+        ],
+        recommendation: "Validate the request data, pass only sanitized fields to the sink, and use allowlists or parameterized APIs instead of raw/dynamic operations.",
+        patchable: false,
+        source: "rule",
+      })
+      return
+    }
+  }
+}
+
+function scanUnsafeRedirect(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file.path)) return
+  const hit = findLineMatching(file.text, /\bredirect\s*\(\s*(?:req|request|url|nextUrl|searchParams|params|body|input)\b/i)
+  if (!hit) return
+  if (/allowlist|allowedRedirect|safeRedirect|new URL\(/i.test(file.text)) return
+
+  add({
+    kind: "vulnerability",
+    severity: "medium",
+    category: "unsafe_redirect",
+    ruleId: "nextjs.redirect.user-controlled-target",
+    title: "Redirect target appears user-controlled",
+    description: "A redirect target appears to come from request-controlled data without an obvious origin allowlist.",
+    filePath: file.path,
+    lineStart: hit.lineNumber,
+    evidence: redactSecrets(hit.line.trim()),
+    confidence: 0.74,
+    confidenceReason: "Redirect call references request/search/body-style values and no allowlist signal was found.",
+    reachability: isApiRoute(file.path) ? "reachable" : "unknown",
+    exploitability: "medium",
+    cwe: "CWE-601",
+    recommendation: "Validate redirect destinations against an explicit allowlist of relative paths or trusted origins.",
+    patchable: false,
+    source: "rule",
+  })
+}
+
+function scanServerActionRisks(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (!/\.(ts|tsx|js|jsx)$/.test(file.path)) return
+  const firstChunk = file.text.slice(0, 1200)
+  if (!/["']use server["']/.test(firstChunk)) return
+
+  const hasMutation =
+    /\b(db|supabase|fetch)\.(create|update|delete|insert|upsert|from|query)|\bprisma\.\w+\.(create|update|delete|deleteMany|updateMany|createMany|upsert)|redirect\s*\(|revalidate(Path|Tag)\s*\(/i.test(file.text)
+  const hasSensitivePath = /\/(admin|billing|users|settings|account|dashboard|actions?)\//i.test(`/${normalizePath(file.path)}/`)
+  if (!hasMutation && !hasSensitivePath) return
+
+  const authCall = hasAuthSignal(file.text)
+  const auth = hasEffectiveAuthGuard(file.text)
+  const validation = VALIDATION_SIGNALS.test(file.text)
+  const exported = findLineMatching(file.text, /\bexport\s+(async\s+)?function\b|\bexport\s+const\s+\w+\s*=\s*async\b/)
+
+  if (!auth) {
+    add({
+      kind: "vulnerability",
+      severity: "high",
+      category: authCall ? "missing_authorization" : "server_action_risk",
+      ruleId: authCall ? "nextjs.server-action.auth-call-without-guard" : "nextjs.server-action.missing-auth",
+      title: authCall ? "Server Action calls auth without enforcing access" : "Server Action performs sensitive work without an obvious auth guard",
+      description: authCall
+        ? "Exported Server Actions are callable endpoints. This action calls auth, but no clear deny path, role check, or ownership check is visible before sensitive work."
+        : "Exported Server Actions are callable endpoints and should verify authentication and authorization inside the action before mutation or sensitive reads.",
+      filePath: file.path,
+      lineStart: exported?.lineNumber ?? 1,
+      evidence: redactSecrets(exported?.line.trim() ?? "\"use server\""),
+      confidence: 0.84,
+      confidenceReason: authCall
+        ? "File declares use server and performs sensitive work after an auth call, but no enforce/deny guard signal was found."
+        : "File declares use server and performs mutation/sensitive work, but no auth guard signal was found.",
+      reachability: "reachable",
+      exploitability: "high",
+      cwe: "CWE-862",
+      owasp: "A01 Broken Access Control",
+      recommendation: "Verify the user session, role, and ownership inside the Server Action before doing sensitive work, and return/throw before mutation when access is denied.",
+      patchable: true,
+      source: "rule",
+    })
+  }
+
+  if (!validation && /\b(formData|FormData|input|body|searchParams)\b/i.test(file.text)) {
+    add({
+      kind: "vulnerability",
+      severity: "medium",
+      category: "server_action_risk",
+      ruleId: "nextjs.server-action.missing-input-validation",
+      title: "Server Action uses client input without visible schema validation",
+      description: "A Server Action receives client-controlled input but no schema validation is visible in the file.",
+      filePath: file.path,
+      lineStart: exported?.lineNumber ?? 1,
+      evidence: redactSecrets(exported?.line.trim() ?? "\"use server\""),
+      confidence: 0.76,
+      confidenceReason: "Server Action input names were found, but no parse/safeParse-style validation signal was present.",
+      reachability: "reachable",
+      exploitability: "medium",
+      recommendation: "Validate Server Action inputs with Zod or equivalent before using them in mutations, redirects, model calls, or database operations.",
+      patchable: true,
+      source: "rule",
+    })
+  }
+}
+
+function scanSupabaseRisks(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  const normalized = normalizePath(file.path).toLowerCase()
+
+  if (normalized.endsWith(".sql") && normalized.includes("supabase/migrations/")) {
+    const rlsDisabled = findLineMatching(file.text, /\balter\s+table\b[\s\S]{0,120}\bdisable\s+row\s+level\s+security\b/i)
+    if (rlsDisabled) {
+      add({
+        kind: "vulnerability",
+        severity: "high",
+        category: "supabase_rls_risk",
+        ruleId: "supabase.rls.disabled",
+        title: "Supabase migration disables row level security",
+        description: "A Supabase migration disables RLS on a table. Public clients can be overexposed if policies are not restored immediately.",
+        filePath: file.path,
+        lineStart: rlsDisabled.lineNumber,
+        evidence: redactSecrets(rlsDisabled.line.trim()),
+        confidence: 0.9,
+        confidenceReason: "SQL migration explicitly disables row level security.",
+        reachability: "reachable",
+        exploitability: "high",
+        cwe: "CWE-284",
+        recommendation: "Keep RLS enabled on exposed tables and use least-privilege policies for anon/authenticated roles.",
+        patchable: false,
+        source: "rule",
+      })
+    }
+
+    const securityDefiner = findLineMatching(file.text, /\bsecurity\s+definer\b/i)
+    if (securityDefiner && !/\bset\s+search_path\b/i.test(file.text)) {
+      add({
+        kind: "hardening",
+        severity: "medium",
+        category: "supabase_rls_risk",
+        ruleId: "supabase.function.security-definer-without-search-path",
+        title: "SECURITY DEFINER function needs focused review",
+        description: "SECURITY DEFINER functions can bypass caller privileges and should pin search_path and enforce authorization explicitly.",
+        filePath: file.path,
+        lineStart: securityDefiner.lineNumber,
+        evidence: redactSecrets(securityDefiner.line.trim()),
+        confidence: 0.72,
+        confidenceReason: "SQL contains SECURITY DEFINER without a nearby search_path guard signal.",
+        reachability: "unknown",
+        exploitability: "medium",
+        recommendation: "Set a safe search_path inside the function and verify the function enforces authorization before privileged operations.",
+        patchable: false,
+        source: "rule",
+      })
+    }
+  }
+
+  if (isClientComponent(file.text) && /\b(service[_-]?role|supabaseAdmin|createClient\s*\([^)]*SERVICE_ROLE)/i.test(file.text)) {
+    const hit = findLineMatching(file.text, /\b(service[_-]?role|supabaseAdmin|SERVICE_ROLE)\b/i)
+    add({
+      kind: "vulnerability",
+      severity: "critical",
+      category: "client_data_exposure",
+      ruleId: "supabase.service-role.in-client-component",
+      title: "Supabase service-role access appears in client code",
+      description: "Service-role keys and admin clients must never be reachable from browser/client components.",
+      filePath: file.path,
+      lineStart: hit?.lineNumber,
+      evidence: redactSecrets(hit?.line.trim() ?? ""),
+      confidence: 0.88,
+      confidenceReason: "Client component references service-role/admin Supabase access.",
+      reachability: "reachable",
+      exploitability: "high",
+      recommendation: "Move service-role access to server-only code and expose only narrowly scoped operations through authenticated server routes/actions.",
+      patchable: true,
+      source: "rule",
+    })
+  }
+}
+
+function scanPrismaSchemaRisks(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (!file.path.endsWith(".prisma")) return
+  const sensitive = findLineMatching(file.text, /\b(password|token|secret|apiKey|ssn|creditCard|stripeCustomerId)\b/i)
+  if (!sensitive) return
+
+  add({
+    kind: "hardening",
+    severity: "low",
+    category: "client_data_exposure",
+    ruleId: "prisma.schema.sensitive-fields",
+    title: "Prisma schema contains sensitive user fields",
+    description: "Sensitive fields in database models should be protected by DTOs, authorization checks, and explicit selection.",
+    filePath: file.path,
+    lineStart: sensitive.lineNumber,
+    evidence: redactSecrets(sensitive.line.trim()),
+    confidence: 0.7,
+    confidenceReason: "Prisma schema includes sensitive-looking field names.",
+    reachability: "unknown",
+    exploitability: "unknown",
+    recommendation: "Avoid returning full model objects to clients; use server-only data access functions and explicit safe DTOs.",
+    patchable: false,
+    source: "rule",
+  })
+}
+
+function scanGitHubActionsRisks(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  const normalized = normalizePath(file.path).toLowerCase()
+  if (!normalized.startsWith(".github/workflows/") || !/\.(ya?ml)$/.test(normalized)) return
+  const workflowUsesSecrets = /\bsecrets\.[A-Z0-9_]+\b/i.test(file.text)
+  const workflowHasWritePermission = /^\s*(?:contents|packages|id-token|pull-requests|actions)\s*:\s*write\s*$/im.test(file.text) ||
+    /^\s*permissions\s*:\s*write-all\s*$/im.test(file.text)
+  const releaseLikeWorkflow = /\b(release|publish|deploy|homebrew|artifact)\b/i.test(file.text)
+
+  const pullRequestTarget = findLineMatching(file.text, /\bpull_request_target\s*:/i)
+  if (pullRequestTarget) {
+    add({
+      kind: "repo_posture",
+      severity: "high",
+      category: "repo_security_posture",
+      ruleId: "github-actions.pull-request-target",
+      title: "Workflow uses pull_request_target",
+      description: "pull_request_target runs with base-repo privileges and is dangerous when combined with untrusted checkout or scripts.",
+      filePath: file.path,
+      lineStart: pullRequestTarget.lineNumber,
+      evidence: redactSecrets(pullRequestTarget.line.trim()),
+      confidence: 0.86,
+      confidenceReason: "GitHub Actions workflow declares pull_request_target.",
+      reachability: "reachable",
+      exploitability: "high",
+      recommendation: "Use pull_request where possible, or strictly avoid checking out and executing untrusted fork code under privileged tokens.",
+      patchable: false,
+      source: "rule",
+    })
+  }
+
+  const writeAll = findLineMatching(file.text, /^\s*permissions\s*:\s*write-all\s*$/i)
+  if (writeAll) {
+    add({
+      kind: "repo_posture",
+      severity: "medium",
+      category: "repo_security_posture",
+      ruleId: "github-actions.permissions-write-all",
+      title: "Workflow grants write-all permissions",
+      description: "Broad workflow token permissions increase blast radius if an action or script is compromised.",
+      filePath: file.path,
+      lineStart: writeAll.lineNumber,
+      evidence: redactSecrets(writeAll.line.trim()),
+      confidence: 0.88,
+      confidenceReason: "GitHub Actions workflow explicitly sets permissions: write-all.",
+      reachability: "reachable",
+      exploitability: "medium",
+      recommendation: "Set least-privilege permissions per job, such as contents: read by default and scoped write permissions only where required.",
+      patchable: false,
+      source: "rule",
+    })
+  }
+
+  const unpinnedActions = findUnpinnedWorkflowActions(file.text)
+  if (unpinnedActions.length > 0) {
+    const thirdPartyActions = unpinnedActions.filter((action) => !action.githubOwned)
+    const sensitiveWorkflow = workflowUsesSecrets || workflowHasWritePermission || releaseLikeWorkflow
+    const severity =
+      thirdPartyActions.length > 0 && sensitiveWorkflow ? "high" :
+      thirdPartyActions.length > 0 ? "medium" :
+      sensitiveWorkflow ? "medium" :
+      "low"
+    const first = unpinnedActions[0]
+    const actionSummary = unpinnedActions.map((action) => `${action.action}@${action.ref}`).join("; ")
+
+    add({
+      kind: "repo_posture",
+      severity,
+      category: "repo_security_posture",
+      ruleId: "github-actions.unpinned-actions.grouped",
+      title: "Unpinned GitHub Actions detected",
+      description: thirdPartyActions.length > 0
+        ? `This workflow uses ${unpinnedActions.length} action refs that are not pinned to commit SHAs, including ${thirdPartyActions.length} third-party action(s). ${sensitiveWorkflow ? "Because this workflow has release/deploy/secrets/write-permission signals, a compromised action ref has higher blast radius." : "Pinning third-party actions is the strongest control against mutable supply-chain refs."}`
+        : `This workflow uses ${unpinnedActions.length} GitHub-owned action ref(s) that are not pinned to commit SHAs. This is lower risk than third-party actions, but still repo posture debt for sensitive projects.`,
+      filePath: file.path,
+      lineStart: first?.lineNumber,
+      evidence: redactSecrets(`${unpinnedActions.length} unpinned action refs: ${actionSummary}`),
+      confidence: 0.82,
+      confidenceReason: `Workflow uses non-SHA action refs; ${thirdPartyActions.length} third-party, ${unpinnedActions.length - thirdPartyActions.length} GitHub-owned. Sensitive workflow signals: ${sensitiveWorkflow ? "yes" : "no"}.`,
+      reachability: "reachable",
+      exploitability: severity === "high" ? "medium" : "low",
+      evidenceTrace: unpinnedActions.slice(0, 8).map((action) => ({
+        filePath: file.path,
+        lineStart: action.lineNumber,
+        kind: "source" as const,
+        label: action.githubOwned ? "GitHub-owned action ref" : "Third-party action ref",
+        code: redactSecrets(action.line.trim()),
+      })),
+      recommendation: thirdPartyActions.length > 0
+        ? "Pin third-party actions to reviewed commit SHAs first, then decide whether GitHub-owned actions also need SHA pinning for your compliance posture."
+        : "For high-assurance workflows, pin GitHub-owned actions to reviewed commit SHAs and update them intentionally.",
+      patchable: false,
+      source: "rule",
+    })
+  }
+}
+
+function scanRemoteInstallPipeToShell(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (!/\.(md|mdx|txt|sh|bash|zsh)$/i.test(file.path) && basename(file.path).toLowerCase() !== "readme") return
+  const hit = findLineMatching(file.text, REMOTE_INSTALL_PIPE_TO_SHELL)
+  if (!hit) return
+
+  add({
+    kind: "repo_posture",
+    severity: "medium",
+    category: "supply_chain_posture",
+    ruleId: "supply-chain.remote-install-piped-shell",
+    title: "Remote install script is piped directly to a shell",
+    description:
+      "The project documents a remote bootstrap command piped into bash/sh. That is convenient, but it weakens supply-chain verification for CLI and agent tooling installs.",
+    filePath: file.path,
+    lineStart: hit.lineNumber,
+    evidence: redactSecrets(hit.line.trim()),
+    confidence: 0.84,
+    confidenceReason: "Documentation or shell script contains curl/wget from a remote URL piped directly to bash/sh.",
+    reachability: "reachable",
+    exploitability: "medium",
+    recommendation: "Provide a signed release, checksum verification, package-manager install path, or a download-then-inspect workflow instead of piping remote code directly to a shell.",
+    patchable: false,
+    source: "rule",
+  })
+}
+
+function findUnpinnedWorkflowActions(text: string) {
+  return text.split(/\r?\n/).flatMap((line, index) => {
+    const match = line.match(/^\s*-?\s*uses\s*:\s*([^@\s]+\/[^@\s]+)@([^\s#]+)\s*$/i)
+    if (!match) return []
+    const action = match[1].replace(/^["']|["']$/g, "")
+    const ref = match[2].replace(/^["']|["']$/g, "")
+    if (SHA_REF_RE.test(ref)) return []
+    return [{ action, ref, line, lineNumber: index + 1, githubOwned: isGitHubOwnedAction(action) }]
+  })
+}
+
 function scanMissingInputValidation(file: ProjectFile, add: (finding: RuleFinding) => void) {
   if (!isApiRoute(file.path)) return
   if (!JSON_PARSE_SIGNALS.test(file.text)) return
-  if (VALIDATION_SIGNALS.test(file.text)) return
 
   const hit = findLineMatching(file.text, JSON_PARSE_SIGNALS)
+  const inlineValidated = /\.(?:parse|safeParse)\s*\(\s*await\s+(?:req|request)\.json\(\)\s*\)/i.test(file.text)
+  if (inlineValidated) return
+
+  const bodyVariable = findRequestJsonVariable(file.text)
+  const hasValidationSignal = VALIDATION_SIGNALS.test(file.text)
+  const validatesParsedBody = bodyVariable ? validatesVariable(file.text, bodyVariable) : false
+  const rawBodySink = bodyVariable ? findRawRequestBodyUse(file.text, bodyVariable) : null
+
+  if (hasValidationSignal && validatesParsedBody && !rawBodySink) return
+
   add({
     severity: "medium",
     category: "input_validation",
-    title: "API route parses JSON without schema validation",
-    description: "The request body is parsed but no Zod/Yup/Valibot/Superstruct validation is visible in the route.",
+    ruleId: rawBodySink ? "nextjs.route.raw-body-used-after-validation" : "nextjs.route.request-json-without-effective-validation",
+    title: rawBodySink ? "API route uses raw request body after validation" : "API route parses JSON without effective schema validation",
+    description: rawBodySink
+      ? "The request body is parsed and validation appears in the file, but the raw body variable is still used in a sensitive operation."
+      : "The request body is parsed but no Zod/Yup/Valibot/Superstruct validation of that parsed value is visible in the route.",
     filePath: file.path,
-    lineStart: hit?.lineNumber,
-    evidence: redactSecrets(hit?.line.trim() ?? ""),
-    confidence: 0.84,
-    recommendation: "Validate the request body with Zod before using it.",
+    lineStart: rawBodySink?.lineNumber ?? hit?.lineNumber,
+    evidence: redactSecrets(rawBodySink?.line.trim() ?? hit?.line.trim() ?? ""),
+    confidence: rawBodySink ? 0.8 : 0.84,
+    confidenceReason: rawBodySink
+      ? "A request JSON variable is later passed to a sensitive operation instead of a parsed/validated value."
+      : "request.json() was found without parse/safeParse of the parsed request value.",
+    recommendation: rawBodySink
+      ? "Use the parsed schema output, usually `const body = BodySchema.parse(await request.json())`, and do not pass the raw request body to DB/model/response sinks."
+      : "Validate the request body with Zod before using it.",
     patchable: true,
     source: "rule",
   })
+}
+
+function findRequestJsonVariable(text: string) {
+  return text.match(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*await\s+(?:req|request)\.json\(\)/)?.[1]
+}
+
+function validatesVariable(text: string, variableName: string) {
+  const variable = escapeRegExp(variableName)
+  return new RegExp(`\\.(?:parse|safeParse)\\s*\\(\\s*${variable}\\b`, "i").test(text)
+}
+
+function findRawRequestBodyUse(text: string, variableName: string) {
+  const variable = escapeRegExp(variableName)
+  return findLineMatching(
+    text,
+    new RegExp(`\\b(prisma|db|pool|client|connection|fetch|redirect|generateText|streamText|generateObject|streamObject|Response\\.json|NextResponse\\.json)\\b[^\\n]*\\b${variable}\\b`, "i"),
+  )
 }
 
 function scanPackageScripts(file: ProjectFile, add: (finding: RuleFinding) => void) {
@@ -524,6 +1119,7 @@ function scanPackageScripts(file: ProjectFile, add: (finding: RuleFinding) => vo
 
 function scanDangerousCode(file: ProjectFile, add: (finding: RuleFinding) => void) {
   const isRustFile = file.path.endsWith(".rs")
+  if (!isRustFile && !/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file.path)) return
   const checks: { pattern: RegExp; title: string; severity: Severity; description: string }[] = [
     { pattern: /\beval\s*\(/, title: "Dynamic eval call detected", severity: "high", description: "eval executes strings as code and can turn input handling bugs into remote code execution." },
     { pattern: /\bnew\s+Function\s*\(/, title: "Dynamic Function constructor detected", severity: "high", description: "new Function executes generated code and is unsafe for user-controlled input." },
@@ -558,41 +1154,174 @@ function scanDangerousCode(file: ProjectFile, add: (finding: RuleFinding) => voi
 function scanRustDangerousCode(file: ProjectFile, add: (finding: RuleFinding) => void) {
   if (!file.path.endsWith(".rs")) return
 
-  const checks: { pattern: RegExp; title: string; severity: Severity; description: string; recommendation: string }[] = [
-    {
-      pattern: /\b(?:std::process::)?Command::new\s*\(/,
-      title: "Rust process execution detected",
-      severity: "medium",
-      description: "This Rust code starts an operating-system process. That is expected in some tools, but it becomes command injection risk if command names, arguments, or working directories are user-controlled.",
-      recommendation: "Keep command names fixed, pass arguments as structured values, reject shell metacharacters, and never forward untrusted input into a shell.",
-    },
-    {
-      pattern: /\bunsafe\s*\{/,
-      title: "Rust unsafe block detected",
-      severity: "medium",
-      description: "Unsafe Rust bypasses compiler memory-safety guarantees and should receive focused security review before release.",
-      recommendation: "Minimize unsafe blocks, document invariants, add tests around boundary conditions, and prefer safe wrappers where possible.",
-    },
-  ]
-
-  for (const check of checks) {
-    const hit = findLineMatching(file.text, check.pattern)
-    if (!hit) continue
-
+  const commandHit = findLineMatching(file.text, /\b(?:std::process::)?Command::new\s*\(/)
+  if (commandHit) {
+    if (isMcpRustFile(normalizePath(file.path).toLowerCase(), file.text) && /\bconfig\.command\b/.test(commandHit.line)) {
+      // Covered by the MCP-specific analyzer above with the right threat model.
+    } else if (isAgentShellToolFile(normalizePath(file.path).toLowerCase(), file.text) && /\bCommand::new\s*\(\s*["'](?:bash|sh|cmd(?:\.exe)?)["']\s*\)/i.test(commandHit.line)) {
+      // Covered by the agent-shell analyzer above; avoid a duplicate generic process finding.
+    } else {
+    const processRisk = classifyRustProcessLine(commandHit.line, file)
     add({
-      severity: check.severity,
-      category: "dangerous_code",
-      title: check.title,
-      description: check.description,
+      kind: processRisk.userControlled ? "vulnerability" : "repo_posture",
+      severity: processRisk.userControlled ? "high" : processRisk.dynamic ? "medium" : "info",
+      category: processRisk.userControlled ? "command_injection" : "repo_security_posture",
+      ruleId: processRisk.userControlled
+        ? "rust.process.user-controlled-command"
+        : processRisk.internalBuilder
+          ? "rust.process.internal-builder-review"
+          : processRisk.dynamic
+          ? "rust.process.configured-command-review"
+          : "rust.process.fixed-command-review",
+      title: processRisk.userControlled
+        ? "Rust process execution uses a user-controlled command"
+        : processRisk.internalBuilder
+          ? "Self-dev build spawns repo-local build command"
+          : processRisk.dynamic
+          ? "Rust external process command comes from configuration"
+          : "Rust fixed process execution should be reviewed",
+      description: processRisk.userControlled
+        ? "A Rust process command or argument appears to be controlled by a variable, which can become command injection if it reaches user input."
+        : processRisk.internalBuilder
+          ? "A self-development/build helper starts a command selected by an internal builder. That is an execution surface, but no direct user-controlled command source was proven."
+          : processRisk.dynamic
+          ? "A Rust process command is selected through a variable such as a configured binary path. That is usually CLI/tooling behavior, but it should be allowlisted and documented."
+        : "This Rust code starts a fixed operating-system process. That can be expected in CLI tools, but should stay out of web request paths and keep arguments fixed or allowlisted.",
       filePath: file.path,
-      lineStart: hit.lineNumber,
-      evidence: redactSecrets(hit.line.trim()),
-      confidence: 0.74,
-      recommendation: check.recommendation,
+      lineStart: commandHit.lineNumber,
+      evidence: redactSecrets(commandHit.line.trim()),
+      confidence: processRisk.userControlled ? 0.82 : processRisk.dynamic ? 0.68 : 0.58,
+      confidenceReason: processRisk.userControlled
+        ? "Command::new or nearby arguments use explicit user/input/request-style names."
+        : processRisk.internalBuilder
+          ? "Command::new uses command.program, but the file references an internal selfdev build command builder rather than request/model/user input."
+        : processRisk.dynamic
+          ? "Command::new uses a non-literal command, but no direct user/request source is visible on this line."
+          : "Command::new uses a literal command on the matched line, so this is posture review rather than a confirmed vulnerability.",
+      reachability: "unknown",
+      exploitability: processRisk.userControlled ? "high" : processRisk.dynamic ? "medium" : "low",
+      cwe: processRisk.userControlled ? "CWE-78" : undefined,
+      recommendation: processRisk.userControlled
+        ? "Use fixed command names, validate arguments with an allowlist, and never pass request/user-controlled strings into process execution."
+        : processRisk.internalBuilder
+          ? "Keep build command choices fixed, document when a repo-local shell wrapper is honored, avoid inheriting secrets unnecessarily, and require explicit user approval before self-modifying build flows."
+          : processRisk.dynamic
+          ? "Resolve configured binaries from trusted config only, validate them against an allowlist, avoid shells, and strip secrets from child environments where possible."
+        : "Keep command names fixed, avoid shell invocation, and document why process execution is required.",
       patchable: false,
       source: "rule",
     })
+    }
   }
+
+  const unsafeHit = findLineMatching(file.text, /\bunsafe\s*\{/)
+  if (!unsafeHit) return
+
+  const unsafeWindow = surroundingLines(file.text, unsafeHit.lineNumber, 4)
+  const riskyUnsafe = /\b(from_raw_parts|from_raw_parts_mut|transmute|assume_init|copy_nonoverlapping|read_unaligned|write_unaligned|CStr::from_ptr|CString::from_raw|Box::from_raw|Vec::from_raw_parts|slice::from_raw_parts|ptr::read|ptr::write|malloc|free|realloc)\b|as\s+\*(?:const|mut)\b/i.test(unsafeWindow)
+
+  add({
+    kind: riskyUnsafe ? "vulnerability" : "info",
+    severity: riskyUnsafe ? "medium" : "info",
+    category: riskyUnsafe ? "dangerous_code" : "repo_security_posture",
+    ruleId: riskyUnsafe ? "rust.unsafe.memory-risk" : "rust.unsafe.inventory",
+    title: riskyUnsafe ? "Risky Rust unsafe memory operation detected" : "Rust unsafe block inventory",
+    description: riskyUnsafe
+      ? "This unsafe block includes pointer, raw allocation, transmute, or unchecked initialization patterns that deserve focused memory-safety review."
+      : "This file contains an unsafe block. Not every unsafe block is a vulnerability; this is tracked as review inventory unless memory-unsafe primitives are visible.",
+    filePath: file.path,
+    lineStart: unsafeHit.lineNumber,
+    evidence: redactSecrets(unsafeHit.line.trim()),
+    confidence: riskyUnsafe ? 0.78 : 0.62,
+    confidenceReason: riskyUnsafe
+      ? "Unsafe block contains high-risk raw memory primitives."
+      : "Unsafe block was found, but no high-risk raw memory primitive was detected nearby.",
+    reachability: "unknown",
+    exploitability: riskyUnsafe ? "medium" : "low",
+    recommendation: riskyUnsafe
+      ? "Minimize unsafe scope, document invariants, add boundary tests, and wrap raw memory operations in a small audited safe API."
+      : "Keep the unsafe block small, document the invariant, and review it during release security checks.",
+    patchable: false,
+    source: "rule",
+  })
+}
+
+function classifyRustProcessLine(line: string, file: ProjectFile) {
+  const commandArg = line.match(/\bCommand::new\s*\(\s*([^)]*)\)/)?.[1]?.trim() ?? ""
+  const dynamic = Boolean(commandArg && !/^["']/.test(commandArg))
+  const internalBuilder = dynamic && isInternalRustCommandBuilder(commandArg, file)
+  const userControlled =
+    !internalBuilder &&
+    ((dynamic && /(user|input|request|body|param|untrusted|cmd_str)/i.test(commandArg)) ||
+    /\.arg\s*\(\s*(?:user|input|request|body|param|cmd_str|command)[A-Za-z0-9_]*\b/i.test(line)
+    )
+  return { dynamic, internalBuilder, userControlled }
+}
+
+function isInternalRustCommandBuilder(commandArg: string, file: ProjectFile) {
+  const normalized = normalizePath(file.path).toLowerCase()
+  if (!/command\.program|build_command|selfdev_build_command/i.test(`${commandArg}\n${file.text}`)) return false
+  if (/user|input|request|body|param|untrusted|cmd_str/i.test(commandArg)) return false
+  return normalized.includes("/selfdev/") || /\bselfdev_build_command\b|\bbuild_command\s*\(/i.test(file.text)
+}
+
+function isAgentShellToolFile(normalizedPath: string, text: string) {
+  if (/\/tool\/bash\.rs$|^src\/tool\/bash\.rs$|\/tools\/bash\.rs$/i.test(normalizedPath)) return true
+  return /\bBashToolInput\b|\bbash\s+tool\b|\btool_name\s*=\s*["']bash["']/i.test(text)
+}
+
+function isMcpRustFile(normalizedPath: string, text: string) {
+  return normalizedPath.includes("/mcp/") || normalizedPath.startsWith("src/mcp/") || /\bMcp(Client|Config|Server)\b|\bMCP\b/.test(text)
+}
+
+type LineHit = NonNullable<ReturnType<typeof findLineMatching>>
+
+function traceFromHit(filePath: string, kind: "source" | "propagator" | "sanitizer" | "guard" | "sink", label: string, hit: LineHit | null | undefined) {
+  if (!hit) return null
+  return {
+    filePath,
+    lineStart: hit.lineNumber,
+    kind,
+    label,
+    code: redactSecrets(hit.line.trim()),
+  }
+}
+
+function compactTrace(steps: Array<ReturnType<typeof traceFromHit>>) {
+  return steps.filter((step): step is NonNullable<typeof step> => Boolean(step))
+}
+
+const AGENT_SHELL_MITIGATION_PATTERNS = [
+  { key: "approval", label: "approval policy", pattern: /(approval|approve|confirm|confirmation|consent|policy)/i },
+  { key: "sandbox", label: "sandboxing", pattern: /\b(sandbox|container|jail|isolate|restricted|denylist|allowlist)\b/i },
+  { key: "timeout", label: "timeout", pattern: /\b(timeout|deadline|kill_after|DEFAULT_TIMEOUT|Duration::from)\b/i },
+  { key: "env", label: "environment isolation", pattern: /\b(env_clear|clear_env|strip.*env|env_allowlist|allowed_env|redact.*env)\b/i },
+  { key: "audit", label: "audit logging", pattern: /\b(audit|log_event|trace|telemetry|record)\b/i },
+] as const
+
+function detectAgentShellMitigations(text: string) {
+  const detected = []
+  const missing = []
+
+  for (const item of AGENT_SHELL_MITIGATION_PATTERNS) {
+    const hit = findLineMatching(text, item.pattern)
+    if (hit) detected.push({ ...item, line: hit.line, lineNumber: hit.lineNumber })
+    else missing.push({ key: item.key, label: item.label })
+  }
+
+  return { detected, missing }
+}
+
+function isGitHubOwnedAction(action: string) {
+  const [owner] = action.toLowerCase().split("/")
+  return owner === "actions" || owner === "github"
+}
+
+function surroundingLines(text: string, lineNumber: number, radius: number) {
+  const lines = text.split(/\r?\n/)
+  const start = Math.max(0, lineNumber - 1 - radius)
+  const end = Math.min(lines.length, lineNumber + radius)
+  return lines.slice(start, end).join("\n")
 }
 
 function scanSensitiveClientData(file: ProjectFile, add: (finding: RuleFinding) => void) {
@@ -766,21 +1495,81 @@ function hasAuthSignal(text: string) {
   return false
 }
 
+function hasEffectiveAuthGuard(text: string) {
+  if (STRONG_AUTH_GUARD_SIGNALS.test(text)) return true
+  if (!hasAuthSignal(text)) return false
+  if (/\b(verifyToken|jwtVerify|validateSession)\s*\(/i.test(text) && AUTH_DENY_SIGNALS.test(text)) return true
+  if ((COOKIES_SESSION_SIGNAL.test(text) || HEADERS_TOKEN_SIGNAL.test(text)) && SESSION_OR_TOKEN_SIGNAL.test(text) && AUTH_DENY_SIGNALS.test(text)) {
+    return true
+  }
+  return AUTH_CONDITION_SIGNALS.test(text) && AUTH_DENY_SIGNALS.test(text)
+}
+
 function extractAssignedValue(line: string) {
-  const match = line.match(/[=:]\s*['"]?([^'"\s#]+)/)
+  const secretAssignment = extractSecretAssignment(line)
+  if (secretAssignment) return secretAssignment.value
+
+  const match = line.match(/(?:^|[\s{[,])["']?[A-Za-z0-9_.-]+["']?\s*[:=]\s*['"`]?([^'"`\s#,)]+)/)
   return match?.[1] ?? ""
+}
+
+function extractSecretAssignment(line: string) {
+  const match = line.match(
+    /(?:^|[\s{[,])(?:export\s+)?["']?([A-Z0-9_]*(?:SECRET|TOKEN|PRIVATE_KEY|API_KEY|DATABASE_URL|SERVICE_ROLE|OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY|DEEPSEEK_API_KEY|VERCEL_TOKEN|GITHUB_TOKEN|STRIPE_SECRET_KEY)[A-Z0-9_]*)["']?\s*[:=]\s*(['"`]?)([^'"`\s#,)]+)/i,
+  )
+  if (!match) return null
+  return { name: match[1], value: match[3], quoted: Boolean(match[2]) }
 }
 
 function lineHasConcreteSecretValue(path: string, line: string) {
   if (isCommentOnlyLine(line)) return false
+  if (isEnvVarReferenceLine(line)) return false
+  if (isSecretDetectorPatternLine(line)) return false
   if (isObviousPlaceholder(line) || isExampleSecretPlaceholder(path, line)) return false
   if (isDocumentationSecretExample(path, line)) return false
 
-  const assigned = extractAssignedValue(line)
+  const assignment = extractSecretAssignment(line)
+  if (!assignment) return false
+  const assigned = assignment.value
   if (assigned.length < 6) return false
   if (/\b(process\.env|import\.meta\.env|Deno\.env|os\.environ|env\.)\b/i.test(assigned)) return false
   if (/^[A-Z0-9_]+$/.test(assigned) && !isEnvLike(path)) return false
+
+  const highConfidenceValue = hasHighConfidenceSecretShape(assigned)
+  const envStyleName = /^[A-Z0-9_]+$/.test(assignment.name)
+  const namedSecretLiteral = envStyleName && (assignment.quoted || isEnvLike(path)) && assigned.length >= 8
+  if (!highConfidenceValue && !namedSecretLiteral) return false
   return true
+}
+
+function shouldIgnoreSecretPatternMatch(path: string, line: string) {
+  if (isObviousPlaceholder(line) || isExampleSecretPlaceholder(path, line)) return true
+  if (isDocumentationSecretExample(path, line)) return true
+  if (isEnvVarReferenceLine(line)) return true
+  if (isSecretDetectorPatternLine(line)) return true
+  if (isTestSecretFixtureLine(path, line)) return true
+  return false
+}
+
+function isEnvVarReferenceLine(line: string) {
+  return /\b(?:std::env::var|env::var|Deno\.env\.get|process\.env\.|import\.meta\.env\.|os\.environ(?:\.get)?|System\.getenv)\s*(?:\(|\[|\.)/i.test(line)
+}
+
+function isSecretDetectorPatternLine(line: string) {
+  if (!/\b(R?egex::new|new\s+RegExp|compile_static_regexes|redact(?:Secrets|_secrets)?|secret[_-]?pattern|patterns?\s*=|assert!\s*\(|expect\s*\(|contains\s*\()/i.test(line)) {
+    return false
+  }
+  return /(?:\\b|\\w|\[A-Z|A-Za-z|\{\d|sk-\[|ghp_\[|github_pat_)/i.test(line) || /\b(redacted|redaction|contains)\b/i.test(line)
+}
+
+function isTestSecretFixtureLine(path: string, line: string) {
+  if (!isTestOrFixturePath(path)) return false
+  if (!/\bsk_live_|-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(line)) return true
+  if (isObviousPlaceholder(line)) return true
+  if (/\b(assert|expect|fixture|snapshot|case|redact|from-env|env-ref|mock|legacy)\b/i.test(line)) return true
+  const assigned = extractAssignedValue(line)
+  if (!assigned) return true
+  return !hasHighConfidenceSecretShape(assigned) || /\b(test|fake|demo|sample|redacted|fixture|mock|from-env|env-ref)\b/i.test(assigned)
 }
 
 export function isDocumentationSecretExample(path: string, line: string) {
@@ -797,7 +1586,7 @@ export function isDocumentationSecretExample(path: string, line: string) {
 }
 
 function isObviousPlaceholder(line: string) {
-  return /\b(your[_-]?|example|placeholder|changeme|change_me|replace_me|todo|dummy|null|undefined|redacted|demo|fake|sample|not[_-]?real|test[_-]?key|xxxx+|local[_-]?only)\b/i.test(line)
+  return /\b(your[_-]?|example|placeholder|changeme|change_me|replace_me|todo|dummy|null|undefined|redacted|demo|fake|sample|fixture|mock|legacy|from[_-]?env|env[_-]?ref|not[_-]?real|test[_-]?key|xxxx+|local[_-]?only)\b/i.test(line)
 }
 
 function isExampleSecretPlaceholder(path: string, line: string) {
@@ -821,10 +1610,25 @@ function isExampleOrTemplatePath(path: string) {
     name === ".env.example" ||
     name === ".env.sample" ||
     name === ".env.template" ||
+    isTestOrFixturePath(path) ||
     normalized.includes("/examples/") ||
     normalized.includes("/fixtures/") ||
-    normalized.includes("/__tests__/") ||
     normalized.includes("/docs/")
+  )
+}
+
+function isTestOrFixturePath(path: string) {
+  const normalized = normalizePath(path).toLowerCase()
+  const name = basename(path).toLowerCase()
+  return (
+    normalized.includes("/fixtures/") ||
+    normalized.includes("/fixture/") ||
+    normalized.includes("/snapshots/") ||
+    normalized.includes("/__tests__/") ||
+    normalized.includes("/tests/") ||
+    normalized.includes("_tests/") ||
+    /(?:^|[._-])(test|tests|spec)\.(?:ts|tsx|js|jsx|rs|py|go|java|rb|php)$/.test(name) ||
+    /(?:_test|_tests|_spec)\.(?:rs|py|go|java|rb|php)$/.test(name)
   )
 }
 

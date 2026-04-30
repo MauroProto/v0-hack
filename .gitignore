@@ -4,6 +4,7 @@ __v0_devtools.tsx
 __v0_jsx-dev-runtime.ts
 .snowflake/
 .v0-trash/
+.claude/
 .vercel/
 next.user-config.*
 
@@ -12,6 +13,7 @@ next.user-config.*
 .env.*
 .env*.local
 !.env.example
+!examples/vulnerable-next-app/.env.local
 
 # Common ignores
 node_modules

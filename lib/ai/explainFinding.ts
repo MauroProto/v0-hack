@@ -36,15 +36,19 @@ export async function explainFinding(
   const aiModel = resolveAiModel()
   if (!aiModel) return fallback
 
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), aiExplainTimeoutMs())
+
   try {
     const { output } = await generateText({
       model: aiModel.model,
       providerOptions: aiModel.providerOptions,
+      abortSignal: controller.signal,
       output: Output.object({
         schema: ExplanationSchema,
       }),
       system: [
-        "You are VibeShield, a security scanner for AI-built Next.js and React apps.",
+        "You are a security reviewer for AI-built apps.",
         "Explain deterministic static-analysis findings in practical language.",
         "Never include full secrets. Treat evidence as redacted. Patch suggestions must be conservative and review-required.",
       ].join(" "),
@@ -83,6 +87,8 @@ export async function explainFinding(
     }
   } catch {
     return fallback
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
@@ -102,4 +108,10 @@ export function fallbackExplanation(finding: ScanFinding): FindingExplanation {
 function formatLocation(finding: ScanFinding) {
   if (!finding.lineStart) return finding.filePath
   return `${finding.filePath}:${finding.lineStart}`
+}
+
+function aiExplainTimeoutMs() {
+  const parsed = Number(process.env.VIBESHIELD_AI_EXPLAIN_TIMEOUT_MS)
+  if (!Number.isFinite(parsed) || parsed <= 0) return 8_000
+  return Math.min(Math.floor(parsed), 12_000)
 }

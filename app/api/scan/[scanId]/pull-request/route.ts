@@ -3,6 +3,7 @@ import { z } from "zod"
 import { auditEvent } from "@/lib/scanner/scan"
 import { filterReportFindings } from "@/lib/scanner/patches"
 import { getScanReport, saveScanReport } from "@/lib/scanner/store"
+import type { ScanReport } from "@/lib/scanner/types"
 import { readJsonBodyWithLimit } from "@/lib/security/body"
 import { apiHeaders } from "@/lib/security/headers"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
@@ -13,13 +14,16 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const PullRequestSelectionSchema = z.object({
-  findingIds: z.array(z.string().min(1).max(40)).max(100).optional(),
+  includeAllActive: z.boolean().optional(),
+  findingIds: z.array(z.string().min(1).max(40)).max(1_000).optional(),
 })
+
+type PullRequestSelection = z.infer<typeof PullRequestSelectionSchema>
 
 export async function POST(request: Request, { params }: { params: Promise<{ scanId: string }> }) {
   try {
     const { scanId } = await params
-    assertContentLengthAllowed(request, 4_000)
+    assertContentLengthAllowed(request, 60_000)
     const selection = await readPullRequestSelection(request)
 
     const identity = await getRequestIdentity(request)
@@ -37,13 +41,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
       )
     }
 
-    if (selection.findingIds && selection.findingIds.length === 0) {
+    const selectedFindingIds = resolveSelectedFindingIds(current, selection)
+    if (selectedFindingIds.length === 0) {
       return NextResponse.json({ error: "Select at least one finding before creating a pull request." }, { status: 400, headers: apiHeaders() })
     }
 
-    const scopedReport = filterReportFindings(current, selection.findingIds)
-    if (selection.findingIds && scopedReport.findings.length === 0) {
+    const scopedReport = filterReportFindings(current, selectedFindingIds)
+    if (scopedReport.findings.length === 0) {
       return NextResponse.json({ error: "Selected findings were not found in this report." }, { status: 400, headers: apiHeaders() })
+    }
+
+    const selectedById = new Set(scopedReport.findings.map((finding) => finding.id))
+    const rejected = current.findings.filter((finding) => selectedFindingIds.includes(finding.id) && finding.suppressed)
+    if (rejected.length > 0 || selectedById.size !== selectedFindingIds.length) {
+      return NextResponse.json(
+        { error: "Pull requests can only include selected active findings." },
+        { status: 400, headers: apiHeaders() },
+      )
     }
 
     const token = getGitHubTokenFromRequest(request)
@@ -64,7 +78,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
       pullRequest,
       auditTrail: [
         ...current.auditTrail,
-        auditEvent("Create GitHub remediation pull request", "complete", {
+        auditEvent("Create GitHub scan follow-up pull request", "complete", {
           url: pullRequest.url,
           branch: pullRequest.branch,
           selectedFindings: scopedReport.findings.length,
@@ -97,7 +111,15 @@ async function readPullRequestSelection(request: Request) {
     throw new Error("Use application/json when selecting findings for a pull request.")
   }
 
-  return PullRequestSelectionSchema.parse(await readJsonBodyWithLimit(request, 4_000))
+  return PullRequestSelectionSchema.parse(await readJsonBodyWithLimit(request, 60_000))
+}
+
+function resolveSelectedFindingIds(report: ScanReport, selection: PullRequestSelection) {
+  if (selection.includeAllActive) {
+    return report.findings.filter((finding) => !finding.suppressed).map((finding) => finding.id)
+  }
+
+  return [...new Set(selection.findingIds ?? [])]
 }
 
 function statusForPullRequestError(message: string) {

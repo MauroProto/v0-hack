@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { reviewProjectWithAi } from "@/lib/ai/reviewProject"
+import { withReportDerivedFields } from "@/lib/scanner/enrich"
 import { getScannerLimitsForMode } from "@/lib/scanner/extract"
+import { appendScanEvent, backgroundJobsEnabled, createScanJob } from "@/lib/scanner/jobs"
+import { applyReportPolicy } from "@/lib/scanner/reportPolicy"
 import { scanProject } from "@/lib/scanner/scan"
-import { saveScanReport } from "@/lib/scanner/store"
+import { getScanBaseline, saveScanReport } from "@/lib/scanner/store"
+import type { ScanRepositoryRef } from "@/lib/scanner/types"
 import { readJsonBodyWithLimit } from "@/lib/security/body"
 import { apiHeaders } from "@/lib/security/headers"
 import { attachReportOwner, getRequestIdentity, publicReport } from "@/lib/security/request"
@@ -52,6 +56,18 @@ export async function POST(request: Request) {
     const repo = body.repoFullName ? parseGitHubFullName(body.repoFullName) : parsePublicGitHubUrl(body.githubUrl ?? "")
     const quota = await consumeMonthlyScanQuota(identity)
 
+    if (shouldQueueScan(body.analysisMode, token)) {
+      const report = await createQueuedScanReport({
+        repo,
+        ref: body.ref,
+        analysisMode: body.analysisMode,
+        ownerHash: identity.subjectHash,
+        ownerKind: identity.kind,
+      })
+
+      return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota }, quota)
+    }
+
     const extracted = await extractProjectFromGitHubRepo({
       ...repo,
       ref: body.ref,
@@ -59,12 +75,14 @@ export async function POST(request: Request) {
       limits: getScannerLimitsForMode(body.analysisMode),
     })
 
-    const deterministicReport = scanProject({
+    const deterministicReport = await scanProject({
       ...extracted,
       sourceType: "github",
       sourceLabel: extracted.sourceLabel,
       analysisMode: body.analysisMode,
     })
+    await appendScanEvent({ reportId: deterministicReport.id, label: "Scanner completed", status: "complete", metadata: { findings: deterministicReport.findings.length } })
+
     const reviewedReport = await reviewProjectWithAi(
       {
         ...deterministicReport,
@@ -79,12 +97,21 @@ export async function POST(request: Request) {
       },
       extracted.files,
     )
+    await appendScanEvent({ reportId: reviewedReport.id, label: "AI review completed", status: "complete", metadata: { findings: reviewedReport.findings.length } })
+
+    const ownedReport = attachReportOwner(reviewedReport, identity)
+    const baseline = await getScanBaseline(ownedReport.sourceLabel, ownedReport.ownerHash)
+    const policyReport = applyReportPolicy(
+      {
+        ...ownedReport,
+        eventsAvailable: true,
+      },
+      extracted.files,
+      baseline,
+    )
 
     const report = await saveScanReport(
-      attachReportOwner(
-        reviewedReport,
-        identity,
-      ),
+      policyReport,
     )
 
     return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota }, quota)
@@ -99,6 +126,7 @@ function getErrorStatus(error: unknown) {
   if (error instanceof z.ZodError) return 400
   const message = getErrorMessage(error).toLowerCase()
   if (message.includes("rate limit")) return 429
+  if (message.includes("temporarily unavailable") || message.includes("could not be reached")) return 502
   if (message.includes("too large")) return 413
   if (message.includes("too many")) return 413
   if (message.includes("unsupported") || message.includes("github") || message.includes("repository")) return 400
@@ -128,4 +156,70 @@ function errorResponse(error: unknown) {
 
 function jsonWithQuota(body: Record<string, unknown>, quota: QuotaState) {
   return NextResponse.json(body, { headers: apiHeaders(rateLimitHeaders(quota)) })
+}
+
+function shouldQueueScan(analysisMode: "rules" | "normal" | "max", token?: string) {
+  return backgroundJobsEnabled() && analysisMode === "max" && !token
+}
+
+async function createQueuedScanReport(input: {
+  repo: { owner: string; repo: string }
+  ref?: string
+  analysisMode: "rules" | "normal" | "max"
+  ownerHash: string
+  ownerKind: "supabase_user" | "github_user" | "anonymous"
+}) {
+  const reportId = crypto.randomUUID()
+  const sourceLabel = input.ref
+    ? `github.com/${input.repo.owner}/${input.repo.repo}#${input.ref}`
+    : `github.com/${input.repo.owner}/${input.repo.repo}`
+  const repository: ScanRepositoryRef = {
+    owner: input.repo.owner,
+    repo: input.repo.repo,
+    ref: input.ref ?? "",
+    defaultBranch: input.ref ?? "",
+    private: false,
+    htmlUrl: `https://github.com/${input.repo.owner}/${input.repo.repo}`,
+  }
+  const job = await createScanJob({
+    ownerHash: input.ownerHash,
+    reportId,
+    projectName: input.repo.repo,
+    sourceLabel,
+    analysisMode: input.analysisMode,
+    repository,
+  })
+
+  return saveScanReport(withReportDerivedFields({
+    id: reportId,
+    createdAt: new Date().toISOString(),
+    projectName: input.repo.repo,
+    repository,
+    ownerHash: input.ownerHash,
+    ownerKind: input.ownerKind,
+    sourceType: "github",
+    sourceLabel,
+    analysisMode: input.analysisMode,
+    status: "queued",
+    jobId: job.id,
+    eventsAvailable: true,
+    riskScore: 0,
+    filesInspected: 0,
+    apiRoutesInspected: 0,
+    clientComponentsInspected: 0,
+    aiEndpointsInspected: 0,
+    findings: [],
+    auditTrail: [
+      {
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        label: "Queue scan job",
+        status: "complete",
+        metadata: {
+          source: sourceLabel,
+          mode: input.analysisMode,
+        },
+      },
+    ],
+  }))
 }
