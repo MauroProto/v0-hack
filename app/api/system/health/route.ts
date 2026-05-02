@@ -6,5 +6,5 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function GET() {
-  return NextResponse.json(getSystemHealth(), { headers: apiHeaders() })
+  return NextResponse.json(getSystemHealth({ publicView: true }), { headers: apiHeaders() })
 }

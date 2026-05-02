@@ -1,4 +1,7 @@
 import { auditEvent } from "@/lib/scanner/scan"
+import { generateProfessionalPullRequestCopy } from "@/lib/ai/pullRequestCopy"
+import { reviewPullRequestWithClaude, type PullRequestSafetyChangedFile } from "@/lib/ai/reviewPullRequest"
+import { sanitizePublicPullRequestCopy } from "@/lib/ai/publicPullRequestCopy"
 import {
   decodeUtf8,
   getScannerLimits,
@@ -11,6 +14,18 @@ import {
   type ScannerLimits,
 } from "@/lib/scanner/extract"
 import { getGitHubSessionFromHeaders } from "@/lib/security/github-session"
+import {
+  pinThirdPartyActionRefsInText,
+  type ActionRef,
+} from "@/lib/utils/githubActions"
+import { formatGitHubNotFoundMessage } from "@/lib/utils/githubErrors"
+import {
+  buildProfessionalPullRequestBody,
+  buildProfessionalPullRequestTitle,
+  formatPinnedActionFix,
+  shouldAttachReviewNotesFileToPullRequest,
+} from "@/lib/utils/pullRequestDraft"
+import { isSafePullRequestFinding } from "@/lib/utils/prSafety"
 import type { ExtractedProject, ProjectFile, ScanFinding, ScanPullRequest, ScanReport, ScanRepositoryRef } from "@/lib/scanner/types"
 
 export interface ParsedGitHubUrl {
@@ -96,6 +111,11 @@ type GitHubPullRequestApi = {
   base: {
     ref: string
   }
+}
+
+type ReviewBranch = {
+  name: string
+  created: boolean
 }
 
 type GitHubUserApi = {
@@ -321,10 +341,10 @@ export async function createRemediationPullRequest(input: {
 }): Promise<ScanPullRequest> {
   const report = {
     ...input.report,
-    findings: input.report.findings.filter((finding) => !finding.suppressed),
+    findings: input.report.findings.filter(isSafePullRequestFinding),
   }
   if (report.findings.length === 0) {
-    throw new Error("Select at least one active finding before creating a PR.")
+    throw new Error("No safe PR fixes were available. VibeShield only opens public pull requests for deterministic, low-risk code changes.")
   }
 
   const repository = repositoryRefFromReport(report)
@@ -343,58 +363,164 @@ export async function createRemediationPullRequest(input: {
     token: input.token,
     repositoryInfo,
   })
-  const branch = await createUniqueBranch(target.writeOwner, target.writeRepo, input.token, baseSha, report.id)
+  const branch = await getOrCreateReviewBranch(target.writeOwner, target.writeRepo, input.token, baseSha, report.id)
   const filesChanged: string[] = []
   const appliedFixes: string[] = []
   const skippedFixes = summarizeReviewRequiredFindings(report.findings)
+  const prHead = target.prHeadOwner ? `${target.prHeadOwner}:${branch.name}` : branch.name
+  const existingPullRequest = await findOpenPullRequest(owner, repo, prHead, input.token)
 
   if (shouldApplyGitignoreHardening(report.findings)) {
-    const gitignoreChanged = await hardenGitignore(target.writeOwner, target.writeRepo, branch, input.token)
+    const gitignoreChanged = await hardenGitignore(target.writeOwner, target.writeRepo, branch.name, input.token)
     if (gitignoreChanged) {
       filesChanged.push(".gitignore")
-      appliedFixes.push("Updated .gitignore because this scan selected a committed environment-file finding.")
+      appliedFixes.push("Updated .gitignore because the selected findings included committed environment files.")
     }
   }
 
-  const envChanges = await removeCommittedEnvironmentFiles(target.writeOwner, target.writeRepo, branch, input.token, report)
+  const envChanges = await removeCommittedEnvironmentFiles(target.writeOwner, target.writeRepo, branch.name, input.token, report)
   filesChanged.push(...envChanges.filesChanged)
   appliedFixes.push(...envChanges.appliedFixes)
 
-  const reportPath = `.github/security-reports/static-analysis-${report.id}.md`
-  const reportMarkdown = buildRemediationReportMarkdown(report, {
-    branch,
+  const actionPinning = await pinSelectedThirdPartyActions(target.writeOwner, target.writeRepo, branch.name, input.token, report)
+  filesChanged.push(...actionPinning.filesChanged)
+  appliedFixes.push(...actionPinning.appliedFixes)
+  skippedFixes.push(...actionPinning.reviewNotes)
+
+  const isExternalPublicPullRequest = Boolean(target.forkFullName)
+
+  if (isExternalPublicPullRequest && appliedFixes.length === 0) {
+    if (branch.created) await deleteReviewBranch(target.writeOwner, target.writeRepo, branch.name, input.token)
+    throw new Error(
+      "No safe code changes were available for a public pull request. Use the issue-body copy flow or select findings with deterministic fixes instead of opening a report-only PR.",
+    )
+  }
+
+  const reportPath = `.github/security-notes/security-review-${formatReviewDate(report.createdAt)}-${report.id.slice(0, 8)}.md`
+  const includeReviewNotesFile = shouldAttachReviewNotesFileToPullRequest(target.forkFullName)
+  const publicSkippedFixes = isExternalPublicPullRequest ? [] : skippedFixes
+  const publicFilesChanged = includeReviewNotesFile ? [...filesChanged, reportPath] : [...filesChanged]
+  const deterministicReportMarkdown = buildRemediationReportMarkdown(report, {
+    branch: branch.name,
     base,
     appliedFixes,
-    skippedFixes,
-    filesChanged: [...filesChanged, reportPath],
+    skippedFixes: publicSkippedFixes,
+    filesChanged: publicFilesChanged,
+  })
+  const deterministicTitle = buildPullRequestTitle(report, appliedFixes)
+  const deterministicBody = buildPullRequestBody(report, {
+    appliedFixes,
+    skippedFixes: publicSkippedFixes,
+    filesChanged: publicFilesChanged,
+    forkFullName: target.forkFullName,
+  })
+  const draftCopy = {
+    title: deterministicTitle,
+    body: deterministicBody,
+    reportMarkdown: deterministicReportMarkdown,
+  }
+  const copy = isExternalPublicPullRequest
+    ? sanitizePublicPullRequestCopy(draftCopy)
+    : await generateProfessionalPullRequestCopy({
+        report,
+        draft: draftCopy,
+        filesChanged: publicFilesChanged,
+        appliedFixes,
+        skippedFixes: publicSkippedFixes,
+      })
+
+  const changedFilesForSafetyReview = await collectChangedFilesForSafetyReview({
+    baseOwner: owner,
+    baseRepo: repo,
+    baseRef: base,
+    headOwner: target.writeOwner,
+    headRepo: target.writeRepo,
+    headRef: branch.name,
+    token: input.token,
+    filesChanged: publicFilesChanged,
+  })
+  if (includeReviewNotesFile) {
+    changedFilesForSafetyReview.push({
+      path: reportPath,
+      status: "added",
+      diff: buildCompactFileDiff(reportPath, null, copy.reportMarkdown),
+    })
+  }
+
+  const safetyReview = await reviewPullRequestWithClaude({
+    report,
+    draft: {
+      title: copy.title,
+      body: copy.body,
+    },
+    filesChanged: publicFilesChanged,
+    appliedFixes,
+    selectedFindings: report.findings,
+    changedFiles: changedFilesForSafetyReview,
+    externalPublicPullRequest: isExternalPublicPullRequest,
   })
 
-  await putRepositoryFile({
-    owner: target.writeOwner,
-    repo: target.writeRepo,
-    token: input.token,
-    branch,
-    path: reportPath,
-    content: reportMarkdown,
-    message: "Add static security review report",
-  })
-  filesChanged.push(reportPath)
+  if (!safetyReview.approved || !safetyReview.title || !safetyReview.body) {
+    if (branch.created) await deleteReviewBranch(target.writeOwner, target.writeRepo, branch.name, input.token)
+    throw new Error(safetyReview.error ?? "Claude Opus PR safety review blocked this pull request.")
+  }
 
-  const pullRequest = await openPullRequest({
-    owner,
-    repo,
-    token: input.token,
-    branch,
-    head: target.prHeadOwner ? `${target.prHeadOwner}:${branch}` : branch,
-    base,
-    title: "Add static security review report",
-    body: buildPullRequestBody(report, {
-      appliedFixes,
-      skippedFixes,
-      filesChanged,
-      forkFullName: target.forkFullName,
-    }),
-  })
+  copy.title = safetyReview.title
+  copy.body = safetyReview.body
+
+  if (includeReviewNotesFile) {
+    await putRepositoryFile({
+      owner: target.writeOwner,
+      repo: target.writeRepo,
+      token: input.token,
+      branch: branch.name,
+      path: reportPath,
+      content: copy.reportMarkdown,
+      sha: (await getRepositoryContentFile(target.writeOwner, target.writeRepo, reportPath, branch.name, input.token))?.sha,
+      message: "Add security review notes",
+    })
+    filesChanged.push(reportPath)
+  } else {
+    await removeReviewNotesFileIfPresent(target.writeOwner, target.writeRepo, branch.name, input.token, reportPath)
+  }
+
+  let pullRequest: GitHubPullRequestApi
+  try {
+    pullRequest = existingPullRequest
+      ? await updatePullRequest({
+          owner,
+          repo,
+          token: input.token,
+          number: existingPullRequest.number,
+          title: copy.title,
+          body: copy.body,
+        })
+      : await openPullRequest({
+          owner,
+          repo,
+          token: input.token,
+          branch: branch.name,
+          head: prHead,
+          base,
+          title: copy.title,
+          body: copy.body,
+        })
+  } catch (error) {
+    const existing = await findOpenPullRequest(owner, repo, prHead, input.token)
+    if (existing) {
+      pullRequest = await updatePullRequest({
+        owner,
+        repo,
+        token: input.token,
+        number: existing.number,
+        title: copy.title,
+        body: copy.body,
+      })
+    } else {
+      if (branch.created) await deleteReviewBranch(target.writeOwner, target.writeRepo, branch.name, input.token)
+      throw error
+    }
+  }
 
   return {
     url: pullRequest.html_url,
@@ -404,6 +530,13 @@ export async function createRemediationPullRequest(input: {
     filesChanged,
     appliedFixes,
     skippedFixes,
+    safetyReview: {
+      provider: safetyReview.provider,
+      model: safetyReview.model,
+      summary: safetyReview.summary,
+      blockingReasons: safetyReview.blockingReasons,
+      requiredChanges: safetyReview.requiredChanges,
+    },
     createdAt: new Date().toISOString(),
   }
 }
@@ -503,27 +636,31 @@ async function waitForForkRepository(fullName: string, token: string) {
   throw new Error("GitHub fork was created but was not ready yet. Retry creating the PR in a moment.")
 }
 
-async function createUniqueBranch(owner: string, repo: string, token: string, baseSha: string, scanId: string) {
-  const prefix = `security/review-${scanId.slice(0, 8)}`
+async function getOrCreateReviewBranch(owner: string, repo: string, token: string, baseSha: string, scanId: string): Promise<ReviewBranch> {
+  const branch = `security/review-${scanId.slice(0, 8)}`
 
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const branch = attempt === 0 ? prefix : `${prefix}-${attempt + 1}`
-    try {
-      await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/git/refs`, token, {
-        method: "POST",
-        body: JSON.stringify({
-          ref: `refs/heads/${branch}`,
-          sha: baseSha,
-        }),
-      })
-      return branch
-    } catch (error) {
-      if (isGitHubValidationError(error)) continue
-      throw error
-    }
+  try {
+    await getBranchHeadSha(owner, repo, branch, token)
+    return { name: branch, created: false }
+  } catch (error) {
+    if (!isGitHubNotFoundError(error)) throw error
   }
 
-  throw new Error("Could not create a unique security review branch in this repository.")
+  try {
+    await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/git/refs`, token, {
+      method: "POST",
+      body: JSON.stringify({
+        ref: `refs/heads/${branch}`,
+        sha: baseSha,
+      }),
+    })
+    return { name: branch, created: true }
+  } catch (error) {
+    if (!isGitHubValidationError(error)) throw error
+
+    await getBranchHeadSha(owner, repo, branch, token)
+    return { name: branch, created: false }
+  }
 }
 
 async function hardenGitignore(owner: string, repo: string, branch: string, token: string) {
@@ -544,6 +681,70 @@ async function hardenGitignore(owner: string, repo: string, branch: string, toke
   })
 
   return true
+}
+
+async function pinSelectedThirdPartyActions(owner: string, repo: string, branch: string, token: string, report: ScanReport) {
+  const paths = githubActionsFindingPaths(report.findings)
+  const filesChanged: string[] = []
+  const appliedFixes: string[] = []
+  const reviewNotes: string[] = []
+
+  for (const path of paths) {
+    const existing = await getRepositoryContentFile(owner, repo, path, branch, token)
+    if (!existing?.sha) continue
+
+    const current = decodeContentFile(existing)
+    const result = await pinThirdPartyActionRefsInText(current, (action) => resolveActionCommitSha(action, token))
+    if (result.text === current) {
+      if (result.unresolved.length > 0) {
+        reviewNotes.push(`Review ${path}: could not resolve ${result.unresolved.join(", ")} to immutable commit SHAs.`)
+      }
+      continue
+    }
+
+    await putRepositoryFile({
+      owner,
+      repo,
+      token,
+      branch,
+      path,
+      content: result.text,
+      sha: existing.sha,
+      message: `Pin third-party GitHub Actions in ${path}`,
+    })
+
+    filesChanged.push(path)
+    appliedFixes.push(...result.pinned.map((pin) => formatPinnedActionFix(path, pin.from, pin.to, pin.originalRef)))
+    if (result.unresolved.length > 0) {
+      reviewNotes.push(`Review ${path}: could not resolve ${result.unresolved.join(", ")} to immutable commit SHAs.`)
+    }
+  }
+
+  return { filesChanged, appliedFixes, reviewNotes }
+}
+
+function githubActionsFindingPaths(findings: ScanFinding[]) {
+  const paths = new Set<string>()
+  for (const finding of findings) {
+    if (!isSafePullRequestFinding(finding)) continue
+    if (!finding.filePath.startsWith(".github/")) continue
+    if (!/\.(ya?ml)$/.test(finding.filePath)) continue
+    paths.add(finding.filePath)
+  }
+  return [...paths].sort()
+}
+
+async function resolveActionCommitSha(action: ActionRef, token: string) {
+  try {
+    const response = await githubFetch(
+      `${GITHUB_API}/repos/${encodeURIComponent(action.owner)}/${encodeURIComponent(action.repo)}/commits/${encodeURIComponent(action.ref)}`,
+      token,
+    )
+    const data = (await response.json()) as { sha?: string }
+    return data.sha ?? null
+  } catch {
+    return null
+  }
 }
 
 async function removeCommittedEnvironmentFiles(owner: string, repo: string, branch: string, token: string, report: ScanReport) {
@@ -636,6 +837,81 @@ async function getRepositoryContentFile(owner: string, repo: string, path: strin
   }
 }
 
+async function collectChangedFilesForSafetyReview(input: {
+  baseOwner: string
+  baseRepo: string
+  baseRef: string
+  headOwner: string
+  headRepo: string
+  headRef: string
+  token: string
+  filesChanged: string[]
+}): Promise<PullRequestSafetyChangedFile[]> {
+  const files: PullRequestSafetyChangedFile[] = []
+  for (const path of [...new Set(input.filesChanged)].slice(0, 30)) {
+    const [baseFile, headFile] = await Promise.all([
+      getRepositoryContentFile(input.baseOwner, input.baseRepo, path, input.baseRef, input.token),
+      getRepositoryContentFile(input.headOwner, input.headRepo, path, input.headRef, input.token),
+    ])
+    const before = baseFile ? decodeContentFile(baseFile) : null
+    const after = headFile ? decodeContentFile(headFile) : null
+    if (before === after) continue
+
+    files.push({
+      path,
+      status: before == null ? "added" : after == null ? "deleted" : "modified",
+      diff: buildCompactFileDiff(path, before, after),
+    })
+  }
+
+  return files
+}
+
+function buildCompactFileDiff(path: string, before: string | null, after: string | null) {
+  const oldLines = before?.split(/\r?\n/) ?? []
+  const newLines = after?.split(/\r?\n/) ?? []
+  const output = [`--- ${before == null ? "/dev/null" : `a/${path}`}`, `+++ ${after == null ? "/dev/null" : `b/${path}`}`]
+  const maxLines = 240
+
+  if (before == null) {
+    for (const line of newLines.slice(0, maxLines)) output.push(`+${line}`)
+    if (newLines.length > maxLines) output.push(`+... truncated ${newLines.length - maxLines} added lines`)
+    return output.join("\n")
+  }
+
+  if (after == null) {
+    for (const line of oldLines.slice(0, maxLines)) output.push(`-${line}`)
+    if (oldLines.length > maxLines) output.push(`-... truncated ${oldLines.length - maxLines} removed lines`)
+    return output.join("\n")
+  }
+
+  const maxLength = Math.max(oldLines.length, newLines.length)
+  let emitted = 0
+  for (let index = 0; index < maxLength && emitted < maxLines; index += 1) {
+    const oldLine = oldLines[index]
+    const newLine = newLines[index]
+    if (oldLine === newLine) {
+      if (index > 0 && oldLines[index - 1] !== newLines[index - 1]) {
+        output.push(` ${oldLine ?? ""}`)
+        emitted += 1
+      }
+      continue
+    }
+
+    if (oldLine != null) {
+      output.push(`-${oldLine}`)
+      emitted += 1
+    }
+    if (newLine != null && emitted < maxLines) {
+      output.push(`+${newLine}`)
+      emitted += 1
+    }
+  }
+
+  if (maxLength > maxLines) output.push("... diff truncated")
+  return output.join("\n")
+}
+
 async function putRepositoryFile(input: {
   owner: string
   repo: string
@@ -676,6 +952,21 @@ async function deleteRepositoryFile(input: {
   })
 }
 
+async function removeReviewNotesFileIfPresent(owner: string, repo: string, branch: string, token: string, path: string) {
+  const existing = await getRepositoryContentFile(owner, repo, path, branch, token)
+  if (!existing?.sha) return
+
+  await deleteRepositoryFile({
+    owner,
+    repo,
+    token,
+    branch,
+    path,
+    sha: existing.sha,
+    message: `Remove review notes file ${path}`,
+  })
+}
+
 async function openPullRequest(input: {
   owner: string
   repo: string
@@ -697,6 +988,45 @@ async function openPullRequest(input: {
     }),
   })
   return (await response.json()) as GitHubPullRequestApi
+}
+
+async function updatePullRequest(input: {
+  owner: string
+  repo: string
+  token: string
+  number: number
+  title: string
+  body: string
+}) {
+  const response = await githubFetch(`${GITHUB_API}/repos/${input.owner}/${input.repo}/pulls/${input.number}`, input.token, {
+    method: "PATCH",
+    body: JSON.stringify({
+      title: input.title.slice(0, 240),
+      body: input.body.slice(0, 60_000),
+    }),
+  })
+  return (await response.json()) as GitHubPullRequestApi
+}
+
+async function findOpenPullRequest(owner: string, repo: string, head: string, token: string) {
+  const params = new URLSearchParams({
+    head,
+    state: "open",
+    per_page: "1",
+  })
+  const response = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls?${params.toString()}`, token)
+  const data = (await response.json()) as GitHubPullRequestApi[]
+  return data[0] ?? null
+}
+
+async function deleteReviewBranch(owner: string, repo: string, branch: string, token: string) {
+  try {
+    await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/git/refs/heads/${encodeGitHubPath(branch)}`, token, {
+      method: "DELETE",
+    })
+  } catch {
+    // Best-effort cleanup only. The original GitHub error is more useful to the caller.
+  }
 }
 
 async function githubFetch(url: string, token?: string, init: RequestInit = {}) {
@@ -739,7 +1069,7 @@ async function githubFetch(url: string, token?: string, init: RequestInit = {}) 
       continue
     }
 
-    await throwGitHubResponseError(response)
+    await throwGitHubResponseError(response, url, Boolean(token))
   }
 
   throw new GitHubApiError(
@@ -823,34 +1153,32 @@ function buildRemediationReportMarkdown(
   },
 ) {
   return [
-    "# Static security review report",
+    "# Security review notes",
     "",
-    "This report was generated from static repository analysis. It is intended for maintainer review and does not claim that every finding has been automatically fixed.",
+    "These notes summarize security-relevant findings that are worth maintainer review. They do not claim that every item is remediated.",
     "",
-    "## Scan metadata",
+    "## Review context",
     "",
     `- Project: \`${report.projectName}\``,
     `- Source: \`${report.sourceLabel}\``,
-    `- Scan ID: \`${report.id}\``,
-    `- Mode: \`${report.analysisMode ?? "unknown"}\``,
     `- Risk score: **${report.riskScore}/100**`,
     `- Findings included: **${report.findings.length}**`,
-    `- Files inspected: **${report.filesInspected}**`,
     `- Baseline: **${formatPullRequestBaseline(report)}**`,
     "",
+    ...formatPullRequestAiSummary(report),
     ...formatPullRequestRiskBreakdown(report),
     "## Findings requiring review",
     "",
     ...formatPullRequestFindings(report),
     "",
-    "## GitHub PR follow-up",
+    "## Pull request context",
     "",
     `**Branch:** \`${pr.branch}\``,
     `**Base:** \`${pr.base}\``,
     "",
     "### Low-risk changes applied",
     "",
-    ...(pr.appliedFixes.length > 0 ? pr.appliedFixes.map((item) => `- ${item}`) : ["- No code files were changed automatically."]),
+    ...(pr.appliedFixes.length > 0 ? pr.appliedFixes.map((item) => `- ${item}`) : ["- No code files were changed in this PR."]),
     "",
     "### Files changed",
     "",
@@ -866,8 +1194,6 @@ function buildRemediationReportMarkdown(
     "- Architecture-sensitive findings, including auth, rate limits, agent tools, MCP, CI permissions, and supply-chain posture, remain maintainer-reviewed.",
     "- Local-only report links are intentionally omitted because public maintainers cannot open them.",
     "",
-    "_Generated from static security analysis._",
-    "",
   ].join("\n")
 }
 
@@ -880,39 +1206,28 @@ function buildPullRequestBody(
     forkFullName?: string
   },
 ) {
-  return [
-    "## Summary",
-    "",
-    `This PR adds a static security review report for \`${report.sourceLabel}\` and applies only low-risk repository hygiene changes when available.`,
-    "",
-    "It does not claim to fully remediate every finding. Items that require product, auth, rate-limit, agent, MCP, or CI policy decisions are listed for human review.",
-    "",
-    "## Scan metadata",
-    "",
-    `- Risk score: **${report.riskScore}/100**`,
-    `- Findings included: **${report.findings.length}**`,
-    `- Baseline: **${formatPullRequestBaseline(report)}**`,
-    ...(pr.forkFullName ? [`- Head fork: \`${pr.forkFullName}\``] : []),
-    "",
-    "## Changes in this PR",
-    "",
-    ...(pr.appliedFixes.length > 0 ? pr.appliedFixes.map((item) => `- ${item}`) : ["- No safe automatic code changes were available for this report."]),
-    "",
-    "## Files changed",
-    "",
-    ...pr.filesChanged.map((file) => `- \`${file}\``),
-    "",
-    "## Findings requiring review",
-    "",
-    ...(pr.skippedFixes.length > 0 ? pr.skippedFixes.map((item) => `- ${item}`) : ["- No selected findings require additional manual notes in this PR."]),
-    "",
-    "## Notes",
-    "",
-    "- The full review report is included under `.github/security-reports/`.",
-    "- This is a report-first pull request. It does not include speculative or placeholder fixes.",
-    "- Placeholder fixes that could break production behavior are intentionally avoided.",
-    "- Review all security-sensitive changes before merging.",
-  ].join("\n")
+  return buildProfessionalPullRequestBody({
+    sourceLabel: report.sourceLabel,
+    appliedFixes: pr.appliedFixes,
+    skippedFixes: pr.skippedFixes,
+    filesChanged: pr.filesChanged,
+    forkFullName: pr.forkFullName,
+  })
+}
+
+function buildPullRequestTitle(report: ScanReport, appliedFixes: string[]) {
+  return buildProfessionalPullRequestTitle({
+    sourceLabel: report.sourceLabel,
+    appliedFixes,
+    skippedFixes: summarizeReviewRequiredFindings(report.findings),
+    filesChanged: [],
+  })
+}
+
+function formatReviewDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10)
+  return date.toISOString().slice(0, 10)
 }
 
 function formatPullRequestBaseline(report: ScanReport) {
@@ -922,13 +1237,12 @@ function formatPullRequestBaseline(report: ScanReport) {
 }
 
 function summarizeReviewRequiredFindings(reportFindings: ScanFinding[]) {
-  return reportFindings
-    .filter((finding) => !finding.suppressed)
+  return groupFindingsForPullRequest(reportFindings.filter((finding) => !finding.suppressed))
     .slice(0, 12)
-    .map(
-      (finding) =>
-        `${finding.id} ${finding.title} in ${formatFindingLocation(finding)} is review-required; no automatic code change was applied for it.`,
-    )
+    .map((group) => {
+      const locations = group.findings.map(formatFindingLocation)
+      return `${group.title} (${formatInlineList(locations, 4)}) remains review-required.`
+    })
 }
 
 function shouldApplyGitignoreHardening(findings: ScanFinding[]) {
@@ -958,22 +1272,117 @@ function formatPullRequestRiskBreakdown(report: ScanReport) {
   ]
 }
 
-function formatPullRequestFindings(report: ScanReport) {
-  const findings = [...report.findings].sort(compareFindingsForPullRequest).slice(0, 20)
-  if (findings.length === 0) return ["No active findings were selected for this pull request.", ""]
+function formatPullRequestAiSummary(report: ScanReport) {
+  const summary = report.aiTriage
+  if (!summary) return []
 
-  return findings.flatMap((finding, index) => [
-    `### ${index + 1}. ${finding.title}`,
+  return [
+    "## Review summary",
     "",
-    `- Severity: \`${finding.severity}\``,
-    `- Category: \`${finding.category}\``,
-    `- Rule: \`${finding.ruleId ?? "unknown"}\``,
-    `- Location: \`${formatFindingLocation(finding)}\``,
-    `- Confidence: ${Math.round(finding.confidence * 100)}%${finding.confidenceReason ? ` - ${finding.confidenceReason}` : ""}`,
-    `- Recommendation: ${finding.recommendation}`,
-    ...(finding.evidence ? [`- Evidence: \`${finding.evidence}\``] : []),
+    summary.riskNarrative ? `${summary.riskNarrative}` : "",
+    "",
+    ...(summary.recommendedNextSteps.length > 0
+      ? [
+          "### Recommended next steps",
+          "",
+          ...summary.recommendedNextSteps.slice(0, 5).map((step, index) => `${index + 1}. ${step}`),
+          "",
+        ]
+      : []),
+  ].filter(Boolean)
+}
+
+function formatPullRequestFindings(report: ScanReport) {
+  const groups = groupFindingsForPullRequest(report.findings).slice(0, 12)
+  if (groups.length === 0) return ["No active findings were selected for this pull request.", ""]
+
+  return groups.flatMap((group, index) => [
+    `### ${index + 1}. ${group.title}`,
+    "",
+    `- Severity: \`${group.severity}\``,
+    `- Category: \`${group.category}\``,
+    `- Rule: \`${group.ruleId ?? "unknown"}\``,
+    `- Locations: ${formatInlineList(group.findings.map(formatFindingLocation), 8)}`,
+    `- Confidence: ${Math.round(group.confidence * 100)}%`,
+    ...(group.triageReason ? [`- Triage: ${group.triageReason}`] : []),
+    ...(group.detectedControls.length > 0 ? [`- Detected controls: ${formatInlineList(group.detectedControls, 5)}`] : []),
+    ...(group.missingControls.length > 0 ? [`- Missing controls: ${formatInlineList(group.missingControls, 5)}`] : []),
+    `- Recommendation: ${group.recommendation}`,
+    ...group.evidence.slice(0, 3).map((evidence) => `- Evidence: \`${evidence}\``),
     "",
   ])
+}
+
+type PullRequestFindingGroup = {
+  key: string
+  title: string
+  severity: ScanFinding["severity"]
+  category: ScanFinding["category"]
+  ruleId?: string
+  confidence: number
+  recommendation: string
+  evidence: string[]
+  triageReason?: string
+  detectedControls: string[]
+  missingControls: string[]
+  findings: ScanFinding[]
+}
+
+function groupFindingsForPullRequest(findings: ScanFinding[]): PullRequestFindingGroup[] {
+  const groups = new Map<string, PullRequestFindingGroup>()
+
+  for (const finding of [...findings].sort(compareFindingsForPullRequest)) {
+    const key = pullRequestRootCauseKey(finding)
+    const current = groups.get(key)
+    if (!current) {
+      groups.set(key, {
+        key,
+        title: finding.title,
+        severity: finding.severity,
+        category: finding.category,
+        ruleId: finding.ruleId,
+        confidence: finding.confidence,
+        recommendation: finding.recommendation,
+        evidence: finding.evidence ? [finding.evidence] : [],
+        triageReason: finding.triage?.reason,
+        detectedControls: finding.triage?.detectedControls ?? [],
+        missingControls: finding.triage?.missingControls ?? [],
+        findings: [finding],
+      })
+      continue
+    }
+
+    current.findings.push(finding)
+    current.severity = severityRank(finding.severity) > severityRank(current.severity) ? finding.severity : current.severity
+    current.confidence = Math.max(current.confidence, finding.confidence)
+    if (finding.evidence && !current.evidence.includes(finding.evidence)) current.evidence.push(finding.evidence)
+    if (!current.triageReason && finding.triage?.reason) current.triageReason = finding.triage.reason
+    for (const control of finding.triage?.detectedControls ?? []) {
+      if (!current.detectedControls.includes(control)) current.detectedControls.push(control)
+    }
+    for (const control of finding.triage?.missingControls ?? []) {
+      if (!current.missingControls.includes(control)) current.missingControls.push(control)
+    }
+  }
+
+  return [...groups.values()].sort((a, b) => {
+    const severityDelta = severityRank(b.severity) - severityRank(a.severity)
+    if (severityDelta !== 0) return severityDelta
+    return b.confidence - a.confidence
+  })
+}
+
+function pullRequestRootCauseKey(finding: ScanFinding) {
+  if (finding.ruleId === "supply-chain.remote-install-piped-shell") return finding.ruleId
+  if (finding.ruleId === "github-actions.unpinned-actions.grouped") return finding.ruleId
+  return `${finding.ruleId ?? finding.title}:${finding.category}:${finding.title}`
+}
+
+function formatInlineList(items: string[], maxItems: number) {
+  const unique = [...new Set(items.filter(Boolean))]
+  const shown = unique.slice(0, maxItems)
+  const suffix = unique.length > shown.length ? `, and ${unique.length - shown.length} more` : ""
+  return shown.map((item) => `\`${item}\``).join(", ") + suffix
 }
 
 function compareFindingsForPullRequest(a: ScanFinding, b: ScanFinding) {
@@ -1021,7 +1430,7 @@ function shouldRetryGitHubResponse(response: Response, attempt: number, maxRetri
   return RETRYABLE_GITHUB_STATUSES.has(response.status)
 }
 
-async function throwGitHubResponseError(response: Response): Promise<never> {
+async function throwGitHubResponseError(response: Response, url: string, authenticated: boolean): Promise<never> {
   const details = await response.text().catch(() => "")
   const message = extractGitHubErrorMessage(details)
 
@@ -1034,7 +1443,9 @@ async function throwGitHubResponseError(response: Response): Promise<never> {
   }
 
   if (response.status === 401 || response.status === 403) throw new Error("GitHub authorization failed.")
-  if (response.status === 404) throw new GitHubApiError("GitHub repository or file was not found.", response.status, "github_not_found")
+  if (response.status === 404) {
+    throw new GitHubApiError(formatGitHubNotFoundMessage(url, authenticated), response.status, "github_not_found")
+  }
   if (response.status === 422) {
     throw new GitHubApiError(`GitHub API validation failed${message ? `: ${message}` : ""}.`, response.status, "github_validation_failed")
   }

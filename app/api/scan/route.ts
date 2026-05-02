@@ -27,6 +27,7 @@ import {
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+export const maxDuration = 300
 
 const JsonScanSchema = z
   .object({
@@ -126,6 +127,7 @@ function getErrorStatus(error: unknown) {
   if (error instanceof z.ZodError) return 400
   const message = getErrorMessage(error).toLowerCase()
   if (message.includes("rate limit")) return 429
+  if (message.includes("not found") || message.includes("private")) return 404
   if (message.includes("temporarily unavailable") || message.includes("could not be reached")) return 502
   if (message.includes("too large")) return 413
   if (message.includes("too many")) return 413

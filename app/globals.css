@@ -864,6 +864,7 @@ button.chip { cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 14px;
   margin: 18px 0 4px;
   padding: 14px;
@@ -1201,6 +1202,13 @@ button.chip { cursor: pointer; }
   padding: 3px 7px;
   background: rgba(0,0,0,0.18);
   white-space: nowrap;
+}
+.github-pr-safety {
+  flex: 1 1 100%;
+  margin: -4px 0 0 29px;
+  color: var(--fg-3);
+  font-size: 12px;
+  line-height: 1.45;
 }
 .finding-empty {
   display: flex;

@@ -196,7 +196,7 @@ function buildReportAiTriage(
 
   return {
     riskNarrative: cleanText(summary?.riskNarrative ?? existing?.riskNarrative ?? "AI triage reviewed deterministic findings and preserved scanner guardrails.", 900),
-    recommendedNextSteps: cleanList(summary?.recommendedNextSteps ?? existing?.recommendedNextSteps ?? [], 8, 220),
+    recommendedNextSteps: cleanList(summary?.recommendedNextSteps ?? existing?.recommendedNextSteps ?? [], 8, 360),
     model: output.model ?? existing?.model,
     provider: output.provider ?? existing?.provider,
     reviewedFindings: triageById.size || existing?.reviewedFindings || 0,
@@ -241,6 +241,12 @@ function scoreRiskFinding(finding: ScanFinding) {
 
 function bucketRisk(score: number, requested?: RiskBand | string, fallback?: RiskBreakdownBucket): RiskBreakdownBucket {
   const requestedLabel = normalizeRiskBand(requested)
+  if (score <= 0) {
+    if (requestedLabel && labelFloor(requestedLabel) >= 20) {
+      return { score: labelFloor(requestedLabel), label: requestedLabel }
+    }
+    return { score: 0, label: "None" }
+  }
   if (requestedLabel) return { score: Math.max(score, labelFloor(requestedLabel)), label: requestedLabel }
   if (score > 0) return { score, label: labelForScore(score) }
   return fallback ?? { score: 0, label: "None" }
@@ -312,7 +318,11 @@ function cleanList(values: string[] | undefined, maxItems: number, maxLength: nu
 }
 
 function cleanText(value: string, maxLength: number) {
-  return value.replace(/\s+/g, " ").trim().slice(0, maxLength)
+  const normalized = value.replace(/\s+/g, " ").trim()
+  if (normalized.length <= maxLength) return normalized
+  const clipped = normalized.slice(0, maxLength)
+  const lastSpace = clipped.lastIndexOf(" ")
+  return `${(lastSpace > maxLength * 0.65 ? clipped.slice(0, lastSpace) : clipped).trim()}...`
 }
 
 function capSeverity(severity: Severity, max: Severity): Severity {

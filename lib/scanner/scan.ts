@@ -4,12 +4,13 @@ import { calculateRiskScore, createDeterministicPatch } from "./patches"
 import { normalizeFindings, withReportDerivedFields } from "./enrich"
 import { applyReportPolicy } from "./reportPolicy"
 import { compareFindingsForReport } from "./prioritize"
+import { buildSecurityTaskflow } from "./taskflow"
 
 export async function scanProject(input: ScanInput): Promise<ScanReport> {
   const startedAt = new Date()
   const analysisMode = input.analysisMode ?? "normal"
   const analyzerResult = await runHybridAnalyzers(input.files)
-  const { dependencyResult, repoInventory, ruleResult } = analyzerResult
+  const { dependencyResult, repoInventory, rulePackResult, ruleResult } = analyzerResult
   const allRawFindings = analyzerResult.findings
   const findings = normalizeFindings(allRawFindings
     .map<ScanFinding>((finding, index) => ({
@@ -24,6 +25,26 @@ export async function scanProject(input: ScanInput): Promise<ScanReport> {
         patch: createDeterministicPatch(withStableId),
       }
     }))
+  const maxTaskflow = analysisMode === "max"
+    ? buildSecurityTaskflow({
+        id: "taskflow-preview",
+        createdAt: startedAt.toISOString(),
+        projectName: input.projectName,
+        sourceType: input.sourceType,
+        sourceLabel: input.sourceLabel,
+        analysisMode,
+        status: "running",
+        riskScore: calculateRiskScore(findings),
+        filesInspected: input.files.length,
+        apiRoutesInspected: ruleResult.stats.apiRoutesInspected,
+        clientComponentsInspected: ruleResult.stats.clientComponentsInspected,
+        aiEndpointsInspected: ruleResult.stats.aiEndpointsInspected,
+        framework: ruleResult.signals.framework,
+        repoInventory,
+        findings,
+        auditTrail: [],
+      }, input.files)
+    : null
   const auditTrail: AuditTrailEvent[] = [
     ...(input.auditTrail ?? []),
     auditEvent("Select analysis depth", "complete", {
@@ -42,6 +63,11 @@ export async function scanProject(input: ScanInput): Promise<ScanReport> {
       findings: analyzerResult.interfileFindings.length,
       maxDepth: 3,
     }),
+    auditEvent("Run static security rule packs", "complete", {
+      packs: rulePackResult.summary.packs.join(", "),
+      rulesEvaluated: rulePackResult.summary.rulesEvaluated,
+      findings: rulePackResult.summary.findings,
+    }),
     auditEvent("Run OSV dependency intelligence", dependencyResult.summary.error ? "failed" : "complete", {
       packages: dependencyResult.summary.packages,
       vulnerablePackages: dependencyResult.summary.vulnerablePackages,
@@ -57,6 +83,16 @@ export async function scanProject(input: ScanInput): Promise<ScanReport> {
     auditEvent("Generate conservative patch templates", "complete", {
       patchable: findings.filter((finding) => finding.patchable).length,
     }),
+    ...(maxTaskflow
+      ? [
+          auditEvent("Build Max security taskflow", "complete", {
+            phases: maxTaskflow.phases.join(" -> "),
+            focusAreas: maxTaskflow.focusAreas.join("; "),
+            reviewQuestions: maxTaskflow.reviewQuestions.length,
+            evidenceBudget: maxTaskflow.evidenceBudget,
+          }),
+        ]
+      : []),
   ]
 
   return applyReportPolicy(withReportDerivedFields({

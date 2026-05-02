@@ -118,6 +118,13 @@ export interface ScanPullRequest {
   filesChanged: string[]
   appliedFixes: string[]
   skippedFixes: string[]
+  safetyReview?: {
+    provider?: string
+    model?: string
+    summary?: string
+    blockingReasons?: string[]
+    requiredChanges?: string[]
+  }
   createdAt: string
 }
 

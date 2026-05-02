@@ -1,8 +1,9 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config"
+import { VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import type { ScanEvent, ScanJob, ScanMode, ScanRepositoryRef } from "./types"
 
-const JOBS_TABLE = "vibeshield_scan_jobs"
-const EVENTS_TABLE = "vibeshield_scan_events"
+const JOBS_TABLE = VIBESHIELD_SUPABASE_TABLES.jobs
+const EVENTS_TABLE = VIBESHIELD_SUPABASE_TABLES.events
 
 type JobGlobal = typeof globalThis & {
   __vibeshieldScanJobs?: Map<string, ScanJob>

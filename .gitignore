@@ -19,5 +19,7 @@ next.user-config.*
 node_modules
 .next/
 .vibeshield/
+supabase/.temp/
 tsconfig.tsbuildinfo
 .DS_Store
+.vercel

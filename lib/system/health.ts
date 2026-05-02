@@ -2,30 +2,82 @@ import { backgroundJobsEnabled } from "@/lib/scanner/jobs"
 import { getStorageMode } from "@/lib/scanner/store"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { isGitHubAppConfigured } from "@/lib/utils/github-app-config"
+import {
+  getProductionReadiness,
+  isAiConfigured,
+  isGitHubOAuthConfigured,
+  isPrSafetyReviewConfigured,
+} from "./readiness"
 
-export function getSystemHealth() {
+type SystemHealthOptions = {
+  publicView?: boolean
+}
+
+type PublicSystemHealth = {
+  ok: boolean
+  productionReady: boolean
+  status: "ready" | "not_ready"
+}
+
+type DetailedSystemHealth = {
+  ok: boolean
+  productionReady: boolean
+  supabaseConfigured: boolean
+  storageMode: string
+  persistentQuotaRequired: boolean
+  persistentStorageRequired: boolean
+  aiConfigured: boolean
+  prSafetyReviewConfigured: boolean
+  githubOAuthConfigured: boolean
+  githubAppConfigured: boolean
+  osvEnabled: boolean
+  backgroundJobsEnabled: boolean
+  blockingChecks: string[]
+  warningChecks: string[]
+}
+
+export function getSystemHealth(): DetailedSystemHealth
+export function getSystemHealth(options: { publicView?: false }): DetailedSystemHealth
+export function getSystemHealth(options: { publicView: true }): DetailedSystemHealth | PublicSystemHealth
+export function getSystemHealth(options: SystemHealthOptions = {}): DetailedSystemHealth | PublicSystemHealth {
+  const readiness = getProductionReadiness()
+  const detailed = shouldExposeDetailedHealth(options.publicView)
+
+  const base = {
+    ok: detailed ? true : readiness.ready,
+    productionReady: readiness.ready,
+  }
+
+  if (!detailed) {
+    const status: PublicSystemHealth["status"] = readiness.ready ? "ready" : "not_ready"
+
+    return {
+      ...base,
+      status,
+    }
+  }
+
   return {
-    ok: true,
+    ...base,
     supabaseConfigured: isSupabaseConfigured(),
     storageMode: getStorageMode(),
     persistentQuotaRequired: persistentEnvEnabled("VIBESHIELD_REQUIRE_PERSISTENT_QUOTA"),
     persistentStorageRequired: persistentEnvEnabled("VIBESHIELD_REQUIRE_PERSISTENT_STORAGE"),
     aiConfigured: isAiConfigured(),
-    githubOAuthConfigured: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET && process.env.VIBESHIELD_GITHUB_SESSION_SECRET),
+    prSafetyReviewConfigured: isPrSafetyReviewConfigured(),
+    githubOAuthConfigured: isGitHubOAuthConfigured(),
     githubAppConfigured: isGitHubAppConfigured(),
     osvEnabled: process.env.VIBESHIELD_ENABLE_OSV !== "false",
     backgroundJobsEnabled: backgroundJobsEnabled(),
+    blockingChecks: readiness.blockingChecks,
+    warningChecks: readiness.warningChecks,
   }
 }
 
-function isAiConfigured() {
-  return Boolean(
-    process.env.AI_GATEWAY_API_KEY ||
-      process.env.VERCEL_OIDC_TOKEN ||
-      process.env.ANTHROPIC_API_KEY ||
-      process.env.CLAUDE_API_KEY ||
-      process.env.DEEPSEEK_API_KEY,
-  )
+function shouldExposeDetailedHealth(publicView?: boolean) {
+  if (!publicView) return true
+  if (process.env.VIBESHIELD_PUBLIC_HEALTH_DETAILS === "true") return true
+  return process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1"
 }
 
 function persistentEnvEnabled(name: string) {

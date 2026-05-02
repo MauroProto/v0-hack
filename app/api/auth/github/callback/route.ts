@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server"
 import {
   clearGitHubOAuthStateCookie,
+  clearGitHubOAuthReturnCookie,
   createGitHubSessionCookie,
   readGitHubOAuthState,
+  readGitHubOAuthReturn,
   type GitHubSession,
 } from "@/lib/security/github-session"
 
@@ -29,7 +31,7 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code")
   const state = url.searchParams.get("state")
   const expectedState = readGitHubOAuthState(request.headers)
-  const redirectTo = new URL("/scan", url.origin)
+  const redirectTo = new URL(readGitHubOAuthReturn(request.headers), url.origin)
 
   if (!code || !state || !expectedState || state !== expectedState) {
     redirectTo.searchParams.set("authError", "github_state")
@@ -52,6 +54,7 @@ export async function GET(request: Request) {
     const response = NextResponse.redirect(redirectTo)
     response.headers.append("Set-Cookie", createGitHubSessionCookie(session))
     response.headers.append("Set-Cookie", clearGitHubOAuthStateCookie())
+    response.headers.append("Set-Cookie", clearGitHubOAuthReturnCookie())
     return response
   } catch {
     redirectTo.searchParams.set("authError", "github_oauth")
@@ -119,6 +122,7 @@ async function fetchGitHubUser(token: string) {
 
 function redirectWithClearedState(url: URL) {
   const response = NextResponse.redirect(url)
-  response.headers.set("Set-Cookie", clearGitHubOAuthStateCookie())
+  response.headers.append("Set-Cookie", clearGitHubOAuthStateCookie())
+  response.headers.append("Set-Cookie", clearGitHubOAuthReturnCookie())
   return response
 }

@@ -5,6 +5,7 @@ import type { ReactNode, WheelEvent } from "react"
 import { Icon } from "@/app/(app)/_components/icons"
 import { generateFullReportBody, generateIssueBody, getRiskLabel } from "@/lib/scanner/patches"
 import type { AuditTrailEvent, FindingCategory, FindingKind, ScanFinding, ScanPullRequest, ScanReport, Severity } from "@/lib/scanner/types"
+import { getSafePullRequestFindingReason, isSafePullRequestFinding } from "@/lib/utils/prSafety"
 
 type SelectionMode = "issue" | "pull_request"
 type FindingFilter = "active" | "new" | "existing" | "suppressed" | "resolved" | "all"
@@ -85,7 +86,8 @@ export function ScanResultsClient({
   const [findingFilter, setFindingFilter] = useState<FindingFilter>("active")
   const activeFindings = useMemo(() => report.findings.filter((finding) => !finding.suppressed), [report.findings])
   const issueFindingIds = useMemo(() => activeFindings.map((finding) => finding.id), [activeFindings])
-  const prFindingIds = issueFindingIds
+  const prFindings = useMemo(() => activeFindings.filter(isSafePullRequestFinding), [activeFindings])
+  const prFindingIds = useMemo(() => prFindings.map((finding) => finding.id), [prFindings])
   const selectionFindingIds = selectionMode === "pull_request" ? prFindingIds : issueFindingIds
   const findingIdSet = useMemo(() => new Set(selectionFindingIds), [selectionFindingIds])
   const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>(() => initialReport.findings.filter((finding) => !finding.suppressed).map((finding) => finding.id))
@@ -104,7 +106,7 @@ export function ScanResultsClient({
   const groupedFindings = useMemo(() => groupFindingsForDisplay(visibleFindings), [visibleFindings])
   const vulnerabilityCount = report.findingGroups?.vulnerabilities ?? activeFindings.filter((finding) => (finding.kind ?? inferredKind(finding)) === "vulnerability").length
   const riskBreakdown = report.riskBreakdown
-  const hasPrFindings = activeFindings.length > 0
+  const hasPrFindings = prFindings.length > 0
 
   const generateFixes = async () => {
     setError(null)
@@ -137,6 +139,11 @@ export function ScanResultsClient({
     })
 
     setSelectionMode(mode)
+  }
+
+  const signInWithGitHub = () => {
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    window.location.assign(`/api/auth/github/start?returnTo=${encodeURIComponent(returnTo)}`)
   }
 
   const createPullRequest = async (findingIdsToInclude: string[]) => {
@@ -262,7 +269,7 @@ export function ScanResultsClient({
               title={
                 hasPrFindings
                   ? "Create a PR with the selected scan report and any safe repository hygiene changes."
-                  : "No active findings are available for a PR."
+                  : "No deterministic, low-risk PR fixes are available for this report."
               }
               type="button"
             >
@@ -466,7 +473,7 @@ export function ScanResultsClient({
       {selectionMode && (
         <FindingSelectionDialog
           mode={selectionMode}
-          findings={activeFindings}
+          findings={selectionMode === "pull_request" ? prFindings : activeFindings}
           selectedFindingIds={activeSelectedFindingIds}
           selectedCount={selectedCount}
           creatingPr={creatingPr}
@@ -479,6 +486,7 @@ export function ScanResultsClient({
               current.includes(findingId) ? current.filter((id) => id !== findingId) : [...current, findingId],
             )
           }
+          onSignInWithGitHub={signInWithGitHub}
           onConfirm={() => {
             if (selectionMode === "issue") {
               void copyIssueBody(activeSelectedFindingIds)
@@ -536,6 +544,7 @@ function FindingSelectionDialog({
   onSelectAll,
   onClear,
   onToggle,
+  onSignInWithGitHub,
   onConfirm,
 }: {
   mode: SelectionMode
@@ -548,6 +557,7 @@ function FindingSelectionDialog({
   onSelectAll: () => void
   onClear: () => void
   onToggle: (findingId: string) => void
+  onSignInWithGitHub: () => void
   onConfirm: () => void
 }) {
   const selectedSet = new Set(selectedFindingIds)
@@ -556,6 +566,9 @@ function FindingSelectionDialog({
   const confirmLabel = isPrMode ? (creatingPr ? "Creating PR..." : "Create PR with selected") : "Copy selected issue body"
   const compactConfirmLabel = isPrMode ? (creatingPr ? "Creating..." : "Create PR") : "Copy selected"
   const disabled = selectedCount === 0 || (isPrMode && (!githubConnected || creatingPr))
+  const description = isPrMode
+    ? "Only deterministic, low-risk fixes can leave the dashboard as a pull request. Review-only or uncertain findings stay in the report."
+    : "Pick the findings to include. Unselected items stay visible in this report but will not be copied."
 
   return (
     <div className="finding-select-backdrop" role="presentation" onMouseDown={onClose}>
@@ -572,9 +585,7 @@ function FindingSelectionDialog({
           </div>
           <div>
             <h3 id="finding-select-title">{title}</h3>
-            <p>
-              Pick the findings VibeShield should include. Unselected items stay visible in this report but will not be copied or sent to the PR.
-            </p>
+            <p>{description}</p>
           </div>
           <button className="finding-select-close" type="button" onClick={onClose} aria-label="Close selection">
             x
@@ -584,7 +595,10 @@ function FindingSelectionDialog({
         {isPrMode && !githubConnected && (
           <div className="selection-warning">
             <Icon.lock style={{ width: 14, height: 14 }} />
-            <span>GitHub login is required before VibeShield can open a remediation branch.</span>
+            <span>GitHub login is required before a remediation branch can be opened.</span>
+            <button className="btn btn-outline" type="button" onClick={onSignInWithGitHub}>
+              Login with GitHub
+            </button>
           </div>
         )}
 
@@ -618,13 +632,14 @@ function FindingSelectionDialog({
                   {finding.filePath}
                   {finding.lineStart ? `:${finding.lineStart}` : ""}
                 </em>
+                {isPrMode && <em>{getSafePullRequestFindingReason(finding)}</em>}
               </span>
             </label>
           ))}
         </div>
 
         <div className="finding-select-foot">
-          <span>{isPrMode ? "Only low-risk repo hygiene is applied automatically; code fixes stay review-required." : "The issue body will include only the selected findings."}</span>
+          <span>{isPrMode ? "PR mode is intentionally conservative: no report-only PRs, no AI-only fixes, no speculative changes." : "The issue body will include only the selected findings."}</span>
           <div>
             <button className="btn btn-outline" type="button" onClick={onClose}>
               Cancel
@@ -1260,7 +1275,13 @@ function PullRequestPanel({ pullRequest }: { pullRequest: ScanPullRequest }) {
         <span>{pullRequest.filesChanged.length} files changed</span>
         <span>{pullRequest.appliedFixes.length} safe fixes applied</span>
         <span>{pullRequest.skippedFixes.length} review-required</span>
+        {pullRequest.safetyReview?.model && <span>Claude reviewed</span>}
       </div>
+      {pullRequest.safetyReview?.summary && (
+        <p className="github-pr-safety">
+          Final safety review: {pullRequest.safetyReview.summary}
+        </p>
+      )}
       <a className="btn btn-outline" href={pullRequest.url} target="_blank" rel="noreferrer">
         Open PR #{pullRequest.number}
       </a>

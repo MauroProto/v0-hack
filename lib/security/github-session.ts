@@ -27,6 +27,7 @@ type HeaderSource = {
 
 const GITHUB_SESSION_COOKIE = "vibeshield_gh_session"
 const OAUTH_STATE_COOKIE = "vibeshield_gh_state"
+const OAUTH_RETURN_COOKIE = "vibeshield_gh_return"
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 const STATE_MAX_AGE_SECONDS = 60 * 10
 
@@ -44,12 +45,36 @@ export function createGitHubOAuthStateCookie(state: string) {
   })
 }
 
+export function createGitHubOAuthReturnCookie(returnTo: string) {
+  return serializeCookie(OAUTH_RETURN_COOKIE, sanitizeReturnTo(returnTo), {
+    httpOnly: true,
+    sameSite: "Lax",
+    secure: shouldUseSecureCookies(),
+    path: "/",
+    maxAge: STATE_MAX_AGE_SECONDS,
+  })
+}
+
 export function readGitHubOAuthState(headers: HeaderSource) {
   return getCookie(headers, OAUTH_STATE_COOKIE)
 }
 
+export function readGitHubOAuthReturn(headers: HeaderSource) {
+  return sanitizeReturnTo(getCookie(headers, OAUTH_RETURN_COOKIE) ?? "/scan")
+}
+
 export function clearGitHubOAuthStateCookie() {
   return serializeCookie(OAUTH_STATE_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "Lax",
+    secure: shouldUseSecureCookies(),
+    path: "/",
+    maxAge: 0,
+  })
+}
+
+export function clearGitHubOAuthReturnCookie() {
+  return serializeCookie(OAUTH_RETURN_COOKIE, "", {
     httpOnly: true,
     sameSite: "Lax",
     secure: shouldUseSecureCookies(),
@@ -210,6 +235,12 @@ function serializeCookie(
 
 function shouldUseSecureCookies() {
   return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL)
+}
+
+function sanitizeReturnTo(value: string) {
+  if (!value.startsWith("/") || value.startsWith("//")) return "/scan"
+  if (value.includes("\\") || value.includes("\n") || value.includes("\r")) return "/scan"
+  return value.slice(0, 800)
 }
 
 function base64Url(value: Buffer) {

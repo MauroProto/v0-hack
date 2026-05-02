@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server"
 import { apiHeaders } from "@/lib/security/headers"
-import { createGitHubOAuthState, createGitHubOAuthStateCookie, hasGitHubSessionSecret } from "@/lib/security/github-session"
+import {
+  createGitHubOAuthReturnCookie,
+  createGitHubOAuthState,
+  createGitHubOAuthStateCookie,
+  hasGitHubSessionSecret,
+} from "@/lib/security/github-session"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -15,6 +20,7 @@ export async function GET(request: Request) {
   }
 
   const state = createGitHubOAuthState()
+  const returnTo = new URL(request.url).searchParams.get("returnTo") ?? "/scan"
   const authorizeUrl = new URL("https://github.com/login/oauth/authorize")
   authorizeUrl.searchParams.set("client_id", clientId)
   authorizeUrl.searchParams.set("redirect_uri", githubRedirectUri(request))
@@ -23,7 +29,8 @@ export async function GET(request: Request) {
   authorizeUrl.searchParams.set("allow_signup", "true")
 
   const response = NextResponse.redirect(authorizeUrl)
-  response.headers.set("Set-Cookie", createGitHubOAuthStateCookie(state))
+  response.headers.append("Set-Cookie", createGitHubOAuthStateCookie(state))
+  response.headers.append("Set-Cookie", createGitHubOAuthReturnCookie(returnTo))
   response.headers.set("Referrer-Policy", "no-referrer")
   response.headers.set("X-Content-Type-Options", "nosniff")
   return response

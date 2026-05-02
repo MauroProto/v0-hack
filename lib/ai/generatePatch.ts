@@ -1,16 +1,9 @@
 import { generateText, Output } from "ai"
-import { z } from "zod"
 import { resolveAiModel } from "@/lib/ai/model"
+import { PatchSchema } from "@/lib/ai/structuredSchemas"
 import { createDeterministicPatch } from "@/lib/scanner/patches"
 import { redactSecrets } from "@/lib/scanner/rules"
 import type { PatchSuggestion, ScanFinding } from "@/lib/scanner/types"
-
-const PatchSchema = z.object({
-  title: z.string().min(1).max(160),
-  summary: z.string().min(1).max(700),
-  unifiedDiff: z.string().max(3000).optional(),
-  reviewRequired: z.literal(true),
-})
 
 export async function generatePatch(finding: ScanFinding, fileSnippet?: string): Promise<PatchSuggestion | undefined> {
   const fallback = createDeterministicPatch(finding)

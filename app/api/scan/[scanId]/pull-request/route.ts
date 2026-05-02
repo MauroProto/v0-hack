@@ -12,6 +12,7 @@ import { createRemediationPullRequest, getGitHubTokenFromRequest } from "@/lib/u
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+export const maxDuration = 300
 
 const PullRequestSelectionSchema = z.object({
   includeAllActive: z.boolean().optional(),
@@ -126,6 +127,9 @@ function statusForPullRequestError(message: string) {
   const normalized = message.toLowerCase()
   if (normalized.includes("token") || normalized.includes("authorization")) return 401
   if (normalized.includes("permission") || normalized.includes("push a branch")) return 403
+  if (normalized.includes("not found") || normalized.includes("private")) return 404
+  if (normalized.includes("no safe code changes")) return 400
+  if (normalized.includes("claude") || normalized.includes("safety review")) return 400
   if (normalized.includes("select") || normalized.includes("json")) return 400
   if (normalized.includes("metadata") || normalized.includes("repository")) return 400
   return 502

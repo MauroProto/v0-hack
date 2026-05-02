@@ -12,8 +12,11 @@ The scanner is now a hybrid AppSec pipeline:
 - Repository inventory maps frameworks, route handlers, Server Actions, client components, imports, env reads, dangerous sinks, AI calls, database calls, Supabase migrations and GitHub Actions workflows.
 - Deterministic analyzers detect secrets, auth gaps, validation gaps, AI endpoint abuse risk, tool dispatch risk, Server Action risk, Supabase RLS issues, Prisma/raw SQL risk and GitHub Actions posture problems.
 - A bounded inter-file taint analyzer follows simple `route/action -> service -> db/helper` argument flows to connect request input with raw SQL, command execution, redirects, fetches, HTML sinks or dynamic code sinks.
+- Static rule packs add Semgrep/Opengrep-style checks without running external binaries in the request path. Current packs cover Next.js data-access boundaries, Supabase/RLS/storage posture and Vercel/Next deployment posture.
+- Secret scanning uses provider patterns plus Gitleaks-style context checks for high-entropy assignments, while suppressing docs, tests, fixtures, placeholders and redaction/detector code.
 - Dependency intelligence queries OSV through `querybatch` for manifest/lockfile package versions. It does not run OSV CLI or install project dependencies.
 - AI review explains, triages and proposes conservative review-required fixes over redacted artifacts. It is not the only detector.
+- Max mode builds an explicit security taskflow inspired by agentic audit frameworks: inventory, hypothesis generation, evidence collection, control review, false-positive triage, risk prioritization and remediation planning.
 - Reports include stable fingerprints, finding kinds, CWE/OWASP metadata when available, evidence traces and SARIF export.
 
 Main flows:
@@ -29,7 +32,8 @@ Main flows:
 - `/api/scan/[scanId]/baseline` stores the current active finding fingerprints as the repo baseline so future scans can mark findings as new, existing or resolved.
 - `/api/scan/[scanId]/pull-request` creates a real GitHub report-first PR for explicitly selected active findings when the GitHub token can push to the repository or create a fork.
 - `/api/scan/jobs/drain` is a protected worker endpoint for queued public-repo scans when background jobs are enabled.
-- `/api/system/health` returns boolean configuration status without leaking secrets.
+- `/api/system/health` returns secret-free health status. In production it is summarized by default; set `VIBESHIELD_PUBLIC_HEALTH_DETAILS=true` only if an operator context needs detailed config booleans.
+- `pnpm run prod:check` runs the production-readiness gate for Supabase, quota persistence, security headers, GitHub OAuth and PR safety before deploying.
 
 The scanner never executes repository code, never runs `npm install` inside user projects, never accepts ZIP uploads, and only reads supported text files server-side through GitHub APIs.
 
@@ -87,6 +91,8 @@ SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+# Optional server-only alternative accepted by some Supabase/Vercel integrations.
+SUPABASE_SECRET_KEY=
 VIBESHIELD_MONTHLY_SCAN_QUOTA=20
 VIBESHIELD_REQUIRE_PERSISTENT_QUOTA=true
 VIBESHIELD_REQUIRE_PERSISTENT_STORAGE=true
@@ -99,7 +105,36 @@ MAX_SCAN_FILES_MAX=900
 MAX_SCAN_TOTAL_SIZE_BYTES_MAX=20000000
 ```
 
-`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `VIBESHIELD_IDENTITY_SALT` must stay server-only. `NEXT_PUBLIC_SUPABASE_ANON_KEY` can be a Supabase publishable key. The tables have RLS enabled, deny-all client policies for `anon`/`authenticated`, and route handlers persist reports and quota counters with the service role key.
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`, and `VIBESHIELD_IDENTITY_SALT` must stay server-only. `NEXT_PUBLIC_SUPABASE_ANON_KEY` can be a Supabase publishable key. The tables have RLS enabled, deny-all client policies for `anon`/`authenticated`, and route handlers persist reports and quota counters with the service role key.
+
+Before promoting to production, run:
+
+```bash
+pnpm run release:verify
+```
+
+For local verification against hosted production variables, first pull the Vercel production environment into the ignored `.vercel` directory:
+
+```bash
+vercel pull --yes --environment=production
+```
+
+For focused checks, the release verifier is composed of:
+
+```bash
+pnpm run scanner:smoke
+pnpm exec tsc --noEmit --incremental false
+pnpm run lint
+pnpm run build
+git diff --check
+pnpm run prod:check
+pnpm run supabase:verify
+pnpm run vercel:verify
+```
+
+`release:verify` runs the code-level checks first and then the production gates. `prod:check` intentionally fails if server-side Supabase persistence, durable quota, GitHub OAuth callback, identity salt or PR safety review are not configured for production. `supabase:verify` makes a live server-side Supabase connection, verifies the required VibeShield tables are reachable with the service credential, and confirms the `anon` client cannot read those tables directly. `vercel:verify` checks that the checkout is linked to Vercel and that required production environment variable names exist. These checks avoid printing secret values.
+
+Vercel sensitive environment variables are intentionally pulled into `.vercel/.env.production.local` as masked empty placeholders. `prod:check` treats those placeholders as configured only inside the local readiness script; `supabase:verify` still requires real database credentials and `vercel:verify` still confirms the production variable names exist in Vercel.
 
 If `VIBESHIELD_ENABLE_BACKGROUND_JOBS=true`, configure a Vercel Cron or trusted worker to POST `/api/scan/jobs/drain` with `Authorization: Bearer $VIBESHIELD_WORKER_SECRET`. Background jobs currently process public repositories; private durable background scans should use GitHub App installation tokens, not stored OAuth tokens.
 

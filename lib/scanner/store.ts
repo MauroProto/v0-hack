@@ -1,11 +1,12 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
+import { VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import type { ScanBaseline, ScanReport } from "./types"
 import { baselineIdFor } from "./reportPolicy"
 
-const TABLE = "vibeshield_scan_reports"
-const BASELINES_TABLE = "vibeshield_repo_baselines"
+const TABLE = VIBESHIELD_SUPABASE_TABLES.reports
+const BASELINES_TABLE = VIBESHIELD_SUPABASE_TABLES.baselines
 
 type StoreGlobal = typeof globalThis & {
   __vibeshieldScanStore?: Map<string, ScanReport>

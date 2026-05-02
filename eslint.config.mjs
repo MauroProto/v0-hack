@@ -3,7 +3,17 @@ import nextTypescript from "eslint-config-next/typescript"
 
 const eslintConfig = [
   {
-    ignores: [".claude/**", ".next/**", ".vibeshield/**", "node_modules/**", "out/**", "build/**", "dist/**", "next-env.d.ts"],
+    ignores: [
+      ".claude/**",
+      ".next/**",
+      ".vercel/**",
+      ".vibeshield/**",
+      "node_modules/**",
+      "out/**",
+      "build/**",
+      "dist/**",
+      "next-env.d.ts",
+    ],
   },
   ...nextVitals,
   ...nextTypescript,

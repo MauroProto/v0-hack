@@ -121,6 +121,7 @@ export function collectRuleFindings(files: ProjectFile[]): RuleScanResult {
   for (const file of files) {
     scanCommittedEnvFile(file, add)
     scanSecretPatterns(file, add)
+    scanHighEntropySecretAssignments(file, add)
     scanDangerousNextPublic(file, add)
     scanAdminRouteWithoutAuth(file, add)
     scanAiEndpointWithoutGuard(file, add)
@@ -267,6 +268,46 @@ function scanSecretPatterns(file: ProjectFile, add: (finding: RuleFinding) => vo
       reachability: "reachable",
       exploitability: "high",
       recommendation: "Move the value to a server-only environment variable, rotate it if it was real, and commit only placeholders.",
+      patchable: true,
+      source: "rule",
+    })
+  })
+}
+
+function scanHighEntropySecretAssignments(file: ProjectFile, add: (finding: RuleFinding) => void) {
+  if (isDocumentationPath(file.path) || isTestOrFixturePath(file.path) || isExampleOrTemplatePath(file.path)) return
+
+  file.text.split(/\r?\n/).forEach((line, index) => {
+    if (isCommentOnlyLine(line)) return
+    if (isEnvVarReferenceLine(line)) return
+    if (isGitHubActionsSecretReference(line)) return
+    if (isSecretDetectorPatternLine(line)) return
+    if (isObviousPlaceholder(line)) return
+
+    const assignment = extractGenericSecretAssignment(line)
+    if (!assignment) return
+    if (!isSecretishIdentifier(assignment.name)) return
+    if (!looksLikeHighEntropyToken(assignment.value)) return
+    if (shannonEntropy(assignment.value) < 3.65) return
+
+    add({
+      kind: "vulnerability",
+      severity: "critical",
+      category: "secret_exposure",
+      ruleId: "secret.generic-high-entropy-assignment",
+      title: "High-entropy secret-like value committed",
+      description:
+        "A secret-looking identifier is assigned a high-entropy literal in production source. This follows a Gitleaks-style context check instead of matching variable names alone.",
+      filePath: file.path,
+      lineStart: index + 1,
+      evidence: redactSecrets(line.trim()),
+      confidence: 0.86,
+      confidenceReason:
+        "Secret-like identifier plus high-entropy literal in production source; documentation, fixtures, placeholders and redaction-pattern code were excluded.",
+      reachability: "reachable",
+      exploitability: "high",
+      recommendation:
+        "Rotate the value if it was real, remove it from source control, and load it from a server-only secret store or environment variable.",
       patchable: true,
       source: "rule",
     })
@@ -1120,32 +1161,46 @@ function scanPackageScripts(file: ProjectFile, add: (finding: RuleFinding) => vo
 function scanDangerousCode(file: ProjectFile, add: (finding: RuleFinding) => void) {
   const isRustFile = file.path.endsWith(".rs")
   if (!isRustFile && !/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file.path)) return
-  const checks: { pattern: RegExp; title: string; severity: Severity; description: string }[] = [
-    { pattern: /\beval\s*\(/, title: "Dynamic eval call detected", severity: "high", description: "eval executes strings as code and can turn input handling bugs into remote code execution." },
-    { pattern: /\bnew\s+Function\s*\(/, title: "Dynamic Function constructor detected", severity: "high", description: "new Function executes generated code and is unsafe for user-controlled input." },
-    { pattern: /\bdangerouslySetInnerHTML\b/, title: "dangerouslySetInnerHTML usage detected", severity: "medium", description: "Rendering raw HTML can introduce XSS unless content is sanitized and trusted." },
-    { pattern: /\bchild_process\b/, title: "child_process usage detected", severity: "high", description: "Spawning shell processes is high risk in AI/tooling apps and must never use untrusted input." },
-    { pattern: /\b(exec|spawn)\s*\(/, title: "Shell process call detected", severity: "high", description: "exec/spawn calls can become command injection paths when arguments are user-controlled." },
-    { pattern: /\bfs\.writeFile(?:Sync)?\s*\([^)]*(req|request|body|input|user)/i, title: "File write appears to use request input", severity: "high", description: "Writing files from request input can overwrite project or runtime files if not constrained." },
+  const checks: { title: string; severity: Severity; description: string; find: (text: string) => { line: string; lineNumber: number } | undefined }[] = [
+    { find: (text) => findCodeLineMatching(text, /\beval\s*\(/), title: "Dynamic eval call detected", severity: "high", description: "eval executes strings as code and can turn input handling bugs into remote code execution." },
+    { find: (text) => findCodeLineMatching(text, /\bnew\s+Function\s*\(/), title: "Dynamic Function constructor detected", severity: "high", description: "new Function executes generated code and is unsafe for user-controlled input." },
+    { find: (text) => findCodeLineMatching(text, /\bdangerouslySetInnerHTML\b/), title: "dangerouslySetInnerHTML usage detected", severity: "medium", description: "Rendering raw HTML can introduce XSS unless content is sanitized and trusted." },
+    { find: findShellProcessCall, title: "Shell process call detected", severity: "high", description: "exec/spawn calls can become command injection paths when arguments are user-controlled." },
+    { find: (text) => findCodeLineMatching(text, /\bfs\.writeFile(?:Sync)?\s*\([^)]*\b(req|request|body|input|params|searchParams)\b/i), title: "File write appears to use request input", severity: "high", description: "Writing files from request input can overwrite project or runtime files if not constrained." },
   ]
 
   for (const check of checks) {
     if (isRustFile && check.title === "Shell process call detected") continue
 
-    const hit = findLineMatching(file.text, check.pattern)
+    const hit = check.find(file.text)
     if (!hit) continue
+    const postureOnly = isTestOrFixturePath(file.path) || isLowRiskToolingScriptPath(file.path)
+    const severity = postureOnly ? "info" : check.severity
+    const kind = postureOnly ? "info" : "vulnerability"
+    const category = postureOnly ? "repo_security_posture" : "dangerous_code"
 
     add({
-      severity: check.severity,
-      category: "dangerous_code",
+      kind,
+      severity,
+      category,
+      ruleId: `rule.${category}.${slugifyRuleTitle(check.title)}`,
       title: check.title,
-      description: check.description,
+      description: postureOnly
+        ? `${check.description} This occurrence is in a test, fixture, or repository maintenance script, so it is tracked as low-risk inventory instead of an application vulnerability.`
+        : check.description,
       filePath: file.path,
       lineStart: hit.lineNumber,
       evidence: redactSecrets(hit.line.trim()),
-      confidence: 0.8,
-      recommendation: "Avoid dynamic code execution and sanitize all HTML/user input. If shell or file access is required, use strict allowlists and fixed paths.",
-      patchable: check.pattern.source.includes("dangerouslySetInnerHTML"),
+      confidence: postureOnly ? 0.52 : 0.8,
+      confidenceReason: postureOnly
+        ? "Detected in test/fixture/tooling context; useful inventory, not a confirmed reachable vulnerability."
+        : "Dangerous-code sink detected in source context.",
+      reachability: postureOnly ? "unknown" : "unknown",
+      exploitability: postureOnly ? "low" : "unknown",
+      recommendation: postureOnly
+        ? "Keep this use scoped to trusted test or maintenance code. Do not expose it to user-controlled input or agent-controlled commands."
+        : "Avoid dynamic code execution and sanitize all HTML/user input. If shell or file access is required, use strict allowlists and fixed paths.",
+      patchable: check.title === "dangerouslySetInnerHTML usage detected",
       source: "rule",
     })
   }
@@ -1521,10 +1576,25 @@ function extractSecretAssignment(line: string) {
   return { name: match[1], value: match[3], quoted: Boolean(match[2]) }
 }
 
+function extractGenericSecretAssignment(line: string) {
+  const match = line.match(
+    /(?:^|[\s{[,])(?:export\s+)?(?:const|let|var)?\s*["']?([A-Za-z_$][\w$]*|[A-Z0-9_]{3,})["']?\s*[:=]\s*(['"`])([^'"`]{20,})\2/i,
+  )
+  if (!match) return null
+  return { name: match[1], value: match[3] }
+}
+
+function isSecretishIdentifier(name: string) {
+  const normalized = name.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase()
+  return /(secret|token|private|credential|password|passwd|api[_-]?key|apikey|access[_-]?key|client[_-]?secret|service[_-]?role)/i.test(normalized)
+}
+
 function lineHasConcreteSecretValue(path: string, line: string) {
   if (isCommentOnlyLine(line)) return false
   if (isEnvVarReferenceLine(line)) return false
+  if (isGitHubActionsSecretReference(line)) return false
   if (isSecretDetectorPatternLine(line)) return false
+  if (isTestSecretFixtureLine(path, line)) return false
   if (isObviousPlaceholder(line) || isExampleSecretPlaceholder(path, line)) return false
   if (isDocumentationSecretExample(path, line)) return false
 
@@ -1532,6 +1602,8 @@ function lineHasConcreteSecretValue(path: string, line: string) {
   if (!assignment) return false
   const assigned = assignment.value
   if (assigned.length < 6) return false
+  if (isSecretReferenceValue(assigned)) return false
+  if (isLocalOrExampleAssignedValue(assigned)) return false
   if (/\b(process\.env|import\.meta\.env|Deno\.env|os\.environ|env\.)\b/i.test(assigned)) return false
   if (/^[A-Z0-9_]+$/.test(assigned) && !isEnvLike(path)) return false
 
@@ -1546,6 +1618,7 @@ function shouldIgnoreSecretPatternMatch(path: string, line: string) {
   if (isObviousPlaceholder(line) || isExampleSecretPlaceholder(path, line)) return true
   if (isDocumentationSecretExample(path, line)) return true
   if (isEnvVarReferenceLine(line)) return true
+  if (isGitHubActionsSecretReference(line)) return true
   if (isSecretDetectorPatternLine(line)) return true
   if (isTestSecretFixtureLine(path, line)) return true
   return false
@@ -1553,6 +1626,19 @@ function shouldIgnoreSecretPatternMatch(path: string, line: string) {
 
 function isEnvVarReferenceLine(line: string) {
   return /\b(?:std::env::var|env::var|Deno\.env\.get|process\.env\.|import\.meta\.env\.|os\.environ(?:\.get)?|System\.getenv)\s*(?:\(|\[|\.)/i.test(line)
+}
+
+function isGitHubActionsSecretReference(line: string) {
+  return /\$\{\{\s*secrets\.[A-Z0-9_]+\s*\}\}/i.test(line) || /\bsecrets\.[A-Z0-9_]+\b/i.test(line)
+}
+
+function isSecretReferenceValue(value: string) {
+  const normalized = value.trim().replace(/^['"`]|['"`]$/g, "")
+  return (
+    /^\$\{\{?\s*(?:secrets|env|inputs|vars|github)\.[A-Z0-9_.-]+\s*\}?\}?$/i.test(normalized) ||
+    /^\$\{[A-Z0-9_]+\}$/i.test(normalized) ||
+    /^%[A-Z0-9_]+%$/i.test(normalized)
+  )
 }
 
 function isSecretDetectorPatternLine(line: string) {
@@ -1621,6 +1707,11 @@ function isTestOrFixturePath(path: string) {
   const normalized = normalizePath(path).toLowerCase()
   const name = basename(path).toLowerCase()
   return (
+    normalized.startsWith("test/") ||
+    normalized.startsWith("tests/") ||
+    normalized.startsWith("fixtures/") ||
+    normalized.startsWith("__tests__/") ||
+    normalized.startsWith("__fixtures__/") ||
     normalized.includes("/fixtures/") ||
     normalized.includes("/fixture/") ||
     normalized.includes("/snapshots/") ||
@@ -1629,6 +1720,17 @@ function isTestOrFixturePath(path: string) {
     normalized.includes("_tests/") ||
     /(?:^|[._-])(test|tests|spec)\.(?:ts|tsx|js|jsx|rs|py|go|java|rb|php)$/.test(name) ||
     /(?:_test|_tests|_spec)\.(?:rs|py|go|java|rb|php)$/.test(name)
+  )
+}
+
+function isLowRiskToolingScriptPath(path: string) {
+  const normalized = normalizePath(path).toLowerCase()
+  return (
+    normalized.startsWith(".github/scripts/") ||
+    normalized.startsWith("scripts/") ||
+    normalized.includes("/scripts/") ||
+    normalized.includes("/test-utils/") ||
+    normalized.startsWith(".gemini/skills/")
   )
 }
 
@@ -1717,6 +1819,17 @@ function looksLikeHighEntropyToken(value: string) {
   return [hasLower, hasUpper, hasDigit, hasSymbol].filter(Boolean).length >= 3
 }
 
+function shannonEntropy(value: string) {
+  const counts = new Map<string, number>()
+  for (const char of value) counts.set(char, (counts.get(char) ?? 0) + 1)
+  let entropy = 0
+  for (const count of counts.values()) {
+    const probability = count / value.length
+    entropy -= probability * Math.log2(probability)
+  }
+  return entropy
+}
+
 function isEnvLike(path: string) {
   const name = basename(path).toLowerCase()
   return name === ".env" || name.startsWith(".env.")
@@ -1742,6 +1855,34 @@ function findLineMatching(text: string, regex: RegExp) {
     if (lineRegex.test(lines[index])) return { line: lines[index], lineNumber: index + 1 }
   }
   return undefined
+}
+
+function findCodeLineMatching(text: string, regex: RegExp) {
+  const flags = regex.flags.includes("i") ? "i" : ""
+  const lineRegex = new RegExp(regex.source, flags)
+  const lines = text.split(/\r?\n/)
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (isCommentOnlyLine(line)) continue
+    if (lineRegex.test(stripInlineComment(line))) return { line, lineNumber: index + 1 }
+  }
+  return undefined
+}
+
+function findShellProcessCall(text: string) {
+  return findCodeLineMatching(
+    text,
+    /\bchild_process\.(?:exec|execSync|execFile|execFileSync|spawn|spawnSync)\s*\(|(?:^|[^\w$.])(?:exec|execSync|execFile|execFileSync|spawn|spawnSync)\s*\(/,
+  )
+}
+
+function stripInlineComment(line: string) {
+  const commentIndex = line.indexOf("//")
+  return commentIndex >= 0 ? line.slice(0, commentIndex) : line
+}
+
+function slugifyRuleTitle(title: string) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "")
 }
 
 function lineAtIndex(text: string, index: number) {

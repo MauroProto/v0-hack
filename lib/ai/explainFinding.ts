@@ -1,23 +1,9 @@
 import { generateText, Output } from "ai"
-import { z } from "zod"
 import { resolveAiModel } from "@/lib/ai/model"
+import { ExplanationSchema } from "@/lib/ai/structuredSchemas"
 import { createDeterministicPatch } from "@/lib/scanner/patches"
 import { redactSecrets } from "@/lib/scanner/rules"
 import type { FindingExplanation, ScanFinding, ScanReport } from "@/lib/scanner/types"
-
-const ExplanationSchema = z.object({
-  summary: z.string().min(1).max(800),
-  impact: z.string().min(1).max(900),
-  fixSteps: z.array(z.string().min(1).max(300)).min(1).max(6),
-  patch: z
-    .object({
-      title: z.string().min(1).max(160),
-      summary: z.string().min(1).max(700),
-      unifiedDiff: z.string().max(3000).optional(),
-      reviewRequired: z.literal(true),
-    })
-    .optional(),
-})
 
 export type ExplainFindingContext = Pick<ScanReport, "projectName" | "framework" | "sourceType" | "sourceLabel"> & {
   fileSnippet?: string
@@ -77,7 +63,7 @@ export async function explainFinding(
     return {
       summary: output.summary,
       impact: output.impact,
-      fixSteps: output.fixSteps,
+      fixSteps: normalizeFixSteps(output.fixSteps, fallback.fixSteps),
       patch: output.patch
         ? {
             ...output.patch,
@@ -90,6 +76,14 @@ export async function explainFinding(
   } finally {
     clearTimeout(timeout)
   }
+}
+
+function normalizeFixSteps(value: string[] | undefined, fallback: string[]) {
+  const steps = (value ?? [])
+    .map((step) => step.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+  return steps.length > 0 ? steps : fallback
 }
 
 export function fallbackExplanation(finding: ScanFinding): FindingExplanation {

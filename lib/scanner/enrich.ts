@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import type { BaselineSummary, FindingGroups, FindingKind, ScanFinding, ScanReport } from "./types"
 import { buildRiskBreakdown } from "./riskBreakdown"
 
-export const SCANNER_VERSION = "vibeshield-hybrid-0.2"
+export const SCANNER_VERSION = "vibeshield-hybrid-0.3"
 
 export function normalizeFinding(finding: ScanFinding): ScanFinding {
   const kind = finding.kind ?? inferFindingKind(finding)

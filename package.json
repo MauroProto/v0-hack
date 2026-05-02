@@ -8,7 +8,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "scanner:smoke": "tsx scripts/scanner-smoke.ts"
+    "scanner:smoke": "tsx scripts/scanner-smoke.ts",
+    "prod:check": "tsx scripts/production-readiness.ts --production",
+    "supabase:verify": "tsx scripts/supabase-verify.ts --production",
+    "vercel:verify": "tsx scripts/vercel-verify.ts",
+    "release:verify": "tsx scripts/release-verify.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",
