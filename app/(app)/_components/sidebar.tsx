@@ -2,9 +2,10 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import type { ScanReport } from "@/lib/scanner/types"
+import { publishGitHubSessionChange, subscribeGitHubSessionChange } from "@/lib/client/github-session-events"
 import { deriveQuotaDisplay, normalizePublicQuota, type PublicQuotaState } from "@/lib/security/quota-view"
 import { Icon } from "./icons"
 
@@ -43,8 +44,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   const [reports, setReports] = useState<ScanReport[]>([])
   const [quota, setQuota] = useState<PublicQuotaState | null>(null)
   const [historyState, setHistoryState] = useState<"idle" | "loading" | "error">("loading")
-  const [signingOut, setSigningOut] = useState(false)
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false)
+  const [accountAction, setAccountAction] = useState<"signout" | "disconnect" | null>(null)
+  const [accountError, setAccountError] = useState<string | null>(null)
   const profile = getGitHubProfile(githubSession)
+  const accountBusy = accountAction !== null
+  const sessionVersion = useRef(0)
 
   const isActive = (it: Item) => {
     if (it.match) return it.match(pathname)
@@ -53,11 +58,14 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
   useEffect(() => {
     async function loadGitHubSession() {
+      const activeSessionVersion = sessionVersion.current
       try {
         const response = await fetch("/api/auth/github/session", { cache: "no-store" })
         const data = await response.json()
+        if (sessionVersion.current !== activeSessionVersion) return
         setGitHubSession(data.session ?? { authenticated: false })
       } catch {
+        if (sessionVersion.current !== activeSessionVersion) return
         setGitHubSession({ authenticated: false })
       }
     }
@@ -69,6 +77,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     const controller = new AbortController()
 
     async function loadRecentReports() {
+      const activeSessionVersion = sessionVersion.current
       setHistoryState("loading")
 
       try {
@@ -77,12 +86,14 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           signal: controller.signal,
         })
         const data = await response.json()
+        if (sessionVersion.current !== activeSessionVersion) return
         if (!response.ok) throw new Error(data.error ?? "Could not load reports.")
         setReports(data.reports ?? [])
         setQuota(normalizePublicQuota(data.quota))
         setHistoryState("idle")
       } catch {
         if (controller.signal.aborted) return
+        if (sessionVersion.current !== activeSessionVersion) return
         setHistoryState("error")
       }
     }
@@ -102,18 +113,58 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     return () => window.removeEventListener("vibeshield:quota", handleQuotaUpdate)
   }, [])
 
-  const signOut = async () => {
-    if (!githubSession.authenticated || signingOut) return
-
-    setSigningOut(true)
-    try {
-      await fetch("/api/auth/github/session", { method: "DELETE" })
+  useEffect(() => {
+    return subscribeGitHubSessionChange(() => {
+      sessionVersion.current += 1
       setGitHubSession({ authenticated: false })
       setReports([])
       setQuota(null)
+      setHistoryState("idle")
+      setAccountDialogOpen(false)
+      setAccountError(null)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!accountDialogOpen) return
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !accountBusy) {
+        setAccountDialogOpen(false)
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [accountDialogOpen, accountBusy])
+
+  const endGitHubSession = async (disconnect: boolean) => {
+    if (!githubSession.authenticated || accountBusy) return
+
+    setAccountAction(disconnect ? "disconnect" : "signout")
+    setAccountError(null)
+    try {
+      const response = await fetch(`/api/auth/github/session${disconnect ? "?disconnect=1" : ""}`, {
+        method: "DELETE",
+        headers: disconnect ? { "Content-Type": "application/json" } : undefined,
+        body: disconnect ? JSON.stringify({ disconnect: true }) : undefined,
+      })
+      const data = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) throw new Error(data.error ?? "Could not update the GitHub connection.")
+
+      setGitHubSession({ authenticated: false })
+      setReports([])
+      setQuota(null)
+      setAccountDialogOpen(false)
+      publishGitHubSessionChange(disconnect ? "disconnected" : "signed_out")
+      if (pathname !== "/scan") {
+        router.replace("/scan")
+      }
       router.refresh()
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "Could not update the GitHub connection.")
     } finally {
-      setSigningOut(false)
+      setAccountAction(null)
     }
   }
 
@@ -157,9 +208,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             type="button"
             className="user-card"
             data-clickable={githubSession.authenticated}
-            disabled={!githubSession.authenticated || signingOut}
-            onClick={signOut}
-            title={githubSession.authenticated ? "Sign out of GitHub" : "Public scans do not require login"}
+            disabled={!githubSession.authenticated || accountBusy}
+            onClick={() => {
+              setAccountError(null)
+              setAccountDialogOpen(true)
+            }}
+            title={githubSession.authenticated ? "Manage GitHub connection" : "Public scans do not require login"}
           >
             {profile.avatarUrl ? (
               <Image
@@ -174,11 +228,91 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             )}
             <div className="info">
               <b>{profile.name}</b>
-              <span>{signingOut ? "signing out..." : profile.subtitle}</span>
+              <span>{accountBusy ? "updating..." : profile.subtitle}</span>
             </div>
           </button>
         </div>
       </aside>
+
+      {accountDialogOpen && githubSession.authenticated ? (
+        <div
+          className="account-dialog-backdrop"
+          role="presentation"
+          onMouseDown={() => {
+            if (!accountBusy) setAccountDialogOpen(false)
+          }}
+        >
+          <section
+            className="account-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="account-dialog-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="account-dialog-head">
+              <div>
+                <h3 id="account-dialog-title">GitHub connection</h3>
+                <p>Choose what should happen to this browser session and the GitHub authorization.</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close GitHub connection dialog"
+                onClick={() => setAccountDialogOpen(false)}
+                disabled={accountBusy}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="account-dialog-profile">
+              {profile.avatarUrl ? (
+                <Image
+                  className="avatar avatar-image"
+                  src={profile.avatarUrl}
+                  alt=""
+                  width={34}
+                  height={34}
+                />
+              ) : (
+                <div className="avatar">{profile.initials}</div>
+              )}
+              <div>
+                <b>{profile.name}</b>
+                <span>{profile.subtitle}</span>
+              </div>
+            </div>
+
+            {accountError ? <div className="account-dialog-error">{accountError}</div> : null}
+
+            <div className="account-dialog-actions">
+              <button
+                className="btn btn-outline"
+                type="button"
+                disabled={accountBusy}
+                onClick={() => void endGitHubSession(false)}
+              >
+                {accountAction === "signout" ? "Signing out..." : "Sign out only"}
+              </button>
+              <button
+                className="btn btn-outline account-danger"
+                type="button"
+                disabled={accountBusy}
+                onClick={() => void endGitHubSession(true)}
+              >
+                {accountAction === "disconnect" ? "Disconnecting..." : "Disconnect GitHub"}
+              </button>
+            </div>
+
+            <p className="account-dialog-note">
+              Sign out only clears this browser. Disconnect GitHub revokes the OAuth authorization and removes this app from your authorized GitHub apps. You can also review access in{" "}
+              <a href="https://github.com/settings/applications" target="_blank" rel="noreferrer">
+                GitHub settings
+              </a>
+              .
+            </p>
+          </section>
+        </div>
+      ) : null}
 
       <div
         className="app-side-overlay"

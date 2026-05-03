@@ -1,20 +1,23 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Icon } from "@/app/(app)/_components/icons"
 import type { ScanReport } from "@/lib/scanner/types"
+import { subscribeGitHubSessionChange } from "@/lib/client/github-session-events"
 
 export function ScanHistoryClient() {
   const [reports, setReports] = useState<ScanReport[]>([])
   const [authenticated, setAuthenticated] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const sessionVersion = useRef(0)
 
   useEffect(() => {
     const controller = new AbortController()
 
     async function loadReports() {
+      const activeSessionVersion = sessionVersion.current
       setLoading(true)
       setError(null)
 
@@ -24,20 +27,32 @@ export function ScanHistoryClient() {
           signal: controller.signal,
         })
         const data = await response.json()
+        if (sessionVersion.current !== activeSessionVersion) return
         if (!response.ok) throw new Error(data.error ?? "Could not load scan history.")
         setReports(data.reports ?? [])
         setAuthenticated(data.authenticated !== false)
       } catch (loadError) {
         if (controller.signal.aborted) return
+        if (sessionVersion.current !== activeSessionVersion) return
         setError(loadError instanceof Error ? loadError.message : "Could not load scan history.")
       } finally {
-        if (!controller.signal.aborted) setLoading(false)
+        if (!controller.signal.aborted && sessionVersion.current === activeSessionVersion) setLoading(false)
       }
     }
 
     void loadReports()
 
     return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    return subscribeGitHubSessionChange(() => {
+      sessionVersion.current += 1
+      setReports([])
+      setAuthenticated(false)
+      setLoading(false)
+      setError(null)
+    })
   }, [])
 
   return (
@@ -52,7 +67,7 @@ export function ScanHistoryClient() {
         </div>
         <div className="actions">
           <Link className="btn btn-accent btn-shine" href="/scan">
-            <Icon.bolt style={{ width: 14, height: 14 }} /> <span>Start new scan</span>
+            <span>Start new scan</span>
           </Link>
         </div>
       </div>

@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { Icon } from "@/app/(app)/_components/icons"
 import { LiveSecurityPulse } from "@/components/scan/LiveSecurityPulse"
 
 export default function PulsePage() {
@@ -15,7 +14,7 @@ export default function PulsePage() {
         </div>
         <div className="actions">
           <Link className="btn btn-accent btn-shine" href="/scan">
-            <Icon.bolt style={{ width: 14, height: 14 }} /> <span>Start new scan</span>
+            <span>Start new scan</span>
           </Link>
         </div>
       </div>

@@ -1,9 +1,10 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Icon } from "@/app/(app)/_components/icons"
 import type { ScanReport } from "@/lib/scanner/types"
+import { subscribeGitHubSessionChange } from "@/lib/client/github-session-events"
 import { ScanResultsClient } from "./ScanResultsClient"
 
 export function ScanReportLoader({ scanId }: { scanId: string }) {
@@ -11,14 +12,18 @@ export function ScanReportLoader({ scanId }: { scanId: string }) {
   const [report, setReport] = useState<ScanReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const sessionVersion = useRef(0)
 
   useEffect(() => {
     async function loadGitHubSession() {
+      const activeSessionVersion = sessionVersion.current
       try {
         const response = await fetch("/api/auth/github/session", { cache: "no-store" })
         const data = await response.json()
+        if (sessionVersion.current !== activeSessionVersion) return
         setGitHubConnected(Boolean(data.session?.authenticated))
       } catch {
+        if (sessionVersion.current !== activeSessionVersion) return
         setGitHubConnected(false)
       }
     }
@@ -27,9 +32,20 @@ export function ScanReportLoader({ scanId }: { scanId: string }) {
   }, [])
 
   useEffect(() => {
+    return subscribeGitHubSessionChange(() => {
+      sessionVersion.current += 1
+      setGitHubConnected(false)
+      setReport(null)
+      setError("Login with GitHub to view this report.")
+      setLoading(false)
+    })
+  }, [])
+
+  useEffect(() => {
     const controller = new AbortController()
 
     async function loadReport() {
+      const activeSessionVersion = sessionVersion.current
       setLoading(true)
       setError(null)
 
@@ -39,13 +55,15 @@ export function ScanReportLoader({ scanId }: { scanId: string }) {
           signal: controller.signal,
         })
         const data = await response.json()
+        if (sessionVersion.current !== activeSessionVersion) return
         if (!response.ok) throw new Error(data.error ?? "Scan report not found.")
         setReport(data.report)
       } catch (loadError) {
         if (controller.signal.aborted) return
+        if (sessionVersion.current !== activeSessionVersion) return
         setError(loadError instanceof Error ? loadError.message : "Scan report not found.")
       } finally {
-        if (!controller.signal.aborted) setLoading(false)
+        if (!controller.signal.aborted && sessionVersion.current === activeSessionVersion) setLoading(false)
       }
     }
 

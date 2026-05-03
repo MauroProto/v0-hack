@@ -1,9 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Icon } from "@/app/(app)/_components/icons"
 import { ScanProgress } from "@/app/(app)/_components/scan-progress"
+import { publishGitHubSessionChange, subscribeGitHubSessionChange } from "@/lib/client/github-session-events"
 import { normalizePublicQuota, type PublicQuotaState } from "@/lib/security/quota-view"
 
 type Mode = "public" | "github"
@@ -52,23 +53,27 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   const [pendingScanId, setPendingScanId] = useState<string | null>(null)
   const [scanFinished, setScanFinished] = useState(false)
   const [scanKey, setScanKey] = useState(0)
+  const sessionVersion = useRef(0)
 
   const githubConnected = githubSession.authenticated
 
   const loadRepos = useCallback(async () => {
+    const activeSessionVersion = sessionVersion.current
     setReposLoading(true)
     setError(null)
 
     try {
       const response = await fetch("/api/github/repos", { cache: "no-store" })
       const data = await response.json()
+      if (sessionVersion.current !== activeSessionVersion) return
       if (!response.ok) throw new Error(data.error ?? "Could not list repositories.")
       setRepos(data.repos)
       setSelectedRepo(data.repos?.[0] ?? null)
     } catch (repoError) {
+      if (sessionVersion.current !== activeSessionVersion) return
       setError(repoError instanceof Error ? repoError.message : "Could not list repositories.")
     } finally {
-      setReposLoading(false)
+      if (sessionVersion.current === activeSessionVersion) setReposLoading(false)
     }
   }, [])
 
@@ -95,26 +100,44 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
 
   useEffect(() => {
     let cancelled = false
+    const activeSessionVersion = sessionVersion.current
 
     fetch("/api/auth/github/session", { cache: "no-store" })
       .then((response) => response.json())
       .then((data) => {
-        if (cancelled) return
+        if (cancelled || sessionVersion.current !== activeSessionVersion) return
         const nextSession = (data.session ?? { authenticated: false }) as GitHubAuthSession
         setGitHubSession(nextSession)
         if (nextSession.authenticated) void loadRepos()
       })
       .catch(() => {
-        if (!cancelled) setGitHubSession({ authenticated: false })
+        if (!cancelled && sessionVersion.current === activeSessionVersion) setGitHubSession({ authenticated: false })
       })
       .finally(() => {
-        if (!cancelled) setSessionLoading(false)
+        if (!cancelled && sessionVersion.current === activeSessionVersion) setSessionLoading(false)
       })
 
     return () => {
       cancelled = true
     }
   }, [loadRepos])
+
+  useEffect(() => {
+    return subscribeGitHubSessionChange(() => {
+      sessionVersion.current += 1
+      setGitHubSession({ authenticated: false })
+      setRepos([])
+      setSelectedRepo(null)
+      setMode("public")
+      setLoginLoading(false)
+      setSessionLoading(false)
+      setReposLoading(false)
+      setScanLoading(false)
+      setScanFinished(false)
+      setPendingScanId(null)
+      setError(null)
+    })
+  }, [])
 
   const beginScan = () => {
     setError(null)
@@ -142,6 +165,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
       return
     }
     beginScan()
+    const activeSessionVersion = sessionVersion.current
 
     try {
       const { response, data } = await fetchJsonWithTimeout("/api/scan", {
@@ -149,11 +173,13 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
         headers: requestHeaders(),
         body: JSON.stringify({ githubUrl: normalizeGithubInput(githubUrl), analysisMode }),
       }, scanTimeoutMs(analysisMode))
+      if (sessionVersion.current !== activeSessionVersion) return
       notifyQuotaFromResponse(data, response.headers)
       if (!response.ok) throw new Error(data.error ?? "Scan failed.")
       setPendingScanId(data.scanId)
       setScanFinished(true)
     } catch (scanError) {
+      if (sessionVersion.current !== activeSessionVersion) return
       handleScanFailure(errorMessageForScan(scanError, analysisMode))
     }
   }
@@ -164,6 +190,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
       return
     }
     beginScan()
+    const activeSessionVersion = sessionVersion.current
 
     try {
       const { response, data } = await fetchJsonWithTimeout("/api/scan", {
@@ -171,11 +198,13 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
         headers: requestHeaders(),
         body: JSON.stringify({ repoFullName: repo.fullName, ref: repo.defaultBranch, analysisMode }),
       }, scanTimeoutMs(analysisMode))
+      if (sessionVersion.current !== activeSessionVersion) return
       notifyQuotaFromResponse(data, response.headers)
       if (!response.ok) throw new Error(data.error ?? "Scan failed.")
       setPendingScanId(data.scanId)
       setScanFinished(true)
     } catch (scanError) {
+      if (sessionVersion.current !== activeSessionVersion) return
       handleScanFailure(errorMessageForScan(scanError, analysisMode))
     }
   }
@@ -187,11 +216,22 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   }
 
   const signOut = async () => {
-    await fetch("/api/auth/github/session", { method: "DELETE" })
+    const confirmed = window.confirm(
+      "Sign out of GitHub in this browser? This will not revoke the GitHub authorization. Use the dashboard profile menu if you want to disconnect GitHub completely.",
+    )
+    if (!confirmed) return
+
+    const response = await fetch("/api/auth/github/session", { method: "DELETE" })
+    if (!response.ok) {
+      setError("Could not sign out of GitHub. Try again.")
+      return
+    }
+
     setGitHubSession({ authenticated: false })
     setRepos([])
     setSelectedRepo(null)
     setMode("public")
+    publishGitHubSessionChange("signed_out")
   }
 
   return (

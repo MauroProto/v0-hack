@@ -1,6 +1,6 @@
 import "server-only"
 
-import { VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
+import { VIBESHIELD_SUPABASE_QUOTA_RPC, VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
 import type { RequestIdentity } from "./request"
 export { scanCreditCostForMode, type ScanCreditMode } from "./scanCredits"
@@ -108,12 +108,15 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits
   }
 
   if (supabase) {
-    const { data, error } = await supabase.rpc("vibeshield_consume_scan_quota", {
-      p_subject_hash: identity.subjectHash,
-      p_window_start: windowStart,
-      p_limit: limit,
-      p_cost: cost,
-    })
+    const { data, error } = await supabase.rpc(
+      VIBESHIELD_SUPABASE_QUOTA_RPC,
+      quotaRpcArgs({
+        subjectHash: identity.subjectHash,
+        windowStart,
+        limit,
+        cost,
+      }),
+    )
 
     if (!error) {
       const row = (Array.isArray(data) ? data[0] : data) as QuotaRpcRow | null
@@ -320,6 +323,26 @@ function readPositiveInt(value: string | undefined, fallback: number) {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback
   return Math.floor(parsed)
+}
+
+function quotaRpcArgs(input: { subjectHash: string; windowStart: string; limit: number; cost: number }) {
+  const baseArgs = {
+    p_subject_hash: input.subjectHash,
+    p_window_start: input.windowStart,
+    p_limit: input.limit,
+  }
+
+  // The original production migration supports one-credit operations with the
+  // three-argument RPC. Only multi-credit scans require the newer p_cost
+  // migration. This keeps Generate fixes and Normal scans working on older
+  // Supabase projects while Max scans still fail closed until the latest
+  // migration is applied.
+  if (input.cost === 1) return baseArgs
+
+  return {
+    ...baseArgs,
+    p_cost: input.cost,
+  }
 }
 
 function normalizeCreditCost(value: number) {

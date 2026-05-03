@@ -102,6 +102,20 @@ async function repositoryChecks(): Promise<Check[]> {
       remediation: "Restrict quota mutation to server-side code; never expose quota writes to client roles.",
     },
     {
+      id: "quota_rpc_credit_cost_supported",
+      ok: hasAll(
+        migrations,
+        "p_cost integer default 1",
+        `revoke all on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from public`,
+        `revoke all on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from anon`,
+        `revoke all on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from authenticated`,
+        `grant execute on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer, integer) to service_role`,
+      ),
+      severity: "blocker",
+      label: "Monthly quota RPC supports multi-credit scans",
+      remediation: "Run supabase/migrations/0004_vibeshield_scan_credit_quota.sql before enabling Max mode in production.",
+    },
+    {
       id: "security_headers_configured",
       ok: hasAll(
         nextConfig,

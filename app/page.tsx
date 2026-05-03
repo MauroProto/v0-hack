@@ -166,7 +166,7 @@ function Nav() {
         </nav>
         <div className="nav-right">
           <Link href="/scan" className="btn btn-primary nav-cta">
-            Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
+            Start free scan <I.scan style={{ width: 14, height: 14 }} />
           </Link>
         </div>
       </div>
@@ -191,7 +191,7 @@ function Hero() {
           unsafe tool calls and supply-chain issues before customers or maintainers do.
         </p>
         <div className="hero-cta">
-          <Link href="/scan" className="btn btn-accent btn-lg btn-border-spin btn-shine">Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></Link>
+          <Link href="/scan" className="btn btn-accent btn-lg btn-border-spin btn-shine">Start free scan <I.scan style={{ width: 14, height: 14 }} /></Link>
         </div>
         <div className="hero-meta">
           <span><b>No install.</b> Login with GitHub or paste a public repo.</span>
@@ -536,7 +536,7 @@ function Closing() {
         <p>Scan your first repo without installs, ZIP uploads or running untrusted code.</p>
         <div className="cta-actions">
           <Link href="/scan" className="btn btn-accent btn-lg btn-border-spin btn-shine">
-            Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
+            Start free scan <I.scan style={{ width: 14, height: 14 }} />
           </Link>
         </div>
       </div>

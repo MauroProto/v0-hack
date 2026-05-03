@@ -1,5 +1,5 @@
-import { createClient } from "@supabase/supabase-js"
-import { VIBESHIELD_SUPABASE_EXPECTED_TABLES } from "../lib/supabase/schema"
+import { createClient, type SupabaseClient } from "@supabase/supabase-js"
+import { VIBESHIELD_SUPABASE_EXPECTED_TABLES, VIBESHIELD_SUPABASE_QUOTA_RPC, VIBESHIELD_SUPABASE_TABLES } from "../lib/supabase/schema"
 import { loadEnvFiles } from "./lib/env"
 
 async function main() {
@@ -46,6 +46,8 @@ async function main() {
     return
   }
 
+  failed += await verifyQuotaRpc(supabase)
+
   if (production && !anonKey) {
     console.log("[fail] supabase_anon_key: NEXT_PUBLIC_SUPABASE_ANON_KEY is missing")
     process.exitCode = 1
@@ -64,6 +66,38 @@ async function main() {
   console.log("[ok] supabase_connection: all VibeShield tables are reachable")
   if (anonKey) console.log("[ok] supabase_client_access: anon client cannot read VibeShield tables directly")
   console.log("No secret values were printed.")
+}
+
+type RpcResult = {
+  error: { message: string } | null
+}
+
+async function verifyQuotaRpc(supabase: SupabaseClient) {
+  const testSubjectHash = "0".repeat(64)
+  const windowStart = new Date().toISOString().slice(0, 7) + "-01"
+  const callRpc = supabase.rpc.bind(supabase) as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcResult>
+
+  const { error } = await callRpc(VIBESHIELD_SUPABASE_QUOTA_RPC, {
+    p_subject_hash: testSubjectHash,
+    p_window_start: windowStart,
+    p_limit: 20,
+    p_cost: 2,
+  })
+
+  await supabase
+    .from(VIBESHIELD_SUPABASE_TABLES.usage)
+    .delete()
+    .eq("subject_hash", testSubjectHash)
+    .eq("window_start", windowStart)
+
+  if (error) {
+    console.log(`[fail] ${VIBESHIELD_SUPABASE_QUOTA_RPC}: ${sanitizeSupabaseError(error.message)}`)
+    console.log("[hint] run supabase/migrations/0004_vibeshield_scan_credit_quota.sql so Max scans can consume 2 credits atomically")
+    return 1
+  }
+
+  console.log(`[ok] ${VIBESHIELD_SUPABASE_QUOTA_RPC}: cost-aware quota RPC is callable with service-role credentials`)
+  return 0
 }
 
 async function verifyClientRolesDenied(url: string, anonKey: string) {
