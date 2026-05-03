@@ -1,5 +1,6 @@
 import "server-only"
 
+import { VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
 import type { RequestIdentity } from "./request"
 
@@ -31,6 +32,10 @@ type QuotaRpcRow = {
   allowed: boolean
   remaining: number
   scan_count: number
+}
+
+type QuotaUsageRow = {
+  scan_count: number | string | null
 }
 
 const securityGlobal = globalThis as SecurityGlobal
@@ -81,12 +86,14 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity): Promis
   const limit = readPositiveInt(process.env.VIBESHIELD_MONTHLY_SCAN_QUOTA, 20)
   const windowStart = getUtcMonthStart()
   const resetAt = getNextUtcMonthStart()
+  const memoryKey = monthlyCounterKey(windowStart, identity.subjectHash)
 
   if (localRateLimitsDisabled()) {
+    const result = consumeMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime())
     return {
       limit,
-      remaining: limit,
-      resetAt: resetAt.toISOString(),
+      remaining: result.remaining,
+      resetAt: new Date(result.resetAt).toISOString(),
       period: "monthly",
     }
   }
@@ -122,9 +129,62 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity): Promis
     if (persistentQuotaRequired()) throw persistentQuotaUnavailable()
   }
 
-  const result = consumeMemoryCounter(getMonthlyCounters(), `monthly:${windowStart}:${identity.subjectHash}`, limit, resetAt.getTime())
+  const result = consumeMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime())
   if (!result.allowed) throw quotaExceeded(limit, resetAt)
 
+  return {
+    limit,
+    remaining: result.remaining,
+    resetAt: new Date(result.resetAt).toISOString(),
+    period: "monthly",
+  }
+}
+
+export async function peekMonthlyScanQuota(identity: RequestIdentity): Promise<QuotaState> {
+  const limit = readPositiveInt(process.env.VIBESHIELD_MONTHLY_SCAN_QUOTA, 20)
+  const windowStart = getUtcMonthStart()
+  const resetAt = getNextUtcMonthStart()
+  const memoryKey = monthlyCounterKey(windowStart, identity.subjectHash)
+
+  if (localRateLimitsDisabled()) {
+    const result = peekMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime())
+    return {
+      limit,
+      remaining: result.remaining,
+      resetAt: new Date(result.resetAt).toISOString(),
+      period: "monthly",
+    }
+  }
+
+  const supabase = getSupabaseServiceClient()
+
+  if (!supabase && persistentQuotaRequired()) {
+    throw persistentQuotaUnavailable()
+  }
+
+  if (supabase) {
+    const { data, error } = await supabase
+      .from(VIBESHIELD_SUPABASE_TABLES.usage)
+      .select("scan_count")
+      .eq("subject_hash", identity.subjectHash)
+      .eq("window_start", windowStart)
+      .maybeSingle()
+
+    if (!error) {
+      const scanCount = Math.max(0, Number((data as QuotaUsageRow | null)?.scan_count ?? 0) || 0)
+      return {
+        limit,
+        remaining: Math.max(0, limit - scanCount),
+        resetAt: resetAt.toISOString(),
+        period: "monthly",
+      }
+    }
+
+    console.error("VibeShield Supabase quota read failed", error.message)
+    if (persistentQuotaRequired()) throw persistentQuotaUnavailable()
+  }
+
+  const result = peekMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime())
   return {
     limit,
     remaining: result.remaining,
@@ -162,7 +222,7 @@ export function rateLimitHeaders(quota: RateLimitHeaderState) {
 
 function quotaExceeded(limit: number, resetAt: Date) {
   return new SecurityError(
-    "Monthly scan quota reached. VibeShield allows 20 scans per user per UTC month.",
+    `Monthly scan quota reached. VibeShield allows ${limit} scans per user per UTC month.`,
     429,
     "monthly_quota_reached",
     rateLimitHeaders({
@@ -214,6 +274,19 @@ function consumeMemoryCounter(counters: Map<string, Counter>, key: string, limit
   return { allowed: true, remaining: Math.max(0, limit - next.count), resetAt: next.resetAt }
 }
 
+function peekMemoryCounter(counters: Map<string, Counter>, key: string, limit: number, resetAt: number) {
+  const now = Date.now()
+  const current = counters.get(key)
+  if (!current || current.resetAt <= now) {
+    return { remaining: limit, resetAt }
+  }
+
+  return {
+    remaining: Math.max(0, limit - current.count),
+    resetAt: current.resetAt,
+  }
+}
+
 function getBurstCounters() {
   securityGlobal.__vibeshieldBurstCounters ??= new Map<string, Counter>()
   return securityGlobal.__vibeshieldBurstCounters
@@ -232,6 +305,10 @@ function getUtcMonthStart() {
 function getNextUtcMonthStart() {
   const now = new Date()
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+}
+
+function monthlyCounterKey(windowStart: string, subjectHash: string) {
+  return `monthly:${windowStart}:${subjectHash}`
 }
 
 function readPositiveInt(value: string | undefined, fallback: number) {

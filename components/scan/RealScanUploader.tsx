@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Icon } from "@/app/(app)/_components/icons"
 import { ScanProgress } from "@/app/(app)/_components/scan-progress"
+import { normalizePublicQuota, type PublicQuotaState } from "@/lib/security/quota-view"
 
 type Mode = "public" | "github"
 type AnalysisMode = "rules" | "normal" | "max"
@@ -140,6 +141,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
         headers: requestHeaders(),
         body: JSON.stringify({ githubUrl: normalizeGithubInput(githubUrl), analysisMode }),
       }, scanTimeoutMs(analysisMode))
+      notifyQuotaFromResponse(data, response.headers)
       if (!response.ok) throw new Error(data.error ?? "Scan failed.")
       setPendingScanId(data.scanId)
       setScanFinished(true)
@@ -161,6 +163,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
         headers: requestHeaders(),
         body: JSON.stringify({ repoFullName: repo.fullName, ref: repo.defaultBranch, analysisMode }),
       }, scanTimeoutMs(analysisMode))
+      notifyQuotaFromResponse(data, response.headers)
       if (!response.ok) throw new Error(data.error ?? "Scan failed.")
       setPendingScanId(data.scanId)
       setScanFinished(true)
@@ -185,13 +188,13 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   return (
     <div className="scan-live-shell">
       <section className="onboard-hero">
-        <span className="onboard-eyebrow">GitHub-native security harness</span>
+        <span className="onboard-eyebrow">Evidence-first security review</span>
         <h1 className="onboard-title">
-          Scan your AI-built app <em>before you ship.</em>
+          Review an AI-built repo <em>before it becomes your risk.</em>
         </h1>
         <p className="onboard-sub">
-          VibeShield reads repositories server-side through GitHub APIs, runs deterministic static-analysis passes,
-          and uses AI only to explain verified findings and generate review-required patch previews.
+          VibeShield reads GitHub repositories server-side, runs deterministic AppSec analyzers,
+          and uses AI to triage evidence, explain impact and prepare review-required fixes.
         </p>
       </section>
 
@@ -362,6 +365,25 @@ function scanTimeoutMs(mode: AnalysisMode) {
   if (mode === "max") return 390_000
   if (mode === "normal") return 150_000
   return 90_000
+}
+
+function notifyQuotaFromResponse(data: unknown, headers: Headers) {
+  const quota = normalizePublicQuota((data as { quota?: unknown } | null)?.quota) ?? quotaFromHeaders(headers)
+  if (!quota) return
+
+  window.dispatchEvent(new CustomEvent<PublicQuotaState>("vibeshield:quota", { detail: quota }))
+}
+
+function quotaFromHeaders(headers: Headers) {
+  const period = headers.get("X-RateLimit-Period")
+  if (period !== "monthly") return null
+
+  return normalizePublicQuota({
+    period,
+    limit: headers.get("X-RateLimit-Limit"),
+    remaining: headers.get("X-RateLimit-Remaining"),
+    resetAt: headers.get("X-RateLimit-Reset"),
+  })
 }
 
 function errorMessageForScan(error: unknown, mode: AnalysisMode) {

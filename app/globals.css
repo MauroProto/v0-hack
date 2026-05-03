@@ -1661,7 +1661,11 @@ button.chip { cursor: pointer; }
   height: 100%;
   background: var(--accent);
   border-radius: 999px;
+  transition: width 220ms ease, background-color 220ms ease;
 }
+.quota-card[data-tone="low"] .quota-bar > span { background: #f6b65f; }
+.quota-card[data-tone="empty"] .quota-bar > span { background: #f27373; }
+.quota-card[data-tone="unknown"] .quota-bar > span { opacity: 0.65; }
 
 .side-search {
   display: flex; align-items: center; gap: 8px;

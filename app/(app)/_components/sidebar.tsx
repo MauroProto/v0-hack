@@ -5,6 +5,7 @@ import Image from "next/image"
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import type { ScanReport } from "@/lib/scanner/types"
+import { deriveQuotaDisplay, normalizePublicQuota, type PublicQuotaState } from "@/lib/security/quota-view"
 import { Icon } from "./icons"
 
 type Item = {
@@ -47,6 +48,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   const router = useRouter()
   const [githubSession, setGitHubSession] = useState<GitHubAuthSession>({ authenticated: false })
   const [reports, setReports] = useState<ScanReport[]>([])
+  const [quota, setQuota] = useState<PublicQuotaState | null>(null)
   const [historyState, setHistoryState] = useState<"idle" | "loading" | "error">("loading")
   const profile = getGitHubProfile(githubSession)
 
@@ -83,6 +85,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         const data = await response.json()
         if (!response.ok) throw new Error(data.error ?? "Could not load reports.")
         setReports(data.reports ?? [])
+        setQuota(normalizePublicQuota(data.quota))
         setHistoryState("idle")
       } catch {
         if (controller.signal.aborted) return
@@ -95,6 +98,16 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     return () => controller.abort()
   }, [pathname])
 
+  useEffect(() => {
+    function handleQuotaUpdate(event: Event) {
+      const nextQuota = normalizePublicQuota((event as CustomEvent).detail)
+      if (nextQuota) setQuota(nextQuota)
+    }
+
+    window.addEventListener("vibeshield:quota", handleQuotaUpdate)
+    return () => window.removeEventListener("vibeshield:quota", handleQuotaUpdate)
+  }, [])
+
   return (
     <>
       <aside className="app-side" data-open={open}>
@@ -106,13 +119,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             </button>
           </div>
 
-          <div className="quota-card">
-            <div className="quota-row">
-              <span className="quota-label">Monthly limit</span>
-              <span className="quota-value"><b>20</b> scans</span>
-            </div>
-            <div className="quota-bar"><span style={{ width: "100%" }} /></div>
-          </div>
+          <QuotaCard quota={quota} />
 
           <nav className="side-nav">
             {PRIMARY.map((it) => {
@@ -165,6 +172,30 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         aria-hidden="true"
       />
     </>
+  )
+}
+
+function QuotaCard({ quota }: { quota: PublicQuotaState | null }) {
+  const display = deriveQuotaDisplay(quota)
+
+  return (
+    <div className="quota-card" data-tone={display.tone} title={display.resetLabel} aria-busy={!display.known}>
+      <div className="quota-row">
+        <span className="quota-label">Monthly limit</span>
+        <span className="quota-value">
+          {display.known ? (
+            <>
+              <b>{display.remaining}</b> / {display.limit} left
+            </>
+          ) : (
+            display.label
+          )}
+        </span>
+      </div>
+      <div className="quota-bar" aria-label={display.label}>
+        <span style={{ width: `${display.percentRemaining}%` }} />
+      </div>
+    </div>
   )
 }
 

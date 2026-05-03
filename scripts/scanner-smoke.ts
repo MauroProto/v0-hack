@@ -31,6 +31,7 @@ import { applyAiTriage, buildRiskBreakdown } from "../lib/ai/triage"
 import { sanitizePublicPullRequestCopy } from "../lib/ai/publicPullRequestCopy"
 import { pinThirdPartyActionRefsInText } from "../lib/utils/githubActions"
 import { formatGitHubNotFoundMessage } from "../lib/utils/githubErrors"
+import { deriveQuotaDisplay } from "../lib/security/quota-view"
 import {
   buildProfessionalPullRequestBody,
   buildProfessionalPullRequestTitle,
@@ -110,6 +111,7 @@ async function main() {
     assertPullRequestSafetyGateBlocksAndRepairsUnsafeCopy()
     assertGitHubNotFoundErrorsAreContextual()
     assertFullReportCopyIncludesEveryFinding()
+    assertQuotaDisplayCountsRemainingScans()
     await assertScanJobsAndEventsLifecycle()
     assertHealthStatusIsSecretFree()
 
@@ -1673,6 +1675,25 @@ function makeTriageReport(findings: ScanFinding[], overrides: Partial<ScanReport
     auditTrail: [],
     ...overrides,
   }
+}
+
+function assertQuotaDisplayCountsRemainingScans() {
+  const resetAt = "2026-06-01T00:00:00.000Z"
+  const full = deriveQuotaDisplay({ limit: 20, remaining: 20, resetAt, period: "monthly" })
+  assert(full.remaining === 20, "quota display should preserve full remaining count")
+  assert(full.used === 0, "quota display should count zero used scans at full quota")
+  assert(full.percentRemaining === 100, "quota bar should be full when no scans were used")
+  assert(full.label === "20 / 20 left", "quota label should show remaining scans over limit")
+
+  const partial = deriveQuotaDisplay({ limit: 20, remaining: 17, resetAt, period: "monthly" })
+  assert(partial.remaining === 17, "quota display should keep server remaining count")
+  assert(partial.used === 3, "quota display should show scans consumed")
+  assert(partial.percentRemaining === 85, "quota bar should shrink as scans are consumed")
+
+  const empty = deriveQuotaDisplay({ limit: 20, remaining: -5, resetAt, period: "monthly" })
+  assert(empty.remaining === 0, "quota display should clamp negative remaining quota")
+  assert(empty.percentRemaining === 0, "quota bar should be empty at zero remaining scans")
+  assert(empty.tone === "empty", "quota display should mark empty monthly quota")
 }
 
 async function assertScanJobsAndEventsLifecycle() {
