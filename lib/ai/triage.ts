@@ -39,6 +39,7 @@ export type AiTriageOutput = {
   }
   model?: string
   provider?: string
+  reasoningEffort?: string
 }
 
 export function applyAiTriage(report: ScanReport, output: AiTriageOutput): ScanReport {
@@ -280,6 +281,7 @@ function buildReportAiTriage(
     recommendedNextSteps: cleanList(summary?.recommendedNextSteps ?? existing?.recommendedNextSteps ?? [], 8, 360),
     model: output.model ?? existing?.model,
     provider: output.provider ?? existing?.provider,
+    reasoningEffort: output.reasoningEffort ?? existing?.reasoningEffort,
     reviewedFindings: triageById.size || existing?.reviewedFindings || 0,
   }
 }

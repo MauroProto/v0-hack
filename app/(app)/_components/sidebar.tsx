@@ -27,13 +27,6 @@ type GitHubAuthSession = {
 
 const PRIMARY: Item[] = [
   {
-    key: "pulse",
-    label: "Live pulse",
-    icon: "bolt",
-    href: "/pulse",
-    live: true,
-  },
-  {
     key: "current",
     label: "New scan",
     icon: "focus",
@@ -50,6 +43,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   const [reports, setReports] = useState<ScanReport[]>([])
   const [quota, setQuota] = useState<PublicQuotaState | null>(null)
   const [historyState, setHistoryState] = useState<"idle" | "loading" | "error">("loading")
+  const [signingOut, setSigningOut] = useState(false)
   const profile = getGitHubProfile(githubSession)
 
   const isActive = (it: Item) => {
@@ -108,13 +102,27 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     return () => window.removeEventListener("vibeshield:quota", handleQuotaUpdate)
   }, [])
 
+  const signOut = async () => {
+    if (!githubSession.authenticated || signingOut) return
+
+    setSigningOut(true)
+    try {
+      await fetch("/api/auth/github/session", { method: "DELETE" })
+      setGitHubSession({ authenticated: false })
+      setReports([])
+      setQuota(null)
+      router.refresh()
+    } finally {
+      setSigningOut(false)
+    }
+  }
+
   return (
     <>
       <aside className="app-side" data-open={open}>
         <div className="app-side-scroll">
           <div className="brand-row">
             <button type="button" className="brand" onClick={() => router.push("/")}>
-              <span className="brand-mark"><Icon.shield /></span>
               <span>VibeShield</span>
             </button>
           </div>
@@ -145,7 +153,14 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         </div>
 
         <div className="app-side-bottom">
-          <div className="user-card">
+          <button
+            type="button"
+            className="user-card"
+            data-clickable={githubSession.authenticated}
+            disabled={!githubSession.authenticated || signingOut}
+            onClick={signOut}
+            title={githubSession.authenticated ? "Sign out of GitHub" : "Public scans do not require login"}
+          >
             {profile.avatarUrl ? (
               <Image
                 className="avatar avatar-image"
@@ -159,9 +174,9 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             )}
             <div className="info">
               <b>{profile.name}</b>
-              <span>{profile.subtitle}</span>
+              <span>{signingOut ? "signing out..." : profile.subtitle}</span>
             </div>
-          </div>
+          </button>
         </div>
       </aside>
 
@@ -181,7 +196,7 @@ function QuotaCard({ quota }: { quota: PublicQuotaState | null }) {
   return (
     <div className="quota-card" data-tone={display.tone} title={display.resetLabel} aria-busy={!display.known}>
       <div className="quota-row">
-        <span className="quota-label">Monthly limit</span>
+        <span className="quota-label">Monthly credits</span>
         <span className="quota-value">
           {display.known ? (
             <>

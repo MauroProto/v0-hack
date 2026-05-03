@@ -165,7 +165,6 @@ function Nav() {
           <a href="#scan">Scan</a>
         </nav>
         <div className="nav-right">
-          <Link href="/scan" className="btn btn-ghost">Open scanner</Link>
           <Link href="/scan" className="btn btn-primary">
             Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
           </Link>
@@ -193,7 +192,6 @@ function Hero() {
         </p>
         <div className="hero-cta">
           <Link href="/scan" className="btn btn-accent btn-lg btn-border-spin">Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></Link>
-          <Link href="/scan" className="btn btn-outline btn-lg">Open scanner</Link>
         </div>
         <div className="hero-meta">
           <span><b>No install.</b> Login with GitHub or paste a public repo.</span>
@@ -218,63 +216,6 @@ function Hero() {
                 <span className="logo"><span className="logo-mono"><img src="/logos/tempo.png" alt="Cursor" /></span><span className="name">Cursor</span></span>
               </Fragment>
             ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ---------- Scan input preview ----------
-function ScanPreview() {
-  const [tab, setTab] = useState<"public" | "login">("public")
-  return (
-    <section className="section" id="scan" style={{ paddingTop: 20, paddingBottom: 48 }}>
-      <div className="wrap">
-        <div className="surface scan-card">
-          <div className="scan-tabs">
-            <div className="scan-tab" data-active={tab === "public"} onClick={() => setTab("public")}>
-              <I.github /> Public GitHub URL
-            </div>
-            <div className="scan-tab" data-active={tab === "login"} onClick={() => setTab("login")}>
-              <I.lock /> Login with GitHub
-            </div>
-            <div style={{ flex: 1 }} />
-            <div className="scan-tab" style={{ color: "var(--fg-5)", cursor: "default" }}>
-              <I.scan /> Server-side harness
-            </div>
-          </div>
-          <div className="scan-body">
-            {tab === "public" && (
-              <>
-                <div className="scan-input">
-                  <input placeholder="github.com/owner/repo" />
-                  <span className="hint mono">main</span>
-                  <Link href="/scan" className="btn btn-accent">
-                    Scan repository <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
-                  </Link>
-                </div>
-                <div className="scan-meta">
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <I.gitbranch /> default branch detected
-                  </span>
-                  <span>·</span>
-                  <span><b>GitHub tree</b> · supported blobs only</span>
-                  <span>·</span>
-                  <span>20 scans/user/month</span>
-                </div>
-              </>
-            )}
-            {tab === "login" && (
-              <div className="scan-drop" style={{ alignItems: "flex-start" }}>
-                <div className="icn"><I.github /></div>
-                <div className="txt">
-                  <b>List repositories from your GitHub account</b>
-                  <span>VibeShield asks GitHub for metadata, tree entries and file blobs from the server.</span>
-                </div>
-                <Link href="/scan" className="btn btn-outline">Connect GitHub</Link>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -671,9 +612,6 @@ function Closing() {
           <Link href="/scan" className="btn btn-accent btn-lg btn-border-spin">
             Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
           </Link>
-          <Link href="/scan" className="btn btn-outline btn-lg">
-            <I.github /> Open scanner
-          </Link>
         </div>
       </div>
 
@@ -681,7 +619,6 @@ function Closing() {
         <div className="footer-inner">
           <div className="footer-brand">
             <Link href="/" className="brand">
-              <span className="brand-mark"><I.shield /></span>
               <span>VibeShield</span>
             </Link>
             <p>An evidence-first security review layer for apps built with AI.</p>
@@ -742,7 +679,6 @@ export default function Page() {
     <>
       <Nav />
       <Hero />
-      <ScanPreview />
       <Dashboard />
       <Features />
       <How />

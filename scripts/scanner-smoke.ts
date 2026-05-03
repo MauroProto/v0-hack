@@ -24,7 +24,7 @@ import {
 } from "../lib/scanner/reportPolicy"
 import { compareProjectPathPriority, shouldConsiderProjectPath } from "../lib/scanner/extract"
 import { scanDependencies } from "../lib/scanner/dependencies"
-import { generateFullReportBody, generateIssueBody } from "../lib/scanner/patches"
+import { generateFixesBody, generateFullReportBody, generateIssueBody } from "../lib/scanner/patches"
 import { scanProject } from "../lib/scanner/scan"
 import type { ProjectFile, ScanFinding, ScanReport } from "../lib/scanner/types"
 import { applyAiTriage, buildRiskBreakdown } from "../lib/ai/triage"
@@ -32,6 +32,7 @@ import { sanitizePublicPullRequestCopy } from "../lib/ai/publicPullRequestCopy"
 import { pinThirdPartyActionRefsInText } from "../lib/utils/githubActions"
 import { formatGitHubNotFoundMessage } from "../lib/utils/githubErrors"
 import { deriveQuotaDisplay } from "../lib/security/quota-view"
+import { scanCreditCostForMode } from "../lib/security/scanCredits"
 import {
   buildProfessionalPullRequestBody,
   buildProfessionalPullRequestTitle,
@@ -111,7 +112,9 @@ async function main() {
     assertPullRequestSafetyGateBlocksAndRepairsUnsafeCopy()
     assertGitHubNotFoundErrorsAreContextual()
     assertFullReportCopyIncludesEveryFinding()
+    assertGeneratedFixesCopyIncludesSpecificFixes()
     assertQuotaDisplayCountsRemainingScans()
+    assertScanCreditCostsMatchMode()
     await assertScanJobsAndEventsLifecycle()
     assertHealthStatusIsSecretFree()
 
@@ -1636,6 +1639,41 @@ function assertFullReportCopyIncludesEveryFinding() {
   assert(body.includes("scanner completed"), "full report copy should include audit trail")
 }
 
+function assertGeneratedFixesCopyIncludesSpecificFixes() {
+  const report = makeTriageReport([
+    makeFinding({
+      id: "F-001",
+      severity: "high",
+      category: "input_validation",
+      title: "Request body reaches raw query",
+      filePath: "app/api/search/route.ts",
+      lineStart: 12,
+      recommendation: "Validate request input and use parameterized queries.",
+      patchable: true,
+      explanation: {
+        summary: "The request body is used before schema validation.",
+        impact: "An attacker can influence database query behavior.",
+        fixSteps: [
+          "Parse the request body with a route-specific schema.",
+          "Pass validated values into parameterized database APIs.",
+        ],
+      },
+      patch: {
+        title: "Validate search input before querying",
+        summary: "Add schema validation before the database call and remove string interpolation.",
+        unifiedDiff: "+ const body = SearchSchema.parse(await request.json())",
+        reviewRequired: true,
+      },
+    }),
+  ])
+
+  const body = generateFixesBody(report)
+  assert(body.includes("# Security fixes"), "generated fixes copy should have a clear title")
+  assert(body.includes("Request body reaches raw query"), "generated fixes copy should include finding titles")
+  assert(body.includes("Validate search input before querying"), "generated fixes copy should include patch titles")
+  assert(body.includes("SearchSchema.parse"), "generated fixes copy should include concrete patch preview text")
+}
+
 function makeFinding(overrides: Partial<ScanFinding>): ScanFinding {
   return {
     id: "F-000",
@@ -1681,19 +1719,25 @@ function assertQuotaDisplayCountsRemainingScans() {
   const resetAt = "2026-06-01T00:00:00.000Z"
   const full = deriveQuotaDisplay({ limit: 20, remaining: 20, resetAt, period: "monthly" })
   assert(full.remaining === 20, "quota display should preserve full remaining count")
-  assert(full.used === 0, "quota display should count zero used scans at full quota")
-  assert(full.percentRemaining === 100, "quota bar should be full when no scans were used")
-  assert(full.label === "20 / 20 left", "quota label should show remaining scans over limit")
+  assert(full.used === 0, "quota display should count zero used credits at full quota")
+  assert(full.percentRemaining === 100, "quota bar should be full when no credits were used")
+  assert(full.label === "20 / 20 left", "quota label should show remaining credits over limit")
 
   const partial = deriveQuotaDisplay({ limit: 20, remaining: 17, resetAt, period: "monthly" })
   assert(partial.remaining === 17, "quota display should keep server remaining count")
-  assert(partial.used === 3, "quota display should show scans consumed")
-  assert(partial.percentRemaining === 85, "quota bar should shrink as scans are consumed")
+  assert(partial.used === 3, "quota display should show credits consumed")
+  assert(partial.percentRemaining === 85, "quota bar should shrink as credits are consumed")
 
   const empty = deriveQuotaDisplay({ limit: 20, remaining: -5, resetAt, period: "monthly" })
   assert(empty.remaining === 0, "quota display should clamp negative remaining quota")
-  assert(empty.percentRemaining === 0, "quota bar should be empty at zero remaining scans")
+  assert(empty.percentRemaining === 0, "quota bar should be empty at zero remaining credits")
   assert(empty.tone === "empty", "quota display should mark empty monthly quota")
+}
+
+function assertScanCreditCostsMatchMode() {
+  assert(scanCreditCostForMode("normal") === 1, "normal scans should consume one monthly credit")
+  assert(scanCreditCostForMode("max") === 2, "max scans should consume two monthly credits")
+  assert(scanCreditCostForMode("rules") === 1, "rules-compatible scans should consume one monthly credit")
 }
 
 async function assertScanJobsAndEventsLifecycle() {

@@ -7,6 +7,7 @@ import type { ScanReport } from "@/lib/scanner/types"
 
 export function ScanHistoryClient() {
   const [reports, setReports] = useState<ScanReport[]>([])
+  const [authenticated, setAuthenticated] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -25,6 +26,7 @@ export function ScanHistoryClient() {
         const data = await response.json()
         if (!response.ok) throw new Error(data.error ?? "Could not load scan history.")
         setReports(data.reports ?? [])
+        setAuthenticated(data.authenticated !== false)
       } catch (loadError) {
         if (controller.signal.aborted) return
         setError(loadError instanceof Error ? loadError.message : "Could not load scan history.")
@@ -56,7 +58,7 @@ export function ScanHistoryClient() {
       </div>
 
       {loading || error || reports.length === 0 ? (
-        <ScanHistoryState loading={loading} error={error} />
+        <ScanHistoryState loading={loading} error={error} authenticated={authenticated} />
       ) : (
         <ScanHistoryTable reports={reports} />
       )}
@@ -64,19 +66,24 @@ export function ScanHistoryClient() {
   )
 }
 
-function ScanHistoryState({ loading, error }: { loading: boolean; error: string | null }) {
+function ScanHistoryState({ loading, error, authenticated }: { loading: boolean; error: string | null; authenticated: boolean }) {
+  const title = loading ? "Loading scans" : error ? "Could not load scans" : authenticated ? "No scans yet" : "Login to view scan history"
+  const copy = loading
+    ? "Fetching reports for your account."
+    : error
+      ? error
+      : authenticated
+        ? "Start a scan from your GitHub account to create your first private report history entry."
+        : "Public scans are not listed in shared history. Login with GitHub so reports are tied to your account."
+
   return (
     <div className="page-pad">
       <div className="empty-state">
         <div className="empty-icon">
           <Icon.scan style={{ width: 28, height: 28 }} />
         </div>
-        <h2 className="empty-title">{loading ? "Loading scans" : error ? "Could not load scans" : "No scans yet"}</h2>
-        <p className="empty-sub">
-          {loading
-              ? "Fetching reports for your current browser session."
-              : error ?? "Login with GitHub or scan a public GitHub repo to create your first report."}
-        </p>
+        <h2 className="empty-title">{title}</h2>
+        <p className="empty-sub">{copy}</p>
         {!loading && (
           <div className="empty-actions">
             <Link href="/scan" className="btn btn-accent btn-lg">
@@ -97,7 +104,7 @@ function ScanHistoryTable({ reports }: { reports: ScanReport[] }) {
       </h1>
       <div className="page-sub">
         <span>
-          <b>{reports.length}</b> available for this identity
+          <b>{reports.length}</b> available for this account
         </span>
         <span>·</span>
         <span>static + hybrid AI analysis</span>

@@ -20,4 +20,5 @@ export const VIBESHIELD_SUPABASE_MIGRATIONS = [
   "supabase/migrations/0001_vibeshield_scan_reports.sql",
   "supabase/migrations/0002_vibeshield_jobs_baselines_events.sql",
   "supabase/migrations/0003_vibeshield_revoke_public_table_access.sql",
+  "supabase/migrations/0004_vibeshield_scan_credit_quota.sql",
 ] as const

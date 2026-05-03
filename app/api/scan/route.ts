@@ -16,6 +16,7 @@ import {
   consumeMonthlyScanQuota,
   isSecurityError,
   rateLimitHeaders,
+  scanCreditCostForMode,
   type QuotaState,
 } from "@/lib/security/quota"
 import {
@@ -53,9 +54,17 @@ export async function POST(request: Request) {
     }
 
     const body = JsonScanSchema.parse(await readJsonBodyWithLimit(request, 20_000))
+    if (identity.kind === "anonymous") {
+      return NextResponse.json(
+        { error: "Login with GitHub before starting a security scan.", code: "github_login_required" },
+        { status: 401, headers: apiHeaders() },
+      )
+    }
+
     const token = getGitHubTokenFromRequest(request)
     const repo = body.repoFullName ? parseGitHubFullName(body.repoFullName) : parsePublicGitHubUrl(body.githubUrl ?? "")
-    const quota = await consumeMonthlyScanQuota(identity)
+    const creditsUsed = scanCreditCostForMode(body.analysisMode)
+    const quota = await consumeMonthlyScanQuota(identity, creditsUsed)
 
     if (shouldQueueScan(body.analysisMode, token)) {
       const report = await createQueuedScanReport({
@@ -66,7 +75,7 @@ export async function POST(request: Request) {
         ownerKind: identity.kind,
       })
 
-      return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota }, quota)
+      return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota, creditsUsed }, quota)
     }
 
     const extracted = await extractProjectFromGitHubRepo({
@@ -115,7 +124,7 @@ export async function POST(request: Request) {
       policyReport,
     )
 
-    return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota }, quota)
+    return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota, creditsUsed }, quota)
   } catch (error) {
     return errorResponse(error)
   }

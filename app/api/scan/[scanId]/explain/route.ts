@@ -7,7 +7,13 @@ import { auditEvent } from "@/lib/scanner/scan"
 import { getScanReport, saveScanReport } from "@/lib/scanner/store"
 import { apiHeaders } from "@/lib/security/headers"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
-import { assertBurstAllowed, assertContentLengthAllowed, isSecurityError } from "@/lib/security/quota"
+import {
+  assertBurstAllowed,
+  assertContentLengthAllowed,
+  consumeMonthlyScanQuota,
+  isSecurityError,
+  rateLimitHeaders,
+} from "@/lib/security/quota"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -28,6 +34,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
       return NextResponse.json({ error: "Scan report not found." }, { status: 404, headers: apiHeaders() })
     }
 
+    if (!needsGeneratedFixes(current)) {
+      return NextResponse.json({ report: publicReport(current), creditsUsed: 0 }, { headers: apiHeaders() })
+    }
+
+    const creditsUsed = 1
+    const quota = await consumeMonthlyScanQuota(identity, creditsUsed)
     const maxAiExplanations = aiStatus.configured ? maxAiExplanationsForReport(current) : 0
     const aiEligibleFindingIds = new Set(
       [...current.findings]
@@ -83,7 +95,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
       ],
     }))
 
-    return NextResponse.json({ report: publicReport(report) }, { headers: apiHeaders() })
+    return NextResponse.json(
+      { report: publicReport(report), quota, creditsUsed },
+      { headers: apiHeaders(rateLimitHeaders(quota)) },
+    )
   } catch (error) {
     if (isSecurityError(error)) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: apiHeaders(error.headers) })
@@ -116,6 +131,10 @@ function maxAiExplanationsForReport(report: { analysisMode?: "rules" | "normal" 
   if (Number.isFinite(envValue) && envValue >= 0) return Math.min(Math.floor(envValue), 6)
   if (report.analysisMode === "max") return 3
   return 2
+}
+
+function needsGeneratedFixes(report: { findings: Array<{ suppressed?: boolean; explanation?: unknown; patch?: unknown }> }) {
+  return report.findings.some((finding) => !finding.suppressed && !(finding.explanation && finding.patch))
 }
 
 function aiFindingBudgetMs() {

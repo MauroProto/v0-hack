@@ -3,6 +3,7 @@ import "server-only"
 import { VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
 import type { RequestIdentity } from "./request"
+export { scanCreditCostForMode, type ScanCreditMode } from "./scanCredits"
 
 type Counter = {
   count: number
@@ -39,6 +40,7 @@ type QuotaUsageRow = {
 }
 
 const securityGlobal = globalThis as SecurityGlobal
+const MAX_SCAN_CREDIT_COST = 10
 
 export class SecurityError extends Error {
   constructor(
@@ -82,14 +84,15 @@ export async function assertBurstAllowed(identity: RequestIdentity, action: "sca
   }
 }
 
-export async function consumeMonthlyScanQuota(identity: RequestIdentity): Promise<QuotaState> {
+export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits = 1): Promise<QuotaState> {
   const limit = readPositiveInt(process.env.VIBESHIELD_MONTHLY_SCAN_QUOTA, 20)
+  const cost = normalizeCreditCost(credits)
   const windowStart = getUtcMonthStart()
   const resetAt = getNextUtcMonthStart()
   const memoryKey = monthlyCounterKey(windowStart, identity.subjectHash)
 
   if (localRateLimitsDisabled()) {
-    const result = consumeMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime())
+    const result = consumeMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime(), cost)
     return {
       limit,
       remaining: result.remaining,
@@ -109,6 +112,7 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity): Promis
       p_subject_hash: identity.subjectHash,
       p_window_start: windowStart,
       p_limit: limit,
+      p_cost: cost,
     })
 
     if (!error) {
@@ -129,7 +133,7 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity): Promis
     if (persistentQuotaRequired()) throw persistentQuotaUnavailable()
   }
 
-  const result = consumeMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime())
+  const result = consumeMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime(), cost)
   if (!result.allowed) throw quotaExceeded(limit, resetAt)
 
   return {
@@ -222,7 +226,7 @@ export function rateLimitHeaders(quota: RateLimitHeaderState) {
 
 function quotaExceeded(limit: number, resetAt: Date) {
   return new SecurityError(
-    `Monthly scan quota reached. VibeShield allows ${limit} scans per user per UTC month.`,
+    `Monthly scan credit quota reached. VibeShield allows ${limit} credits per user per UTC month.`,
     429,
     "monthly_quota_reached",
     rateLimitHeaders({
@@ -243,7 +247,7 @@ function persistentQuotaRequired() {
 
 function persistentQuotaUnavailable() {
   return new SecurityError(
-    "Persistent monthly scan quota is not configured. Connect Supabase and run the migration before accepting production scans.",
+    "Persistent monthly scan credits are not configured. Connect Supabase and run the latest migration before accepting production scans.",
     503,
     "persistent_quota_unavailable",
   )
@@ -259,17 +263,18 @@ function localRateLimitsDisabled() {
   return true
 }
 
-function consumeMemoryCounter(counters: Map<string, Counter>, key: string, limit: number, resetAt: number) {
+function consumeMemoryCounter(counters: Map<string, Counter>, key: string, limit: number, resetAt: number, amount = 1) {
   const now = Date.now()
+  const cost = normalizeCreditCost(amount)
   const current = counters.get(key)
   const next = !current || current.resetAt <= now ? { count: 0, resetAt } : current
 
-  if (next.count >= limit) {
+  if (next.count + cost > limit) {
     counters.set(key, next)
     return { allowed: false, remaining: 0, resetAt: next.resetAt }
   }
 
-  next.count += 1
+  next.count += cost
   counters.set(key, next)
   return { allowed: true, remaining: Math.max(0, limit - next.count), resetAt: next.resetAt }
 }
@@ -315,4 +320,9 @@ function readPositiveInt(value: string | undefined, fallback: number) {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback
   return Math.floor(parsed)
+}
+
+function normalizeCreditCost(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return 1
+  return Math.min(Math.floor(value), MAX_SCAN_CREDIT_COST)
 }

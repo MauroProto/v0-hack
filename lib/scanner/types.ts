@@ -98,6 +98,7 @@ export interface ReportAiTriage {
   recommendedNextSteps: string[]
   model?: string
   provider?: string
+  reasoningEffort?: string
   reviewedFindings: number
 }
 

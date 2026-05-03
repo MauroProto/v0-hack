@@ -1,7 +1,7 @@
 import "server-only"
 
 import { generateText, Output } from "ai"
-import { resolveAiModel } from "@/lib/ai/model"
+import { resolveScanReviewModel } from "@/lib/ai/model"
 import { AiReviewSchema, type AiFindingCandidate, type AiReviewOutput } from "@/lib/ai/structuredSchemas"
 import { applyAiTriage } from "@/lib/ai/triage"
 import { auditEvent } from "@/lib/scanner/scan"
@@ -135,10 +135,11 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
     taskflowPhases: maxModeTaskflow?.phases.join(" -> "),
   })
 
-  const aiModel = resolveAiModel()
+  const aiModel = resolveScanReviewModel(config.mode)
   if (!aiModel) {
     return appendAudit(harnessedReport, "AI auditor skipped", "complete", {
-      reason: "no_server_side_model_configured",
+      reason: "anthropic_opus_not_configured",
+      mode: config.mode,
     })
   }
 
@@ -147,6 +148,7 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
       reason: "no_reviewable_context",
       provider: aiModel.provider,
       model: aiModel.modelId,
+      reasoningEffort: aiModel.reasoningEffort,
     })
   }
 
@@ -261,6 +263,7 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
         auditEvent("Run AI auditor model", "complete", {
           provider: aiModel.provider,
           model: aiModel.modelId,
+          reasoningEffort: aiModel.reasoningEffort,
           mode: config.mode,
           reviewedFiles: snippets.length,
           acceptedFindings: aiFindings.length,
@@ -279,6 +282,7 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
     return appendAudit(harnessedReport, "Run AI auditor model", "failed", {
       provider: aiModel.provider,
       model: aiModel.modelId,
+      reasoningEffort: aiModel.reasoningEffort,
       mode: config.mode,
       error: error instanceof Error ? error.message.slice(0, 240) : "AI review failed",
       durationMs: Date.now() - startedAt,

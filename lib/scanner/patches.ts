@@ -155,6 +155,60 @@ export function generateIssueBody(report: ScanReport, findingIds?: string[]) {
   return lines.join("\n")
 }
 
+export function generateFixesBody(report: ScanReport, findingIds?: string[]) {
+  const scopedReport = filterReportFindings(report, findingIds)
+  const findingsWithFixes = [...scopedReport.findings]
+    .filter((finding) => finding.explanation || finding.patch || finding.patchable)
+    .sort(compareFindingsForReport)
+
+  const lines = [
+    "# Security fixes",
+    "",
+    `**Project:** ${scopedReport.projectName}`,
+    `**Source:** ${scopedReport.sourceLabel}`,
+    `**Mode:** ${scopedReport.analysisMode}`,
+    `**Fixes included:** ${findingsWithFixes.length}`,
+    "",
+    "These fixes are review-required. Apply only the changes that match the repository's real architecture and rerun the scan after editing.",
+    "",
+  ]
+
+  if (findingsWithFixes.length === 0) {
+    lines.push("No generated fixes are available for the selected findings.")
+    return lines.join("\n")
+  }
+
+  findingsWithFixes.forEach((finding, index) => {
+    const patch = finding.patch ?? finding.explanation?.patch
+    const fixSteps = finding.explanation?.fixSteps?.filter(Boolean) ?? []
+
+    lines.push(
+      `## ${index + 1}. ${finding.title}`,
+      "",
+      `- **Severity:** ${finding.severity.toUpperCase()}`,
+      `- **File:** \`${formatFindingLocation(finding)}\``,
+      `- **Category:** \`${finding.category}\``,
+      `- **Why it matters:** ${finding.explanation?.impact ?? finding.description}`,
+      "",
+      "### Fix steps",
+      "",
+    )
+
+    const steps = fixSteps.length > 0 ? fixSteps : [finding.recommendation]
+    lines.push(...steps.map((step, stepIndex) => `${stepIndex + 1}. ${step}`), "")
+
+    if (patch) {
+      lines.push("### Patch preview", "", `**${patch.title}**`, "", patch.summary, "")
+      if (patch.before) lines.push("Before:", "```text", patch.before, "```", "")
+      if (patch.after) lines.push("After:", "```text", patch.after, "```", "")
+      if (patch.unifiedDiff) lines.push("```diff", patch.unifiedDiff, "```", "")
+    }
+  })
+
+  lines.push("_Generated from static security analysis._")
+  return lines.join("\n")
+}
+
 export function generateFullReportBody(report: ScanReport) {
   const activeFindings = report.findings.filter((finding) => !finding.suppressed)
   const suppressedFindings = report.findings.filter((finding) => finding.suppressed)

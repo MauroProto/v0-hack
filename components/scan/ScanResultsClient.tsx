@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode, WheelEvent } from "react"
 import { Icon } from "@/app/(app)/_components/icons"
-import { generateFullReportBody, generateIssueBody, getRiskLabel } from "@/lib/scanner/patches"
+import { generateFixesBody, generateFullReportBody, generateIssueBody, getRiskLabel } from "@/lib/scanner/patches"
 import type { AuditTrailEvent, FindingCategory, FindingKind, ScanFinding, ScanPullRequest, ScanReport, Severity } from "@/lib/scanner/types"
+import { normalizePublicQuota, type PublicQuotaState } from "@/lib/security/quota-view"
 import { getSafePullRequestFindingReason, isSafePullRequestFinding } from "@/lib/utils/prSafety"
 
 type SelectionMode = "issue" | "pull_request"
@@ -68,6 +69,12 @@ function errorMessageForAiGeneration(error: unknown) {
   return error instanceof Error ? error.message : "Could not generate AI explanations."
 }
 
+function dispatchQuotaUpdate(value: unknown) {
+  const quota = normalizePublicQuota(value)
+  if (!quota || typeof window === "undefined") return
+  window.dispatchEvent(new CustomEvent<PublicQuotaState>("vibeshield:quota", { detail: quota }))
+}
+
 export function ScanResultsClient({
   initialReport,
   githubConnected,
@@ -107,21 +114,42 @@ export function ScanResultsClient({
   const vulnerabilityCount = report.findingGroups?.vulnerabilities ?? activeFindings.filter((finding) => (finding.kind ?? inferredKind(finding)) === "vulnerability").length
   const riskBreakdown = report.riskBreakdown
   const hasPrFindings = prFindings.length > 0
+  const generatedFixesReady = useMemo(() => report.findings.some((finding) => finding.explanation), [report.findings])
 
   const generateFixes = async () => {
     setError(null)
+
+    if (generatedFixesReady) {
+      await copyGeneratedFixes(report)
+      return
+    }
+
     setLoadingAi(true)
     try {
       const { response, data } = await fetchReportJsonWithTimeout(`/api/scan/${report.id}/explain`, {
         method: "POST",
       }, 150_000)
       if (!response.ok) throw new Error(data.error ?? "Could not generate AI explanations.")
-      setReport(data.report)
+      const nextReport = data.report as ScanReport
+      setReport(nextReport)
+      dispatchQuotaUpdate(data.quota)
+      await copyGeneratedFixes(nextReport)
     } catch (aiError) {
       setError(errorMessageForAiGeneration(aiError))
     } finally {
       setLoadingAi(false)
     }
+  }
+
+  const copyGeneratedFixes = async (sourceReport: ScanReport) => {
+    const copiedToClipboard = await copyTextToClipboard(generateFixesBody(sourceReport))
+    if (!copiedToClipboard) {
+      setError("Fixes were generated, but your browser blocked automatic clipboard access. Press Copy fixes again and allow clipboard access if prompted.")
+      return
+    }
+
+    setCopied("fixes")
+    window.setTimeout(() => setCopied(null), 2500)
   }
 
   const openSelection = (mode: SelectionMode) => {
@@ -254,8 +282,15 @@ export function ScanResultsClient({
           <button className="btn btn-outline" onClick={copyFullReport} type="button">
             <Icon.doc style={{ width: 14, height: 14 }} /> <span>{copied === "report" ? "Copied" : "Copy full report"}</span>
           </button>
-          <button className="btn btn-outline" onClick={generateFixes} disabled={loadingAi} type="button">
-            <Icon.wand style={{ width: 14, height: 14 }} /> <span>{loadingAi ? "Generating..." : "Generate fixes"}</span>
+          <button
+            className="btn btn-outline"
+            onClick={generateFixes}
+            disabled={loadingAi}
+            title={generatedFixesReady ? "Copy the generated review-required fixes." : "Generate specific review-required fixes and copy them. Costs 1 credit."}
+            type="button"
+          >
+            <Icon.wand style={{ width: 14, height: 14 }} />
+            <span>{loadingAi ? "Generating..." : copied === "fixes" ? "Fixes copied" : generatedFixesReady ? "Copy fixes" : "Generate fixes · 1 credit"}</span>
           </button>
           {pullRequest ? (
             <a className="btn btn-accent" href={pullRequest.url} target="_blank" rel="noreferrer">

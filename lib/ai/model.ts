@@ -4,6 +4,8 @@ import { createAnthropic, type AnthropicLanguageModelOptions } from "@ai-sdk/ant
 import { createDeepSeek, type DeepSeekLanguageModelOptions } from "@ai-sdk/deepseek"
 import type { LanguageModel } from "ai"
 
+type ScanReviewMode = "rules" | "normal" | "max"
+
 type AiProvider = "gateway" | "anthropic" | "deepseek"
 
 export interface ResolvedAiModel {
@@ -11,6 +13,7 @@ export interface ResolvedAiModel {
   provider: AiProvider
   modelId: string
   model: LanguageModel
+  reasoningEffort?: string
   providerOptions?: {
     anthropic?: AnthropicLanguageModelOptions
     deepseek?: DeepSeekLanguageModelOptions
@@ -29,6 +32,8 @@ const DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-7"
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
 const DEFAULT_DEEPSEEK_REASONING_EFFORT = "high"
 const DEFAULT_ANTHROPIC_EFFORT = "xhigh"
+const DEFAULT_ANTHROPIC_NORMAL_EFFORT = "low"
+const DEFAULT_ANTHROPIC_MAX_EFFORT = "max"
 
 export function resolveAiModel(): ResolvedAiModel | null {
   const requestedProvider = normalizeProvider(process.env.VIBESHIELD_AI_PROVIDER)
@@ -44,6 +49,18 @@ export function resolvePullRequestReviewModel(): ResolvedAiModel | null {
   return resolveAnthropicModel({
     modelId: process.env.VIBESHIELD_PR_REVIEW_MODEL || process.env.VIBESHIELD_ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
     effort: readAnthropicEffort(process.env.VIBESHIELD_PR_REVIEW_EFFORT, "max"),
+  })
+}
+
+export function resolveScanReviewModel(mode: ScanReviewMode): ResolvedAiModel | null {
+  const isMax = mode === "max"
+  const effort = isMax
+    ? readAnthropicEffort(process.env.VIBESHIELD_ANTHROPIC_MAX_EFFORT, DEFAULT_ANTHROPIC_MAX_EFFORT)
+    : readAnthropicEffort(process.env.VIBESHIELD_ANTHROPIC_NORMAL_EFFORT, DEFAULT_ANTHROPIC_NORMAL_EFFORT)
+
+  return resolveAnthropicModel({
+    modelId: process.env.VIBESHIELD_SCAN_REVIEW_MODEL || process.env.VIBESHIELD_ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
+    effort,
   })
 }
 
@@ -80,16 +97,18 @@ function resolveAnthropicModel(options?: { modelId?: string; effort?: AnthropicL
   if (!apiKey) return null
 
   const modelId = options?.modelId || process.env.VIBESHIELD_ANTHROPIC_MODEL || process.env.VIBESHIELD_CLAUDE_MODEL || DEFAULT_ANTHROPIC_MODEL
+  const effort = options?.effort ?? readAnthropicEffort(process.env.VIBESHIELD_ANTHROPIC_EFFORT, DEFAULT_ANTHROPIC_EFFORT)
   const anthropic = createAnthropic({ apiKey })
   return {
     configured: true,
     provider: "anthropic",
     modelId,
     model: anthropic(modelId),
+    reasoningEffort: effort,
     providerOptions: {
       anthropic: {
         thinking: { type: "adaptive" },
-        effort: options?.effort ?? readAnthropicEffort(process.env.VIBESHIELD_ANTHROPIC_EFFORT, DEFAULT_ANTHROPIC_EFFORT),
+        effort,
       } satisfies AnthropicLanguageModelOptions,
     },
   }

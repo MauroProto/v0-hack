@@ -10,13 +10,12 @@ type Mode = "public" | "github"
 type AnalysisMode = "rules" | "normal" | "max"
 
 const ANALYSIS_MODES: Array<{
-  id: AnalysisMode
+  id: Exclude<AnalysisMode, "rules">
   label: string
   detail: string
 }> = [
-  { id: "rules", label: "Rules", detail: "no agent" },
-  { id: "normal", label: "Normal", detail: "rules + agent" },
-  { id: "max", label: "Max", detail: "deeper agent" },
+  { id: "normal", label: "Normal", detail: "Opus low reasoning · 1 credit" },
+  { id: "max", label: "Max", detail: "Opus max reasoning · 2 credits" },
 ]
 
 type GitHubRepo = {
@@ -47,6 +46,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null)
   const [scanLoading, setScanLoading] = useState(false)
   const [loginLoading, setLoginLoading] = useState(false)
+  const [sessionLoading, setSessionLoading] = useState(true)
   const [reposLoading, setReposLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pendingScanId, setPendingScanId] = useState<string | null>(null)
@@ -107,6 +107,9 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
       .catch(() => {
         if (!cancelled) setGitHubSession({ authenticated: false })
       })
+      .finally(() => {
+        if (!cancelled) setSessionLoading(false)
+      })
 
     return () => {
       cancelled = true
@@ -129,6 +132,11 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   }
 
   const startPublicScan = async () => {
+    if (!githubConnected) {
+      handleScanFailure("Login with GitHub before starting a security scan.")
+      return
+    }
+
     if (!githubUrl.trim()) {
       handleScanFailure("Paste a public GitHub repository URL first.")
       return
@@ -183,84 +191,98 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     setGitHubSession({ authenticated: false })
     setRepos([])
     setSelectedRepo(null)
+    setMode("public")
   }
 
   return (
     <div className="scan-live-shell">
       <section className="onboard-hero">
-        <span className="onboard-eyebrow">Evidence-first security review</span>
+        <span className="onboard-eyebrow">AI-built code needs real review</span>
         <h1 className="onboard-title">
-          Review an AI-built repo <em>before it becomes your risk.</em>
+          Turn a GitHub repo into <em>security evidence.</em>
         </h1>
         <p className="onboard-sub">
-          VibeShield reads GitHub repositories server-side, runs deterministic AppSec analyzers,
-          and uses AI to triage evidence, explain impact and prepare review-required fixes.
+          VibeShield scans AI-built projects without running their code, separates real risk from
+          noisy findings, and uses AI to explain evidence-backed issues before you ship or open a PR.
         </p>
       </section>
 
       <div className="surface scan-card real-scan-card">
-        <div className="scan-tabs">
-          <button className="scan-tab" data-active={mode === "public"} onClick={() => setMode("public")} type="button">
-            <Icon.branch /> Public repo URL
-          </button>
-          <button className="scan-tab" data-active={mode === "github"} onClick={() => setMode("github")} type="button">
-            <Icon.branch /> GitHub login
-          </button>
-          <div style={{ flex: 1 }} />
-          <div className="scan-tab scan-tab-static">
-            <Icon.lock /> No ZIP uploads
+        {sessionLoading ? (
+          <div className="scan-auth-gate">
+            <div className="auth-gate-icon">
+              <Icon.branch style={{ width: 20, height: 20 }} />
+            </div>
+            <div>
+              <b>Checking GitHub session</b>
+              <span>VibeShield ties scans, quota and report history to your account.</span>
+            </div>
           </div>
-        </div>
-
-        <div className="scan-body">
-          <fieldset className="analysis-mode-field" aria-label="Analysis depth">
-            <legend>Mode</legend>
-            <div className="analysis-mode-grid">
-              {ANALYSIS_MODES.map((option) => (
-                <button
-                  className="analysis-mode-choice"
-                  data-active={analysisMode === option.id}
-                  key={option.id}
-                  type="button"
-                  onClick={() => setAnalysisMode(option.id)}
-                >
-                  <b>{option.label}</b>
-                  <span>{option.detail}</span>
-                </button>
-              ))}
+        ) : !githubConnected ? (
+          <div className="scan-auth-gate">
+            <div className="auth-gate-icon">
+              <Icon.branch style={{ width: 20, height: 20 }} />
             </div>
-          </fieldset>
-
-          {mode === "public" ? (
-            <div className="scan-input real-github-input">
-              <input
-                value={githubUrl}
-                onChange={(event) => setGithubUrl(event.target.value)}
-                placeholder="https://github.com/owner/repo"
-              />
-              <span className="hint mono">server-side</span>
+            <div>
+              <b>Login with GitHub to start</b>
+              <span>Scans are private to your account. After login, you can paste a public repo URL or choose one of your repositories.</span>
             </div>
-          ) : (
-            <div className="github-repo-panel">
-              <div className="github-repo-head">
-                <div>
-                  <b>{githubSession.name ?? githubSession.login ?? "Connect GitHub"}</b>
-                  <span>{githubConnected ? "Choose a repository from your GitHub account." : "Login lists repositories through GitHub API metadata."}</span>
+            <button className="btn btn-accent btn-lg" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
+              <Icon.branch style={{ width: 14, height: 14 }} />
+              {loginLoading ? "Redirecting..." : "Login with GitHub"}
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="scan-tabs">
+              <button className="scan-tab" data-active={mode === "public"} onClick={() => setMode("public")} type="button">
+                <Icon.branch /> Public repo URL
+              </button>
+              <button className="scan-tab" data-active={mode === "github"} onClick={() => setMode("github")} type="button">
+                <Icon.branch /> Your repositories
+              </button>
+            </div>
+
+            <div className="scan-body">
+              <fieldset className="analysis-mode-field" aria-label="Analysis depth">
+                <legend>Mode</legend>
+                <div className="analysis-mode-grid">
+                  {ANALYSIS_MODES.map((option) => (
+                    <button
+                      className="analysis-mode-choice"
+                      data-active={analysisMode === option.id}
+                      key={option.id}
+                      type="button"
+                      onClick={() => setAnalysisMode(option.id)}
+                    >
+                      <b>{option.label}</b>
+                      <span>{option.detail}</span>
+                    </button>
+                  ))}
                 </div>
-                {githubConnected ? (
-                  <button className="btn btn-outline" type="button" onClick={signOut}>
-                    Sign out
-                  </button>
-                ) : (
-                  <button className="btn btn-accent" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
-                    <Icon.branch style={{ width: 14, height: 14 }} />
-                    {loginLoading ? "Redirecting..." : "Login with GitHub"}
-                  </button>
-                )}
-              </div>
+              </fieldset>
 
-              {githubConnected && (
-                <>
+              {mode === "public" ? (
+                <div className="scan-input real-github-input">
+                  <input
+                    value={githubUrl}
+                    onChange={(event) => setGithubUrl(event.target.value)}
+                    placeholder="https://github.com/owner/repo"
+                  />
+                  <span className="hint mono">server-side</span>
+                </div>
+              ) : (
+                <div className="github-repo-panel">
+                  <div className="github-repo-head">
+                    <div>
+                      <b>{githubSession.name ?? githubSession.login ?? "GitHub account"}</b>
+                      <span>Choose a repository from your GitHub account.</span>
+                    </div>
+                    <button className="btn btn-outline" type="button" onClick={signOut}>
+                      Sign out
+                    </button>
+                  </div>
+
                   <div className="repo-toolbar">
                     <button
                       className="btn btn-outline"
@@ -289,45 +311,44 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
                       </button>
                     ))}
                   </div>
-                </>
+                </div>
               )}
+
+              {error && (
+                <div className="scan-error" role="alert">
+                  <Icon.focus style={{ width: 14, height: 14 }} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {scanLoading && (
+                <ScanProgress
+                  key={scanKey}
+                  done={scanFinished}
+                />
+              )}
+
+              <div className="scan-actions-row">
+                {mode === "public" ? (
+                  <button className="btn btn-outline" onClick={startPublicScan} disabled={scanLoading} type="button">
+                    <Icon.bolt style={{ width: 14, height: 14 }} />
+                    {scanLoading ? "Scanning..." : "Scan public repository"}
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => selectedRepo && startRepoScan(selectedRepo)}
+                    disabled={scanLoading || !selectedRepo}
+                    type="button"
+                  >
+                    <Icon.bolt style={{ width: 14, height: 14 }} />
+                    {scanLoading ? "Scanning..." : "Scan selected repository"}
+                  </button>
+                )}
+              </div>
             </div>
-          )}
-
-          {error && (
-            <div className="scan-error" role="alert">
-              <Icon.focus style={{ width: 14, height: 14 }} />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {scanLoading && (
-            <ScanProgress
-              key={scanKey}
-              done={scanFinished}
-            />
-          )}
-
-          <div className="scan-actions-row">
-            {mode === "public" ? (
-              <button className="btn btn-outline" onClick={startPublicScan} disabled={scanLoading} type="button">
-                <Icon.bolt style={{ width: 14, height: 14 }} />
-                {scanLoading ? "Scanning..." : "Scan public repository"}
-              </button>
-            ) : (
-              <button
-                className="btn btn-outline"
-                onClick={() => selectedRepo && startRepoScan(selectedRepo)}
-                disabled={scanLoading || !selectedRepo}
-                type="button"
-              >
-                <Icon.bolt style={{ width: 14, height: 14 }} />
-                {scanLoading ? "Scanning..." : "Scan selected repository"}
-              </button>
-            )}
-          </div>
-
-        </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -390,7 +411,7 @@ function errorMessageForScan(error: unknown, mode: AnalysisMode) {
   if (error instanceof Error && error.name === "AbortError") {
     return mode === "max"
       ? "Max scan is taking longer than expected. Try Normal mode for this repository, or retry Max after narrowing the project."
-      : "Scan is taking longer than expected. Retry in a moment or use Rules mode for a faster deterministic pass."
+      : "Scan is taking longer than expected. Retry in a moment or try Max for deeper review after this scan finishes."
   }
 
   return error instanceof Error ? error.message : "Scan failed."

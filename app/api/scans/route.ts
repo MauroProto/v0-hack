@@ -10,13 +10,15 @@ export const dynamic = "force-dynamic"
 export async function GET(request: Request) {
   try {
     const identity = await getRequestIdentity(request)
+    const shouldListReports = identity.kind !== "anonymous"
     const [reports, quota] = await Promise.all([
-      listScanReports(identity.subjectHash),
+      shouldListReports ? listScanReports(identity.subjectHash) : Promise.resolve([]),
       peekMonthlyScanQuota(identity),
     ])
 
     return NextResponse.json({
       reports: reports.map(publicReport),
+      authenticated: shouldListReports,
       quota,
     }, { headers: apiHeaders(rateLimitHeaders(quota)) })
   } catch (error) {
