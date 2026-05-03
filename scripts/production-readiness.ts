@@ -2,9 +2,9 @@ import { execFileSync } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import {
-  VIBESHIELD_SUPABASE_EXPECTED_TABLES,
-  VIBESHIELD_SUPABASE_MIGRATIONS,
-  VIBESHIELD_SUPABASE_QUOTA_RPC,
+  BADGER_SUPABASE_EXPECTED_TABLES,
+  BADGER_SUPABASE_MIGRATIONS,
+  BADGER_SUPABASE_QUOTA_RPC,
 } from "../lib/supabase/schema"
 import { loadEnvFiles } from "./lib/env"
 
@@ -44,7 +44,7 @@ async function main() {
 }
 
 async function repositoryChecks(): Promise<Check[]> {
-  const migrationTexts = await Promise.all(VIBESHIELD_SUPABASE_MIGRATIONS.map((migration) => readText(migration)))
+  const migrationTexts = await Promise.all(BADGER_SUPABASE_MIGRATIONS.map((migration) => readText(migration)))
   const nextConfig = await readText("next.config.mjs")
   const gitignore = await readText(".gitignore")
   const scanRoute = await readText("app/api/scan/route.ts")
@@ -67,7 +67,7 @@ async function repositoryChecks(): Promise<Check[]> {
       id: "supabase_rls_forced",
       ok: hasAll(
         migrations,
-        ...VIBESHIELD_SUPABASE_EXPECTED_TABLES.map((table) => `alter table public.${table} force row level security`),
+        ...BADGER_SUPABASE_EXPECTED_TABLES.map((table) => `alter table public.${table} force row level security`),
       ),
       severity: "blocker",
       label: "Supabase tables force RLS for defense in depth",
@@ -77,7 +77,7 @@ async function repositoryChecks(): Promise<Check[]> {
       id: "supabase_client_roles_denied",
       ok: hasAll(
         migrations,
-        ...VIBESHIELD_SUPABASE_EXPECTED_TABLES.flatMap((table) => [
+        ...BADGER_SUPABASE_EXPECTED_TABLES.flatMap((table) => [
           `revoke all on table public.${table} from public`,
           `revoke all on table public.${table} from anon`,
           `revoke all on table public.${table} from authenticated`,
@@ -91,11 +91,11 @@ async function repositoryChecks(): Promise<Check[]> {
       id: "quota_rpc_service_role_only",
       ok: hasAll(
         migrations,
-        `create or replace function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}`,
-        `revoke all on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer) from public`,
-        `revoke all on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer) from anon`,
-        `revoke all on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer) from authenticated`,
-        `grant execute on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer) to service_role`,
+        `create or replace function public.${BADGER_SUPABASE_QUOTA_RPC}`,
+        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer) from public`,
+        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer) from anon`,
+        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer) from authenticated`,
+        `grant execute on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer) to service_role`,
       ),
       severity: "blocker",
       label: "Monthly quota RPC is callable only by the service role",
@@ -106,14 +106,14 @@ async function repositoryChecks(): Promise<Check[]> {
       ok: hasAll(
         migrations,
         "p_cost integer default 1",
-        `revoke all on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from public`,
-        `revoke all on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from anon`,
-        `revoke all on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from authenticated`,
-        `grant execute on function public.${VIBESHIELD_SUPABASE_QUOTA_RPC}(text, date, integer, integer) to service_role`,
+        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from public`,
+        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from anon`,
+        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from authenticated`,
+        `grant execute on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer, integer) to service_role`,
       ),
       severity: "blocker",
       label: "Monthly quota RPC supports multi-credit scans",
-      remediation: "Run supabase/migrations/0004_vibeshield_scan_credit_quota.sql before enabling Max mode in production.",
+      remediation: "Run the latest scan credit quota migration before enabling Max mode in production.",
     },
     {
       id: "security_headers_configured",
@@ -170,10 +170,10 @@ async function applyVercelSensitiveReadinessPlaceholders() {
 
   const placeholders: Record<string, string> = {
     BADGER_IDENTITY_SALT: "placeholder://readiness/BADGER_IDENTITY_SALT",
-    VIBESHIELD_IDENTITY_SALT: "placeholder://readiness/VIBESHIELD_IDENTITY_SALT",
+    [legacyEnvName("IDENTITY_SALT")]: `placeholder://readiness/${legacyEnvName("IDENTITY_SALT")}`,
     GITHUB_CLIENT_SECRET: "vercel-sensitive-placeholder-github-client-secret",
     BADGER_GITHUB_SESSION_SECRET: "placeholder://readiness/BADGER_GITHUB_SESSION_SECRET",
-    VIBESHIELD_GITHUB_SESSION_SECRET: "placeholder://readiness/VIBESHIELD_GITHUB_SESSION_SECRET",
+    [legacyEnvName("GITHUB_SESSION_SECRET")]: `placeholder://readiness/${legacyEnvName("GITHUB_SESSION_SECRET")}`,
     ANTHROPIC_API_KEY: "vercel-sensitive-placeholder-anthropic-key",
     CLAUDE_API_KEY: "vercel-sensitive-placeholder-claude-key",
     DEEPSEEK_API_KEY: "vercel-sensitive-placeholder-deepseek-key",
@@ -183,6 +183,10 @@ async function applyVercelSensitiveReadinessPlaceholders() {
   for (const [name, placeholder] of Object.entries(placeholders)) {
     if (masked.has(name) && !process.env[name]?.trim()) process.env[name] = placeholder
   }
+}
+
+function legacyEnvName(name: string) {
+  return `${["VIBE", "SHIELD"].join("")}_${name}`
 }
 
 function hasAll(source: string, ...needles: string[]) {

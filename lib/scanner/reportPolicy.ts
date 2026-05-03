@@ -52,7 +52,7 @@ export function baselineIdFor(sourceLabel: string, ownerHash?: string) {
 function parseBadgerIgnore(files: ProjectFile[]): SuppressionRule[] {
   const ignore = files.find((file) => {
     const normalized = normalizePath(file.path)
-    return normalized === ".badgerignore" || normalized === ".vibeshieldignore"
+    return normalized === ".badgerignore" || normalized === ".badgerignore"
   })
   if (!ignore) return []
 

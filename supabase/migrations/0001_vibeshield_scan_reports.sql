@@ -82,7 +82,7 @@ create index if not exists vibeshield_scan_reports_source_type_idx
   on public.vibeshield_scan_reports (source_type);
 
 comment on table public.vibeshield_scan_reports is
-  'VibeShield MVP scan reports. RLS is enabled with deny-all client policies; Next.js route handlers access it with the Supabase service role key only.';
+  'Badger MVP scan reports. RLS is enabled with deny-all client policies; Next.js route handlers access it with the Supabase service role key only.';
 
 create table if not exists public.vibeshield_scan_usage (
   subject_hash text not null,

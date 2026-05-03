@@ -7,7 +7,7 @@ Built for the **Zero to Action Hackathon by Berset**.
 Production demo: [https://badger-security.vercel.app](https://badger-security.vercel.app)
 
 <p align="center">
-  <img src="public/readme/scan.png" alt="Badger scan workspace" width="100%" />
+  <img src="public/readme/landing.png" alt="Badger landing page" width="100%" />
 </p>
 
 ## Why It Exists
@@ -32,7 +32,7 @@ Badger is designed for that workflow. It keeps the scan static and bounded, avoi
 ## Product Views
 
 <p align="center">
-  <img src="public/readme/pulse.png" alt="Badger scan report view" width="100%" />
+  <img src="public/readme/scan.png" alt="Badger scan workspace" width="100%" />
 </p>
 
 ## Scan Modes
@@ -149,15 +149,10 @@ Other supported providers include Vercel AI Gateway and DeepSeek. If no provider
 Run the migrations in order:
 
 ```txt
-supabase/migrations/0001_vibeshield_scan_reports.sql
-supabase/migrations/0002_vibeshield_jobs_baselines_events.sql
-supabase/migrations/0003_vibeshield_revoke_public_table_access.sql
-supabase/migrations/0004_vibeshield_scan_credit_quota.sql
+supabase/migrations/*.sql
 ```
 
 The production schema stores scan reports, durable quota usage, queued jobs, baselines, and scan events. Direct reads from `anon` and `authenticated` are revoked; application access goes through trusted Next.js route handlers using the service role key.
-
-The Supabase table and migration names still use the original `vibeshield_*` prefix for compatibility with existing deployments. New product-facing configuration should use `BADGER_*`; legacy `VIBESHIELD_*` variables remain accepted.
 
 ## Local Development
 
@@ -168,7 +163,7 @@ pnpm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Local development can use the git-ignored `.vibeshield/scan-reports.json` file store. For repeated public GitHub scans, set `BADGER_GITHUB_TOKEN` in `.env.local` to avoid anonymous GitHub API limits.
+Local development can use the git-ignored `.badger/scan-reports.json` file store. For repeated public GitHub scans, set `BADGER_GITHUB_TOKEN` in `.env.local` to avoid anonymous GitHub API limits.
 
 ## Verification
 

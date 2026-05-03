@@ -3,9 +3,11 @@
 import Link from "next/link"
 import Image from "next/image"
 import { useEffect, useRef, useState } from "react"
+import { useUser } from "@clerk/nextjs"
 import { usePathname, useRouter } from "next/navigation"
 import type { ScanReport } from "@/lib/scanner/types"
 import { publishGitHubSessionChange, subscribeGitHubSessionChange } from "@/lib/client/github-session-events"
+import { type GuestSession, useGuestSession } from "@/lib/client/guest-session"
 import { deriveQuotaDisplay, normalizePublicQuota, type PublicQuotaState } from "@/lib/security/quota-view"
 import { Icon } from "./icons"
 
@@ -40,14 +42,24 @@ const PRIMARY: Item[] = [
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname() || ""
   const router = useRouter()
+  const clerk = useUser()
   const [githubSession, setGitHubSession] = useState<GitHubAuthSession>({ authenticated: false })
+  const guestSession = useGuestSession()
   const [reports, setReports] = useState<ScanReport[]>([])
   const [quota, setQuota] = useState<PublicQuotaState | null>(null)
   const [historyState, setHistoryState] = useState<"idle" | "loading" | "error">("loading")
   const [accountDialogOpen, setAccountDialogOpen] = useState(false)
   const [accountAction, setAccountAction] = useState<"signout" | "disconnect" | null>(null)
   const [accountError, setAccountError] = useState<string | null>(null)
-  const profile = getGitHubProfile(githubSession)
+  const profile = getProfile(githubSession, guestSession, {
+    authenticated: clerk.isLoaded && Boolean(clerk.isSignedIn),
+    name:
+      clerk.user?.fullName ||
+      clerk.user?.username ||
+      clerk.user?.primaryEmailAddress?.emailAddress ||
+      null,
+    username: clerk.user?.username || null,
+  })
   const accountBusy = accountAction !== null
   const sessionVersion = useRef(0)
 
@@ -110,10 +122,10 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     }
 
     window.addEventListener("badger:quota", handleQuotaUpdate)
-    window.addEventListener("vibeshield:quota", handleQuotaUpdate)
+    window.addEventListener("badger:quota", handleQuotaUpdate)
     return () => {
       window.removeEventListener("badger:quota", handleQuotaUpdate)
-      window.removeEventListener("vibeshield:quota", handleQuotaUpdate)
+      window.removeEventListener("badger:quota", handleQuotaUpdate)
     }
   }, [])
 
@@ -228,7 +240,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                 height={30}
               />
             ) : (
-              <div className="avatar">{profile.initials}</div>
+              <div
+                className="avatar"
+                style={profile.gradient ? { background: profile.gradient } : undefined}
+              >
+                {profile.initials}
+              </div>
             )}
             <div className="info">
               <b>{profile.name}</b>
@@ -278,7 +295,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   height={34}
                 />
               ) : (
-                <div className="avatar">{profile.initials}</div>
+                <div
+                  className="avatar"
+                  style={profile.gradient ? { background: profile.gradient } : undefined}
+                >
+                  {profile.initials}
+                </div>
               )}
               <div>
                 <b>{profile.name}</b>
@@ -414,24 +436,56 @@ function formatShortDate(value: string) {
   }).format(new Date(value))
 }
 
-function getGitHubProfile(session: GitHubAuthSession) {
-  if (!session.authenticated) {
+function getProfile(
+  session: GitHubAuthSession,
+  guest: GuestSession | null,
+  clerk: {
+    authenticated: boolean
+    name: string | null
+    username: string | null
+  },
+) {
+  if (session.authenticated) {
+    const name = session.name || session.login || "GitHub user"
+    const username = session.login
+
     return {
-      name: "Public mode",
-      subtitle: "paste a public repo",
-      initials: "GH",
-      avatarUrl: null,
+      name,
+      subtitle: username ? `@${username}` : "GitHub connected",
+      initials: initialsForName(name),
+      avatarUrl: stringValue(session.avatarUrl),
+      gradient: null,
     }
   }
 
-  const name = session.name || session.login || "GitHub user"
-  const username = session.login
+  if (clerk.authenticated) {
+    const name = clerk.name || "Badger account"
+
+    return {
+      name,
+      subtitle: clerk.username ? `@${clerk.username} · signed in` : "signed in",
+      initials: initialsForName(name),
+      avatarUrl: null,
+      gradient: null,
+    }
+  }
+
+  if (guest) {
+    return {
+      name: guest.name,
+      subtitle: `@${guest.handle} · guest mode`,
+      initials: guest.initials,
+      avatarUrl: null,
+      gradient: `linear-gradient(135deg, ${guest.colorA}, ${guest.colorB})`,
+    }
+  }
 
   return {
-    name,
-    subtitle: username ? `@${username}` : "GitHub connected",
-    initials: initialsForName(name),
-    avatarUrl: stringValue(session.avatarUrl),
+    name: "Public mode",
+    subtitle: "paste a public repo",
+    initials: "GH",
+    avatarUrl: null,
+    gradient: null,
   }
 }
 

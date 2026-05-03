@@ -126,7 +126,7 @@ function isAuthorizedWorker(request: Request) {
 
   const authorization = request.headers.get("authorization") ?? ""
   const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
-  const provided = bearer || request.headers.get("x-badger-worker-secret")?.trim() || request.headers.get("x-vibeshield-worker-secret")?.trim()
+  const provided = bearer || request.headers.get("x-badger-worker-secret")?.trim()
   if (!provided) return false
 
   return safeEqual(provided, expected)

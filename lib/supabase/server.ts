@@ -4,7 +4,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import { getSupabaseServiceKey, getSupabaseUrl, isSupabaseConfigured } from "./config"
 
 type SupabaseGlobal = typeof globalThis & {
-  __vibeshieldSupabaseService?: SupabaseClient
+  __badgerSupabaseService?: SupabaseClient
 }
 
 const supabaseGlobal = globalThis as SupabaseGlobal
@@ -17,8 +17,8 @@ export function getSupabaseServiceClient() {
 
   if (!url || !serviceKey) return null
 
-  if (!supabaseGlobal.__vibeshieldSupabaseService) {
-    supabaseGlobal.__vibeshieldSupabaseService = createClient(url, serviceKey, {
+  if (!supabaseGlobal.__badgerSupabaseService) {
+    supabaseGlobal.__badgerSupabaseService = createClient(url, serviceKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
@@ -31,5 +31,5 @@ export function getSupabaseServiceClient() {
     })
   }
 
-  return supabaseGlobal.__vibeshieldSupabaseService
+  return supabaseGlobal.__badgerSupabaseService
 }

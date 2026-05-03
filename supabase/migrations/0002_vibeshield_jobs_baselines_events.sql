@@ -91,7 +91,7 @@ create index if not exists vibeshield_scan_jobs_owner_hash_created_at_idx
   on public.vibeshield_scan_jobs (owner_hash, created_at desc);
 
 comment on table public.vibeshield_scan_jobs is
-  'Durable VibeShield scan job queue. Client roles are denied by RLS; route handlers and workers use the Supabase service role only.';
+  'Durable Badger scan job queue. Client roles are denied by RLS; route handlers and workers use the Supabase service role only.';
 
 create table if not exists public.vibeshield_repo_baselines (
   id text primary key,
@@ -236,4 +236,4 @@ create index if not exists vibeshield_scan_events_job_created_at_idx
   on public.vibeshield_scan_events (job_id, created_at asc);
 
 comment on table public.vibeshield_scan_events is
-  'Structured VibeShield scan lifecycle events. Events must be written server-side only.';
+  'Structured Badger scan lifecycle events. Events must be written server-side only.';

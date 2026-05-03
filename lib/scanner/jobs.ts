@@ -1,14 +1,14 @@
 import { badgerEnv } from "@/lib/config/env"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
+import { BADGER_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import type { ScanEvent, ScanJob, ScanMode, ScanRepositoryRef } from "./types"
 
-const JOBS_TABLE = VIBESHIELD_SUPABASE_TABLES.jobs
-const EVENTS_TABLE = VIBESHIELD_SUPABASE_TABLES.events
+const JOBS_TABLE = BADGER_SUPABASE_TABLES.jobs
+const EVENTS_TABLE = BADGER_SUPABASE_TABLES.events
 
 type JobGlobal = typeof globalThis & {
-  __vibeshieldScanJobs?: Map<string, ScanJob>
-  __vibeshieldScanEvents?: ScanEvent[]
+  __badgerScanJobs?: Map<string, ScanJob>
+  __badgerScanEvents?: ScanEvent[]
 }
 
 type CreateScanJobInput = {
@@ -226,13 +226,13 @@ async function persistJob(job: ScanJob) {
 }
 
 function getJobStore() {
-  jobGlobal.__vibeshieldScanJobs ??= new Map<string, ScanJob>()
-  return jobGlobal.__vibeshieldScanJobs
+  jobGlobal.__badgerScanJobs ??= new Map<string, ScanJob>()
+  return jobGlobal.__badgerScanJobs
 }
 
 function getEventStore() {
-  jobGlobal.__vibeshieldScanEvents ??= []
-  return jobGlobal.__vibeshieldScanEvents
+  jobGlobal.__badgerScanEvents ??= []
+  return jobGlobal.__badgerScanEvents
 }
 
 function sortEvents(a: ScanEvent, b: ScanEvent) {

@@ -18,7 +18,8 @@ next.user-config.*
 # Common ignores
 node_modules
 .next/
-.vibeshield/
+.badger/
+.vibe*/
 supabase/.temp/
 tsconfig.tsbuildinfo
 .DS_Store

@@ -1,7 +1,7 @@
 import "server-only"
 
 import { badgerEnv } from "@/lib/config/env"
-import { VIBESHIELD_SUPABASE_QUOTA_RPC, VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
+import { BADGER_SUPABASE_QUOTA_RPC, BADGER_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
 import type { RequestIdentity } from "./request"
 export { scanCreditCostForMode, type ScanCreditMode } from "./scanCredits"
@@ -12,8 +12,8 @@ type Counter = {
 }
 
 type SecurityGlobal = typeof globalThis & {
-  __vibeshieldBurstCounters?: Map<string, Counter>
-  __vibeshieldMonthlyCounters?: Map<string, Counter>
+  __badgerBurstCounters?: Map<string, Counter>
+  __badgerMonthlyCounters?: Map<string, Counter>
 }
 
 export type QuotaState = {
@@ -110,7 +110,7 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits
 
   if (supabase) {
     const { data, error } = await supabase.rpc(
-      VIBESHIELD_SUPABASE_QUOTA_RPC,
+      BADGER_SUPABASE_QUOTA_RPC,
       quotaRpcArgs({
         subjectHash: identity.subjectHash,
         windowStart,
@@ -172,7 +172,7 @@ export async function peekMonthlyScanQuota(identity: RequestIdentity): Promise<Q
 
   if (supabase) {
     const { data, error } = await supabase
-      .from(VIBESHIELD_SUPABASE_TABLES.usage)
+      .from(BADGER_SUPABASE_TABLES.usage)
       .select("scan_count")
       .eq("subject_hash", identity.subjectHash)
       .eq("window_start", windowStart)
@@ -297,13 +297,13 @@ function peekMemoryCounter(counters: Map<string, Counter>, key: string, limit: n
 }
 
 function getBurstCounters() {
-  securityGlobal.__vibeshieldBurstCounters ??= new Map<string, Counter>()
-  return securityGlobal.__vibeshieldBurstCounters
+  securityGlobal.__badgerBurstCounters ??= new Map<string, Counter>()
+  return securityGlobal.__badgerBurstCounters
 }
 
 function getMonthlyCounters() {
-  securityGlobal.__vibeshieldMonthlyCounters ??= new Map<string, Counter>()
-  return securityGlobal.__vibeshieldMonthlyCounters
+  securityGlobal.__badgerMonthlyCounters ??= new Map<string, Counter>()
+  return securityGlobal.__badgerMonthlyCounters
 }
 
 function getUtcMonthStart() {

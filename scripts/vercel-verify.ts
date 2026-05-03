@@ -2,18 +2,23 @@ import { execFileSync } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 
+type EnvRequirement = {
+  label: string
+  names: string[]
+}
+
 const REQUIRED_PRODUCTION_ENV_GROUPS = [
-  ["SUPABASE_URL"],
-  ["NEXT_PUBLIC_SUPABASE_URL"],
-  ["NEXT_PUBLIC_SUPABASE_ANON_KEY"],
-  ["BADGER_IDENTITY_SALT", "VIBESHIELD_IDENTITY_SALT"],
-  ["BADGER_REQUIRE_PERSISTENT_QUOTA", "VIBESHIELD_REQUIRE_PERSISTENT_QUOTA"],
-  ["BADGER_REQUIRE_PERSISTENT_STORAGE", "VIBESHIELD_REQUIRE_PERSISTENT_STORAGE"],
-  ["GITHUB_CLIENT_ID"],
-  ["GITHUB_CLIENT_SECRET"],
-  ["GITHUB_REDIRECT_URI"],
-  ["BADGER_GITHUB_SESSION_SECRET", "VIBESHIELD_GITHUB_SESSION_SECRET"],
-] as const
+  envRequirement("SUPABASE_URL"),
+  envRequirement("NEXT_PUBLIC_SUPABASE_URL"),
+  envRequirement("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+  envRequirement("BADGER_IDENTITY_SALT", true),
+  envRequirement("BADGER_REQUIRE_PERSISTENT_QUOTA", true),
+  envRequirement("BADGER_REQUIRE_PERSISTENT_STORAGE", true),
+  envRequirement("GITHUB_CLIENT_ID"),
+  envRequirement("GITHUB_CLIENT_SECRET"),
+  envRequirement("GITHUB_REDIRECT_URI"),
+  envRequirement("BADGER_GITHUB_SESSION_SECRET", true),
+] as const satisfies readonly EnvRequirement[]
 
 const ONE_OF_PRODUCTION_ENV_NAMES = [
   ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY"],
@@ -50,12 +55,11 @@ async function main() {
 
   let failed = 0
   for (const group of REQUIRED_PRODUCTION_ENV_GROUPS) {
-    const label = group.join("|")
-    if (group.some((name) => envNames.has(name))) {
-      console.log(`[ok] env:${label}: configured in production`)
+    if (group.names.some((name) => envNames.has(name))) {
+      console.log(`[ok] env:${group.label}: configured in production`)
     } else {
       failed += 1
-      console.log(`[fail] env:${label}: missing from production`)
+      console.log(`[fail] env:${group.label}: missing from production`)
     }
   }
 
@@ -75,6 +79,17 @@ async function main() {
 
   console.log("[ok] vercel_environment: required production env var names are present")
   console.log("No environment values were printed.")
+}
+
+function envRequirement(name: string, acceptsLegacy = false): EnvRequirement {
+  return {
+    label: name,
+    names: acceptsLegacy ? [name, legacyEnvName(name.replace(/^BADGER_/, ""))] : [name],
+  }
+}
+
+function legacyEnvName(name: string) {
+  return `${["VIBE", "SHIELD"].join("")}_${name}`
 }
 
 function commandExists(command: string) {

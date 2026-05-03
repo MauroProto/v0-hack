@@ -2,18 +2,18 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { badgerEnv } from "@/lib/config/env"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
+import { BADGER_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import type { ScanBaseline, ScanReport } from "./types"
 import { baselineIdFor } from "./reportPolicy"
 
-const TABLE = VIBESHIELD_SUPABASE_TABLES.reports
-const BASELINES_TABLE = VIBESHIELD_SUPABASE_TABLES.baselines
+const TABLE = BADGER_SUPABASE_TABLES.reports
+const BASELINES_TABLE = BADGER_SUPABASE_TABLES.baselines
 
 type StoreGlobal = typeof globalThis & {
-  __vibeshieldScanStore?: Map<string, ScanReport>
-  __vibeshieldBaselineStore?: Map<string, ScanBaseline>
-  __vibeshieldScanStoreLoaded?: boolean
-  __vibeshieldScanStoreLoadPromise?: Promise<void>
+  __badgerScanStore?: Map<string, ScanReport>
+  __badgerBaselineStore?: Map<string, ScanBaseline>
+  __badgerScanStoreLoaded?: boolean
+  __badgerScanStoreLoadPromise?: Promise<void>
 }
 
 type ScanReportRow = {
@@ -41,19 +41,19 @@ type ScanBaselineRow = {
 const storeGlobal = globalThis as StoreGlobal
 
 function getMemoryStore() {
-  if (!storeGlobal.__vibeshieldScanStore) {
-    storeGlobal.__vibeshieldScanStore = new Map<string, ScanReport>()
+  if (!storeGlobal.__badgerScanStore) {
+    storeGlobal.__badgerScanStore = new Map<string, ScanReport>()
   }
 
-  return storeGlobal.__vibeshieldScanStore
+  return storeGlobal.__badgerScanStore
 }
 
 function getBaselineStore() {
-  if (!storeGlobal.__vibeshieldBaselineStore) {
-    storeGlobal.__vibeshieldBaselineStore = new Map<string, ScanBaseline>()
+  if (!storeGlobal.__badgerBaselineStore) {
+    storeGlobal.__badgerBaselineStore = new Map<string, ScanBaseline>()
   }
 
-  return storeGlobal.__vibeshieldBaselineStore
+  return storeGlobal.__badgerBaselineStore
 }
 
 export function getStorageMode() {
@@ -257,14 +257,14 @@ function sortReports(reports: ScanReport[]) {
 
 async function ensureLocalStoreLoaded() {
   if (!localFileStoreEnabled()) return
-  if (storeGlobal.__vibeshieldScanStoreLoaded) return
-  if (storeGlobal.__vibeshieldScanStoreLoadPromise) {
-    await storeGlobal.__vibeshieldScanStoreLoadPromise
+  if (storeGlobal.__badgerScanStoreLoaded) return
+  if (storeGlobal.__badgerScanStoreLoadPromise) {
+    await storeGlobal.__badgerScanStoreLoadPromise
     return
   }
 
-  storeGlobal.__vibeshieldScanStoreLoadPromise = loadLocalStore()
-  await storeGlobal.__vibeshieldScanStoreLoadPromise
+  storeGlobal.__badgerScanStoreLoadPromise = loadLocalStore()
+  await storeGlobal.__badgerScanStoreLoadPromise
 }
 
 async function loadLocalStore() {
@@ -285,14 +285,14 @@ async function loadLocalStore() {
     }
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
-      storeGlobal.__vibeshieldScanStoreLoaded = true
+      storeGlobal.__badgerScanStoreLoaded = true
       return
     }
 
     console.error("Badger local scan store read failed", error instanceof Error ? error.message : "unknown error")
   } finally {
-    storeGlobal.__vibeshieldScanStoreLoaded = true
-    storeGlobal.__vibeshieldScanStoreLoadPromise = undefined
+    storeGlobal.__badgerScanStoreLoaded = true
+    storeGlobal.__badgerScanStoreLoadPromise = undefined
   }
 }
 
@@ -352,7 +352,7 @@ function persistentStorageRequired() {
 
 function localStorePath() {
   const fileName = (badgerEnv("LOCAL_STORE_FILE") || "scan-reports.json").replace(/[^\w.-]/g, "_")
-  return path.join(process.cwd(), ".vibeshield", fileName)
+  return path.join(process.cwd(), ".badger", fileName)
 }
 
 function isPersistedScanReport(value: unknown): value is ScanReport {

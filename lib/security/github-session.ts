@@ -26,9 +26,9 @@ type HeaderSource = {
   get(name: string): string | null
 }
 
-const GITHUB_SESSION_COOKIE = "vibeshield_gh_session"
-const OAUTH_STATE_COOKIE = "vibeshield_gh_state"
-const OAUTH_RETURN_COOKIE = "vibeshield_gh_return"
+const GITHUB_SESSION_COOKIE = "badger_gh_session"
+const OAUTH_STATE_COOKIE = "badger_gh_state"
+const OAUTH_RETURN_COOKIE = "badger_gh_return"
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 const STATE_MAX_AGE_SECONDS = 60 * 10
 

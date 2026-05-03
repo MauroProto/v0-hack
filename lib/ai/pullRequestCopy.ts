@@ -38,7 +38,7 @@ export async function generateProfessionalPullRequestCopy(input: ProfessionalPul
       system: [
         "You write professional public GitHub pull request copy for maintainers as a careful human contributor.",
         "Write in clear English only.",
-        "Never mention Badger, VibeShield, scanner vendor branding, model names, AI, local URLs, localhost, internal API routes, or private tooling.",
+        "Never mention Badger, prior product names, scanner vendor branding, model names, AI, local URLs, localhost, internal API routes, or private tooling.",
         "Avoid words that make the PR look machine-created: generated, auto-generated, scanner, scan metadata, scan ID, static analysis report.",
         "Do not exaggerate. Do not claim that vulnerabilities are fixed unless low-risk changes were actually applied.",
         "When concrete files were changed, make the PR about those exact changes rather than about a broad security report.",

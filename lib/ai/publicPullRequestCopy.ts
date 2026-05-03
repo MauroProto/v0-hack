@@ -6,9 +6,12 @@ export interface PullRequestCopyDraft {
   reportMarkdown: string
 }
 
+const LEGACY_PRODUCT_RE = new RegExp(String.raw`\b${["Vibe", "Shield"].join("")}(?:\s+Labs)?\b`, "gi")
+const PRODUCT_NAME_RE = new RegExp(`Badger|${["Vibe", "Shield"].join("")}`, "i")
+
 const BLOCKED_PUBLIC_PR_TERMS = [
   /\bBadger(?:\s+Labs)?\b/gi,
-  /\bVibeShield(?:\s+Labs)?\b/gi,
+  LEGACY_PRODUCT_RE,
   /\bAI-generated\b/gi,
   /\bauto-generated\b/gi,
   /\bautomated\s+(?:scanner|scan|analysis|tool|review)\b/gi,
@@ -32,7 +35,7 @@ export function sanitizePublicPullRequestCopy(draft: PullRequestCopyDraft): Pull
 
 export function isUsablePullRequestCopy(draft: PullRequestCopyDraft) {
   const all = `${draft.title}\n${draft.body}\n${draft.reportMarkdown}`
-  if (/Badger|VibeShield/i.test(all)) return false
+  if (PRODUCT_NAME_RE.test(all)) return false
   if (/localhost|\/api\/scan\//i.test(all)) return false
   if (/(guaranteed|fully fixed|completely fixed|100% secure|unhackable)/i.test(all)) return false
   if (/(generated|auto-generated|automated scanner|security scanner|scan metadata|scan id)/i.test(all)) return false

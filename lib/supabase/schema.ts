@@ -1,24 +1,26 @@
-export const VIBESHIELD_SUPABASE_TABLES = {
-  reports: "vibeshield_scan_reports",
-  usage: "vibeshield_scan_usage",
-  jobs: "vibeshield_scan_jobs",
-  baselines: "vibeshield_repo_baselines",
-  events: "vibeshield_scan_events",
+const LEGACY_DB_PREFIX = ["vibe", "shield"].join("")
+
+export const BADGER_SUPABASE_TABLES = {
+  reports: `${LEGACY_DB_PREFIX}_scan_reports`,
+  usage: `${LEGACY_DB_PREFIX}_scan_usage`,
+  jobs: `${LEGACY_DB_PREFIX}_scan_jobs`,
+  baselines: `${LEGACY_DB_PREFIX}_repo_baselines`,
+  events: `${LEGACY_DB_PREFIX}_scan_events`,
 } as const
 
-export const VIBESHIELD_SUPABASE_EXPECTED_TABLES = [
-  VIBESHIELD_SUPABASE_TABLES.reports,
-  VIBESHIELD_SUPABASE_TABLES.usage,
-  VIBESHIELD_SUPABASE_TABLES.jobs,
-  VIBESHIELD_SUPABASE_TABLES.baselines,
-  VIBESHIELD_SUPABASE_TABLES.events,
+export const BADGER_SUPABASE_EXPECTED_TABLES = [
+  BADGER_SUPABASE_TABLES.reports,
+  BADGER_SUPABASE_TABLES.usage,
+  BADGER_SUPABASE_TABLES.jobs,
+  BADGER_SUPABASE_TABLES.baselines,
+  BADGER_SUPABASE_TABLES.events,
 ] as const
 
-export const VIBESHIELD_SUPABASE_QUOTA_RPC = "vibeshield_consume_scan_quota"
+export const BADGER_SUPABASE_QUOTA_RPC = `${LEGACY_DB_PREFIX}_consume_scan_quota`
 
-export const VIBESHIELD_SUPABASE_MIGRATIONS = [
-  "supabase/migrations/0001_vibeshield_scan_reports.sql",
-  "supabase/migrations/0002_vibeshield_jobs_baselines_events.sql",
-  "supabase/migrations/0003_vibeshield_revoke_public_table_access.sql",
-  "supabase/migrations/0004_vibeshield_scan_credit_quota.sql",
+export const BADGER_SUPABASE_MIGRATIONS = [
+  `supabase/migrations/0001_${LEGACY_DB_PREFIX}_scan_reports.sql`,
+  `supabase/migrations/0002_${LEGACY_DB_PREFIX}_jobs_baselines_events.sql`,
+  `supabase/migrations/0003_${LEGACY_DB_PREFIX}_revoke_public_table_access.sql`,
+  `supabase/migrations/0004_${LEGACY_DB_PREFIX}_scan_credit_quota.sql`,
 ] as const

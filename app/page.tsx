@@ -2,7 +2,7 @@
 
 import { useState, useEffect, type ReactNode, type SVGProps } from "react"
 import Link from "next/link"
-import { ClerkAuthControls } from "@/components/auth/ClerkAuthControls"
+import { GuestAccessButton, GuestAccessTextLink, GuestModeBadge } from "@/components/auth/GuestAccessGate"
 
 type IconProps = SVGProps<SVGSVGElement>
 
@@ -186,10 +186,10 @@ function Nav() {
           <a href="#scan">Scan</a>
         </nav>
         <div className="nav-right">
-          <ClerkAuthControls />
-          <Link href="/scan" className="btn btn-primary nav-cta">
+          <GuestModeBadge />
+          <GuestAccessButton className="btn btn-primary nav-cta">
             Start free scan <I.scan style={{ width: 14, height: 14 }} />
-          </Link>
+          </GuestAccessButton>
         </div>
       </div>
     </header>
@@ -213,7 +213,7 @@ function Hero() {
           unsafe tool calls and supply-chain issues before customers or maintainers do.
         </p>
         <div className="hero-cta">
-          <Link href="/scan" className="btn btn-accent btn-lg btn-border-spin btn-shine">Start free scan <I.scan style={{ width: 14, height: 14 }} /></Link>
+          <GuestAccessButton className="btn btn-accent btn-lg btn-border-spin btn-shine">Start free scan <I.scan style={{ width: 14, height: 14 }} /></GuestAccessButton>
         </div>
         <div className="hero-meta">
           <span><b>No install.</b> Paste a public repo without GitHub login.</span>
@@ -561,9 +561,9 @@ function Closing() {
         </h2>
         <p>Scan your first repo without installs, ZIP uploads or running untrusted code.</p>
         <div className="cta-actions">
-          <Link href="/scan" className="btn btn-accent btn-lg btn-border-spin btn-shine">
+          <GuestAccessButton className="btn btn-accent btn-lg btn-border-spin btn-shine">
             Start free scan <I.scan style={{ width: 14, height: 14 }} />
-          </Link>
+          </GuestAccessButton>
         </div>
       </div>
 
@@ -582,11 +582,11 @@ function Closing() {
               <a href="#features">Features</a>
               <a href="#how">How it works</a>
               <a href="#report">Sample report</a>
-              <Link href="/scan">Scanner</Link>
+              <GuestAccessTextLink>Scanner</GuestAccessTextLink>
             </div>
             <div className="col">
               <h5>Integrations</h5>
-              <Link href="/scan">GitHub</Link>
+              <GuestAccessTextLink>GitHub</GuestAccessTextLink>
             </div>
             <div className="col">
               <h5>Resources</h5>
@@ -594,7 +594,7 @@ function Closing() {
             </div>
             <div className="col">
               <h5>Company</h5>
-              <Link href="/scan">Security</Link>
+              <GuestAccessTextLink>Security</GuestAccessTextLink>
             </div>
           </div>
         </div>
