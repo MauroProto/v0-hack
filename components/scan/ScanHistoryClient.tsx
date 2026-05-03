@@ -51,7 +51,7 @@ export function ScanHistoryClient() {
           </span>
         </div>
         <div className="actions">
-          <Link className="btn btn-accent" href="/scan">
+          <Link className="btn btn-accent btn-shine" href="/scan">
             <Icon.bolt style={{ width: 14, height: 14 }} /> <span>Start new scan</span>
           </Link>
         </div>
@@ -86,7 +86,7 @@ function ScanHistoryState({ loading, error, authenticated }: { loading: boolean;
         <p className="empty-sub">{copy}</p>
         {!loading && (
           <div className="empty-actions">
-            <Link href="/scan" className="btn btn-accent btn-lg">
+            <Link href="/scan" className="btn btn-accent btn-lg btn-shine">
               <Icon.bolt style={{ width: 14, height: 14 }} /> Start security scan
             </Link>
           </div>

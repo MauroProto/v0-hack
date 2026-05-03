@@ -87,7 +87,7 @@ export function ScanReportLoader({ scanId }: { scanId: string }) {
           </p>
           {!loading && (
             <div className="empty-actions">
-              <Link href="/scan" className="btn btn-accent btn-lg">
+              <Link href="/scan" className="btn btn-accent btn-lg btn-shine">
                 <Icon.bolt style={{ width: 14, height: 14 }} /> Start security scan
               </Link>
             </div>

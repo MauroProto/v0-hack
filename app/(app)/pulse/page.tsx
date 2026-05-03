@@ -14,7 +14,7 @@ export default function PulsePage() {
           </span>
         </div>
         <div className="actions">
-          <Link className="btn btn-accent" href="/scan">
+          <Link className="btn btn-accent btn-shine" href="/scan">
             <Icon.bolt style={{ width: 14, height: 14 }} /> <span>Start new scan</span>
           </Link>
         </div>

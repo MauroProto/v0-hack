@@ -227,7 +227,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
               <b>Login with GitHub to start</b>
               <span>Scans are private to your account. After login, you can paste a public repo URL or choose one of your repositories.</span>
             </div>
-            <button className="btn btn-accent btn-lg" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
+            <button className="btn btn-accent btn-lg btn-shine" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
               <Icon.branch style={{ width: 14, height: 14 }} />
               {loginLoading ? "Redirecting..." : "Login with GitHub"}
             </button>

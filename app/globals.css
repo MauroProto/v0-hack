@@ -178,6 +178,53 @@ img { max-width: 100%; display: block; }
   border-color: var(--accent);
 }
 .btn-accent:hover { background: #92ecd0; }
+.btn-accent.btn-shine:hover { background: var(--accent); }
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  top: -45%;
+  bottom: -45%;
+  left: -65%;
+  width: 46%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255,255,255,0.56),
+    transparent
+  );
+  transform: skewX(-18deg);
+  animation: button-shine 3.2s ease-in-out infinite;
+}
+.btn-shine > * {
+  position: relative;
+  z-index: 1;
+}
+.btn-shine:disabled::after,
+.btn-shine[aria-disabled="true"]::after {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-shine::after { animation: none; display: none; }
+}
+@keyframes button-shine {
+  0%, 18% {
+    left: -70%;
+    opacity: 0;
+  }
+  28% {
+    opacity: 0.85;
+  }
+  48%, 100% {
+    left: 124%;
+    opacity: 0;
+  }
+}
 .btn-lg { height: 46px; padding: 0 22px; font-size: 14.5px; border-radius: 11px; }
 .btn-border-spin {
   --cta-border-angle: 0deg;
@@ -203,7 +250,7 @@ img { max-width: 100%; display: block; }
   animation: cta-border-spin 2.8s linear infinite;
 }
 .btn-border-spin:hover::before {
-  animation-duration: 1.8s;
+  animation-duration: 2.8s;
 }
 .btn:disabled {
   opacity: 0.58;
@@ -213,6 +260,7 @@ img { max-width: 100%; display: block; }
 
 .btn .arrow { transition: transform .2s ease; }
 .btn:hover .arrow { transform: translateX(2px); }
+.btn-shine:hover .arrow { transform: none; }
 
 @property --cta-border-angle {
   syntax: "<angle>";
@@ -282,7 +330,7 @@ img { max-width: 100%; display: block; }
 
 /* Logos row — full-bleed marquee carousel */
 .logos {
-  margin-top: 84px;
+  margin-top: 104px;
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
   padding: 34px 0 30px;
@@ -301,7 +349,7 @@ img { max-width: 100%; display: block; }
 }
 .logos:hover .marquee-track { animation-play-state: paused; }
 .logos .logo {
-  display: inline-flex; align-items: center; gap: 18px;
+  display: inline-flex; align-items: center; gap: 20px;
   white-space: nowrap;
   color: var(--fg-2);
   opacity: 0.72;
@@ -309,9 +357,9 @@ img { max-width: 100%; display: block; }
 }
 .logos .logo:hover { opacity: 1; }
 .logos .logo img {
-  height: 44px;
+  height: 50px;
   width: auto;
-  max-width: 80px;
+  max-width: 90px;
   object-fit: contain;
   filter: none;
 }
@@ -319,7 +367,7 @@ img { max-width: 100%; display: block; }
   filter: brightness(0) invert(1);
 }
 .logos .logo .name {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 500;
   letter-spacing: -0.02em;
   color: var(--fg);
