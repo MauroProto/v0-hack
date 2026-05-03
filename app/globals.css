@@ -127,6 +127,33 @@ img { max-width: 100%; display: block; }
 .nav-links a { color: var(--fg-3); font-size: 13.5px; transition: color .15s; }
 .nav-links a:hover { color: var(--fg); }
 .nav-right { display: flex; align-items: center; gap: 10px; }
+.clerk-auth-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.clerk-auth-link {
+  height: 36px;
+  padding: 0 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.035);
+  color: var(--fg-2);
+  font: 600 13px/1 var(--font-geist-sans);
+}
+.clerk-auth-link-primary {
+  color: #07110e;
+  border-color: rgba(122,241,203,0.45);
+  background: var(--accent);
+}
+.clerk-auth-link:hover {
+  color: var(--fg);
+  border-color: rgba(255,255,255,0.22);
+}
+.clerk-auth-link-primary:hover {
+  color: #07110e;
+  border-color: rgba(122,241,203,0.65);
+}
 
 /* buttons */
 .btn {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, type ReactNode, type SVGProps } from "react"
 import Link from "next/link"
+import { ClerkAuthControls } from "@/components/auth/ClerkAuthControls"
 
 type IconProps = SVGProps<SVGSVGElement>
 
@@ -185,6 +186,7 @@ function Nav() {
           <a href="#scan">Scan</a>
         </nav>
         <div className="nav-right">
+          <ClerkAuthControls />
           <Link href="/scan" className="btn btn-primary nav-cta">
             Start free scan <I.scan style={{ width: 14, height: 14 }} />
           </Link>

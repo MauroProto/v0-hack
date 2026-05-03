@@ -1,6 +1,7 @@
 import "server-only"
 
 import { createHash } from "node:crypto"
+import { auth } from "@clerk/nextjs/server"
 import { badgerEnv } from "@/lib/config/env"
 import { calculateRiskScore } from "@/lib/scanner/patches"
 import { withReportDerivedFields } from "@/lib/scanner/enrich"
@@ -10,7 +11,7 @@ import type { AuditTrailEvent, ScanFinding, ScanReport } from "@/lib/scanner/typ
 
 export interface RequestIdentity {
   subjectHash: string
-  kind: "supabase_user" | "github_user" | "anonymous"
+  kind: "clerk_user" | "supabase_user" | "github_user" | "anonymous"
   label: string
 }
 
@@ -23,6 +24,15 @@ export async function getRequestIdentity(request: Request): Promise<RequestIdent
 }
 
 export async function getRequestIdentityFromHeaders(headers: HeaderSource): Promise<RequestIdentity> {
+  const clerkUserId = await getClerkUserId()
+  if (clerkUserId) {
+    return {
+      subjectHash: hashSubject(`clerk_user:${clerkUserId}`),
+      kind: "clerk_user",
+      label: "Badger user",
+    }
+  }
+
   const githubSession = getGitHubSessionFromHeaders(headers)
   if (githubSession) {
     return {
@@ -102,6 +112,17 @@ function isLegacyCoverageFinding(finding: ScanFinding) {
     finding.title === "Repository is outside primary Next.js/React coverage" &&
     /^Detected framework:/i.test(finding.evidence ?? "")
   )
+}
+
+async function getClerkUserId() {
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY) return null
+
+  try {
+    const session = await auth()
+    return session.userId ?? null
+  } catch {
+    return null
+  }
 }
 
 async function getSupabaseUserId(headers: HeaderSource) {

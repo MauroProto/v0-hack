@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next"
+import { ClerkProvider } from "@clerk/nextjs"
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
@@ -19,6 +20,8 @@ const instrumentSerif = Instrument_Serif({
   style: ["normal", "italic"],
   variable: "--font-instrument-serif",
 })
+
+const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 
 export const metadata: Metadata = {
   title: "Badger — Security review for AI-built apps",
@@ -43,14 +46,24 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const page = (
+    <>
+      {children}
+      {process.env.NODE_ENV === "production" && <Analytics />}
+    </>
+  )
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable}`}
     >
       <body>
-        {children}
-        {process.env.NODE_ENV === "production" && <Analytics />}
+        {clerkPublishableKey ? (
+          <ClerkProvider publishableKey={clerkPublishableKey}>{page}</ClerkProvider>
+        ) : (
+          page
+        )}
       </body>
     </html>
   )

@@ -258,7 +258,7 @@ export interface ScanReport {
   repository?: ScanRepositoryRef
   pullRequest?: ScanPullRequest
   ownerHash?: string
-  ownerKind?: "supabase_user" | "github_user" | "anonymous"
+  ownerKind?: "clerk_user" | "supabase_user" | "github_user" | "anonymous"
   sourceType: "github"
   sourceLabel: string
   analysisMode: ScanMode

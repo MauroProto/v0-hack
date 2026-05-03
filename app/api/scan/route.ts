@@ -179,7 +179,7 @@ async function createQueuedScanReport(input: {
   ref?: string
   analysisMode: "rules" | "normal" | "max"
   ownerHash: string
-  ownerKind: "supabase_user" | "github_user" | "anonymous"
+  ownerKind: "clerk_user" | "supabase_user" | "github_user" | "anonymous"
 }) {
   const reportId = crypto.randomUUID()
   const sourceLabel = input.ref
