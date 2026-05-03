@@ -155,9 +155,8 @@ function Nav() {
     <header className={`nav ${scrolled ? "is-scrolled" : ""}`}>
       <div className="wrap nav-inner">
         <Link href="/" className="brand">
-          <span className="brand-mark"><I.shield /></span>
-          <span>VibeShield</span>
-          <span className="pill" style={{ marginLeft: 10, height: 22, fontSize: 10.5, padding: "0 8px" }}>Beta</span>
+          <span style={{ fontSize: 17 }}>VibeShield</span>
+          <span className="pill" style={{ marginLeft: 10, height: 24, fontSize: 12, padding: "0 9px" }}>Beta</span>
         </Link>
         <nav className="nav-links">
           <a href="#features">Features</a>
@@ -193,7 +192,7 @@ function Hero() {
           unsafe tool calls and supply-chain issues before customers or maintainers do.
         </p>
         <div className="hero-cta">
-          <Link href="/scan" className="btn btn-accent btn-lg">Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></Link>
+          <Link href="/scan" className="btn btn-accent btn-lg btn-border-spin">Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} /></Link>
           <Link href="/scan" className="btn btn-outline btn-lg">Open scanner</Link>
         </div>
         <div className="hero-meta">
@@ -210,13 +209,13 @@ function Hero() {
             {[0, 1].map((dup) => (
               <Fragment key={dup}>
                 <span className="logo"><span className="logo-mono"><img src="/logos/v0.png" alt="v0" /></span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/cursor.png" alt="Cursor" /></span><span className="name">Cursor</span></span>
+                <span className="logo"><span className="logo-mono"><img src="/logos/cursor.png" alt="Copilot" /></span><span className="name">Copilot</span></span>
                 <span className="logo"><img src="/logos/claude.png" alt="Claude Code" /><span className="name">Claude Code</span></span>
                 <span className="logo"><img src="/logos/lovable.png" alt="Lovable" /><span className="name">Lovable</span></span>
                 <span className="logo"><span className="logo-mono"><img src="/logos/bolt.png" alt="Bolt" /></span><span className="name">Bolt</span></span>
                 <span className="logo"><span className="logo-mono"><img src="/logos/windsurf.png" alt="Windsurf" /></span><span className="name">Windsurf</span></span>
                 <span className="logo"><img src="/logos/replit.png" alt="Replit" /><span className="name">Replit</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/tempo.png" alt="Tempo" /></span><span className="name">Tempo</span></span>
+                <span className="logo"><span className="logo-mono"><img src="/logos/tempo.png" alt="Cursor" /></span><span className="name">Cursor</span></span>
               </Fragment>
             ))}
           </div>
@@ -669,7 +668,7 @@ function Closing() {
         </h2>
         <p>Scan your first repo without installs, ZIP uploads or running untrusted code.</p>
         <div className="cta-actions">
-          <Link href="/scan" className="btn btn-accent btn-lg">
+          <Link href="/scan" className="btn btn-accent btn-lg btn-border-spin">
             Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
           </Link>
           <Link href="/scan" className="btn btn-outline btn-lg">
@@ -702,7 +701,7 @@ function Closing() {
             </div>
             <div className="col">
               <h5>Resources</h5>
-              <Link href="/scan">Docs</Link>
+              <Link href="/docs">Docs</Link>
             </div>
             <div className="col">
               <h5>Company</h5>
@@ -721,16 +720,16 @@ function Closing() {
             <a href="https://github.com/MauroProto/v0-hack" aria-label="GitHub">
               <I.github />
             </a>
-            <Link href="/scan" aria-label="Scan">
+            <a href="https://x.com/ProtoMauro" aria-label="X">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M18.9 3H22l-7.5 8.6L23 21h-6.8l-5.3-6.9L4.7 21H1.5l8-9.2L1 3h6.9l4.8 6.3L18.9 3zm-1.2 16.3h1.9L7 4.6H5L17.7 19.3z" />
               </svg>
-            </Link>
-            <Link href="/scan" aria-label="Contact">
+            </a>
+            <a href="https://www.linkedin.com/in/mauroprotocassina/" aria-label="LinkedIn">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M4.98 3.5c0 1.4-1.1 2.5-2.5 2.5S0 4.9 0 3.5 1.1 1 2.5 1s2.48 1.1 2.48 2.5zM0 8h5v16H0V8zm7.5 0h4.8v2.2h.1c.7-1.3 2.4-2.7 4.9-2.7 5.2 0 6.2 3.4 6.2 7.9V24h-5v-7.2c0-1.7 0-4-2.4-4s-2.8 1.9-2.8 3.8V24h-5V8z" />
               </svg>
-            </Link>
+            </a>
           </div>
         </div>
       </footer>
