@@ -165,7 +165,7 @@ function Nav() {
           <a href="#scan">Scan</a>
         </nav>
         <div className="nav-right">
-          <Link href="/scan" className="btn btn-primary">
+          <Link href="/scan" className="btn btn-primary nav-cta">
             Start free scan <I.arrow className="arrow" style={{ width: 14, height: 14 }} />
           </Link>
         </div>
@@ -578,7 +578,11 @@ function Closing() {
         </div>
 
         <div className="footer-bottom">
-          <span>© 2026 VibeShield Labs · Not a guarantee of security.</span>
+          <div className="footer-signature">
+            <span className="footer-year">© 2026</span>
+            <span className="footer-name">VibeShield Labs</span>
+            <span className="footer-note">Security review for AI-built apps. Not a guarantee of security.</span>
+          </div>
           <div className="socials">
             <a href="https://github.com/MauroProto/v0-hack" aria-label="GitHub">
               <I.github />
