@@ -578,11 +578,7 @@ function Closing() {
         </div>
 
         <div className="footer-bottom">
-          <div className="footer-signature">
-            <span className="footer-year">© 2026</span>
-            <span className="footer-name">VibeShield Labs</span>
-            <span className="footer-note">Security review for AI-built apps. Not a guarantee of security.</span>
-          </div>
+          <span>© 2026 VibeShield Labs · Not a guarantee of security.</span>
           <div className="socials">
             <a href="https://github.com/MauroProto/v0-hack" aria-label="GitHub">
               <I.github />

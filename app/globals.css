@@ -1575,56 +1575,23 @@ button.chip { cursor: pointer; }
 
 .footer-bottom {
   position: relative;
-  margin-top: 42px;
-  padding: 16px 18px;
+  margin-top: 48px;
+  padding: 18px 32px 22px;
   max-width: var(--maxw);
   margin-left: auto; margin-right: auto;
-  border: 1px solid rgba(255,255,255,0.085);
-  border-radius: 18px;
-  background:
-    linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)),
-    radial-gradient(420px 120px at 8% 0%, rgba(127,231,196,0.10), transparent 70%);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.055),
-    0 18px 50px rgba(0,0,0,0.22);
+  border-top: 1px solid var(--line);
   display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
   font-size: 13px; color: var(--fg-5);
 }
-.footer-signature {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.footer-year {
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-.footer-name {
-  color: var(--fg);
-  font-size: 14px;
-  font-weight: 560;
-  letter-spacing: -0.01em;
-}
-.footer-note {
-  color: var(--fg-4);
-}
-.footer-bottom .socials { display: inline-flex; gap: 8px; }
+.footer-bottom .socials { display: inline-flex; gap: 7px; }
 .footer-bottom .socials a {
-  width: 34px; height: 34px; border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.11);
+  width: 32px; height: 32px; border-radius: 9px;
+  border: 1px solid var(--line-2);
   display: inline-grid; place-items: center;
   color: var(--fg-3);
-  background: rgba(5,5,6,0.42);
   transition: all .15s;
 }
-.footer-bottom .socials a:hover {
-  border-color: rgba(127,231,196,0.46);
-  color: var(--fg);
-  background: rgba(127,231,196,0.08);
-  transform: translateY(-1px);
-}
+.footer-bottom .socials a:hover { border-color: var(--line-strong); color: var(--fg); background: rgba(255,255,255,0.03); }
 .footer-bottom .socials a svg { width: 15px; height: 15px; }
 
 /* ============ Docs ============ */
