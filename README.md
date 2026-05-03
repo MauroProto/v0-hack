@@ -1,25 +1,26 @@
-# VibeShield
+# Badger
 
-**VibeShield is a GitHub-native AppSec copilot for AI-built web applications.** It scans repositories server-side, prioritizes high-signal security findings, and helps teams turn validated evidence into review-ready remediation work.
+**Badger is a GitHub-native AppSec copilot for AI-built web applications.** It scans repositories server-side, prioritizes high-signal security findings, and helps teams turn validated evidence into review-ready remediation work.
 
 Built for the **Zero to Action Hackathon by Berset**.
 
-Production demo: [https://v0-vibeshield-app-builder.vercel.app](https://v0-vibeshield-app-builder.vercel.app)
+Production demo: configure the Vercel project/domain for the Badger deployment before sharing a public launch URL.
 
 <p align="center">
-  <img src="public/readme/scan.png" alt="VibeShield scan workspace" width="100%" />
+  <img src="public/readme/scan.png" alt="Badger scan workspace" width="100%" />
 </p>
 
 ## Why It Exists
 
 AI-assisted builders can ship fast, but speed often hides security gaps: leaked secrets, unsafe Server Actions, missing auth checks, unbounded AI endpoints, weak Supabase RLS, risky GitHub Actions workflows, and dependency exposure.
 
-VibeShield is designed for that workflow. It keeps the scan static and bounded, avoids executing untrusted repository code, and combines deterministic analysis with AI triage only after evidence has been collected and redacted.
+Badger is designed for that workflow. It keeps the scan static and bounded, avoids executing untrusted repository code, and combines deterministic analysis with AI triage only after evidence has been collected and redacted.
 
 ## What It Does
 
-- Scans public GitHub repositories by URL.
-- Supports GitHub login for repository selection and remediation PRs.
+- Scans public GitHub repositories by URL without requiring GitHub login.
+- Supports GitHub login only for account repository selection, private repositories, and remediation PRs.
+- Supports a server-side Badger GitHub App or read-only server token for public repository reads.
 - Builds a repository inventory of routes, Server Actions, client components, imports, env reads, dangerous sinks, AI calls, database calls, Supabase migrations, manifests, lockfiles, and GitHub Actions workflows.
 - Runs deterministic analyzers for secrets, access control gaps, unsafe AI/tool surfaces, dependency intelligence, Supabase posture, GitHub Actions supply-chain posture, and static code risk.
 - Uses bounded taint-style traces for selected source-to-sink paths.
@@ -31,32 +32,33 @@ VibeShield is designed for that workflow. It keeps the scan static and bounded, 
 ## Product Views
 
 <p align="center">
-  <img src="public/readme/pulse.png" alt="VibeShield live pulse view" width="100%" />
+  <img src="public/readme/pulse.png" alt="Badger scan report view" width="100%" />
 </p>
 
 ## Scan Modes
 
-| Mode | Purpose | AI usage |
+| Mode | Purpose | Cost |
 | --- | --- | --- |
-| `Rules` | Fast deterministic scan with no AI agent. | None |
-| `Normal` | Recommended default for strong signal and practical runtime. | Targeted review |
-| `Max` | Deeper AppSec review with broader repository context and stricter triage. | Expanded review |
+| `Normal` | Recommended default for strong signal and practical runtime. | 1 credit |
+| `Max` | Deeper AppSec review with broader repository context and stricter Claude reasoning. | 2 credits |
+| `Generate fixes` | Creates a remediation text draft for selected findings. | 1 credit |
 
-All modes keep the same safety boundary: VibeShield reads supported text files through GitHub APIs and never executes repository code.
+All modes keep the same safety boundary: Badger reads supported text files through GitHub APIs and never executes repository code.
 
 ## Security Model
 
-VibeShield is intentionally conservative:
+Badger is intentionally conservative:
 
+- Public repository scans do not require user GitHub authorization.
 - No repository code execution.
 - No `npm install`, package scripts, test runs, or build steps inside scanned repositories.
 - No ZIP upload ingestion.
 - GitHub OAuth tokens are handled server-side and stored only in encrypted `HttpOnly` cookies.
 - API responses redact secrets and expose only public-safe report data.
 - Reports are bound to a salted request identity.
-- Production requires persistent Supabase storage and quota when `VIBESHIELD_REQUIRE_PERSISTENT_STORAGE=true` and `VIBESHIELD_REQUIRE_PERSISTENT_QUOTA=true`.
+- Production requires persistent Supabase storage and quota when `BADGER_REQUIRE_PERSISTENT_STORAGE=true` and `BADGER_REQUIRE_PERSISTENT_QUOTA=true`.
 - Supabase tables use service-role access from route handlers; client roles are denied direct table reads.
-- Private repository snippets are not sent to external AI providers unless explicitly enabled with `VIBESHIELD_ALLOW_PRIVATE_AI_REVIEW=true`.
+- Private repository snippets are not sent to external AI providers unless explicitly enabled with `BADGER_ALLOW_PRIVATE_AI_REVIEW=true`.
 - PR generation is gated by selected findings and, when an AI provider is configured, an AI safety review. High-risk app logic remains review-required instead of being blindly patched.
 
 ## Architecture
@@ -77,7 +79,6 @@ Core routes:
 | Route | Purpose |
 | --- | --- |
 | `/scan` | Start a public URL or GitHub-authenticated scan. |
-| `/pulse` | Lightweight live scan activity view. |
 | `/scans` | Scan history for the current identity. |
 | `/report/[scanId]` | Detailed report view. |
 | `/api/scan` | Create or run a scan. |
@@ -96,15 +97,34 @@ Required server-side environment variables:
 ```bash
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-VIBESHIELD_IDENTITY_SALT=
-VIBESHIELD_REQUIRE_PERSISTENT_STORAGE=true
-VIBESHIELD_REQUIRE_PERSISTENT_QUOTA=true
-VIBESHIELD_MONTHLY_SCAN_QUOTA=20
-VIBESHIELD_GITHUB_SESSION_SECRET=
+BADGER_IDENTITY_SALT=
+BADGER_REQUIRE_PERSISTENT_STORAGE=true
+BADGER_REQUIRE_PERSISTENT_QUOTA=true
+BADGER_MONTHLY_SCAN_QUOTA=20
+BADGER_GITHUB_SESSION_SECRET=
+BADGER_WORKER_SECRET=
+```
+
+For public repository scans without user login, configure either a GitHub App installation:
+
+```bash
+BADGER_GITHUB_APP_ID=
+BADGER_GITHUB_APP_INSTALLATION_ID=
+BADGER_GITHUB_APP_PRIVATE_KEY=
+```
+
+or a temporary server-only read token:
+
+```bash
+BADGER_GITHUB_TOKEN=
+```
+
+For optional GitHub login and PR creation:
+
+```bash
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 GITHUB_REDIRECT_URI=https://your-domain.com/api/auth/github/callback
-VIBESHIELD_WORKER_SECRET=
 ```
 
 Public Supabase client variables:
@@ -117,9 +137,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 AI provider configuration:
 
 ```bash
-VIBESHIELD_AI_PROVIDER=anthropic
+BADGER_AI_PROVIDER=anthropic
 ANTHROPIC_API_KEY=
-VIBESHIELD_ANTHROPIC_MODEL=
+BADGER_ANTHROPIC_MODEL=claude-opus-4-7
 ```
 
 Other supported providers include Vercel AI Gateway and DeepSeek. If no provider is configured, scans still run and explanations fall back to deterministic remediation guidance.
@@ -132,9 +152,12 @@ Run the migrations in order:
 supabase/migrations/0001_vibeshield_scan_reports.sql
 supabase/migrations/0002_vibeshield_jobs_baselines_events.sql
 supabase/migrations/0003_vibeshield_revoke_public_table_access.sql
+supabase/migrations/0004_vibeshield_scan_credit_quota.sql
 ```
 
 The production schema stores scan reports, durable quota usage, queued jobs, baselines, and scan events. Direct reads from `anon` and `authenticated` are revoked; application access goes through trusted Next.js route handlers using the service role key.
+
+The Supabase table and migration names still use the original `vibeshield_*` prefix for compatibility with existing deployments. New product-facing configuration should use `BADGER_*`; legacy `VIBESHIELD_*` variables remain accepted.
 
 ## Local Development
 
@@ -145,7 +168,7 @@ pnpm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Local development can use the git-ignored `.vibeshield/scan-reports.json` file store. For repeated public GitHub scans, set `VIBESHIELD_GITHUB_TOKEN` in `.env.local` to avoid anonymous GitHub API limits.
+Local development can use the git-ignored `.vibeshield/scan-reports.json` file store. For repeated public GitHub scans, set `BADGER_GITHUB_TOKEN` in `.env.local` to avoid anonymous GitHub API limits.
 
 ## Verification
 

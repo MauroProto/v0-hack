@@ -139,7 +139,7 @@ function applyFindingTriage(finding: ScanFinding, triage?: AiFindingTriage): Sca
       triage: {
         ...baseTriage,
         verdict: "needs_review",
-        reason: `AI downgrade blocked by VibeShield guardrail: ${baseTriage.reason}`,
+        reason: `AI downgrade blocked by Badger guardrail: ${baseTriage.reason}`,
       },
     }
   }

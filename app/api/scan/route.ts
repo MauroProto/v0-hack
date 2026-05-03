@@ -22,6 +22,7 @@ import {
 import {
   extractProjectFromGitHubRepo,
   getGitHubTokenFromRequest,
+  getPublicGitHubReadTokenFromRequest,
   parseGitHubFullName,
   parsePublicGitHubUrl,
 } from "@/lib/utils/github"
@@ -54,14 +55,14 @@ export async function POST(request: Request) {
     }
 
     const body = JsonScanSchema.parse(await readJsonBodyWithLimit(request, 20_000))
-    if (identity.kind === "anonymous") {
+    if (identity.kind === "anonymous" && body.repoFullName) {
       return NextResponse.json(
-        { error: "Login with GitHub before starting a security scan.", code: "github_login_required" },
+        { error: "Login with GitHub before scanning repositories from an account list.", code: "github_login_required" },
         { status: 401, headers: apiHeaders() },
       )
     }
 
-    const token = getGitHubTokenFromRequest(request)
+    const token = body.githubUrl ? await getPublicGitHubReadTokenFromRequest(request) : getGitHubTokenFromRequest(request)
     const repo = body.repoFullName ? parseGitHubFullName(body.repoFullName) : parsePublicGitHubUrl(body.githubUrl ?? "")
     const creditsUsed = scanCreditCostForMode(body.analysisMode)
     const quota = await consumeMonthlyScanQuota(identity, creditsUsed)

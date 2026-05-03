@@ -1,11 +1,23 @@
 import "server-only"
 
 import { createSign } from "node:crypto"
-import { isGitHubAppConfigured } from "./github-app-config"
+import {
+  getGitHubAppId,
+  getGitHubAppInstallationId,
+  getGitHubAppPrivateKey,
+  isGitHubAppConfigured,
+  isGitHubAppInstallationConfigured,
+} from "./github-app-config"
 
 const GITHUB_API = "https://api.github.com"
 
 export { isGitHubAppConfigured }
+
+export async function createDefaultGitHubAppInstallationToken() {
+  const installationId = getGitHubAppInstallationId()
+  if (!installationId) throw new Error("GitHub App installation id is missing.")
+  return createGitHubAppInstallationToken(installationId)
+}
 
 export async function createGitHubAppInstallationToken(installationId: string | number) {
   if (!isGitHubAppConfigured()) throw new Error("GitHub App is not configured.")
@@ -26,8 +38,8 @@ export async function createGitHubAppInstallationToken(installationId: string | 
 }
 
 function createGitHubAppJwt() {
-  const appId = process.env.GITHUB_APP_ID
-  const privateKey = normalizePrivateKey(process.env.GITHUB_APP_PRIVATE_KEY)
+  const appId = getGitHubAppId()
+  const privateKey = normalizePrivateKey(getGitHubAppPrivateKey())
   if (!appId || !privateKey) throw new Error("GitHub App credentials are missing.")
 
   const now = Math.floor(Date.now() / 1000)
@@ -49,3 +61,5 @@ function base64Url(value: string | Buffer) {
     .replaceAll("/", "_")
     .replace(/=+$/g, "")
 }
+
+export { isGitHubAppInstallationConfigured }

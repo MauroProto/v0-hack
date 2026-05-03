@@ -1,6 +1,7 @@
 import "server-only"
 
 import { createHash } from "node:crypto"
+import { badgerEnv } from "@/lib/config/env"
 import { calculateRiskScore } from "@/lib/scanner/patches"
 import { withReportDerivedFields } from "@/lib/scanner/enrich"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
@@ -59,7 +60,7 @@ export function attachReportOwner(report: ScanReport, identity: RequestIdentity)
 
 export function canAccessReport(report: ScanReport, identity: RequestIdentity) {
   if (report.ownerHash) return report.ownerHash === identity.subjectHash
-  return process.env.VIBESHIELD_ALLOW_LEGACY_REPORT_ACCESS === "true"
+  return badgerEnv("ALLOW_LEGACY_REPORT_ACCESS") === "true"
 }
 
 export function publicReport(report: ScanReport): ScanReport {
@@ -142,10 +143,10 @@ function normalizeHeader(value: string | null | undefined, maxLength: number) {
 
 function hashSubject(raw: string) {
   const salt =
-    process.env.VIBESHIELD_IDENTITY_SALT ||
+    badgerEnv("IDENTITY_SALT") ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SECRET_KEY ||
-    "vibeshield-local-development"
+    "badger-local-development"
 
   return createHash("sha256").update(`${salt}:${raw}`).digest("hex")
 }

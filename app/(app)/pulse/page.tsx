@@ -6,7 +6,7 @@ export default function PulsePage() {
     <>
       <div className="app-topbar">
         <div className="crumbs">
-          <span>VibeShield</span>
+          <span>Badger</span>
           <span className="sep">/</span>
           <span>
             <b>Live pulse</b>

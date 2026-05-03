@@ -7,6 +7,7 @@ export interface PullRequestCopyDraft {
 }
 
 const BLOCKED_PUBLIC_PR_TERMS = [
+  /\bBadger(?:\s+Labs)?\b/gi,
   /\bVibeShield(?:\s+Labs)?\b/gi,
   /\bAI-generated\b/gi,
   /\bauto-generated\b/gi,
@@ -31,7 +32,7 @@ export function sanitizePublicPullRequestCopy(draft: PullRequestCopyDraft): Pull
 
 export function isUsablePullRequestCopy(draft: PullRequestCopyDraft) {
   const all = `${draft.title}\n${draft.body}\n${draft.reportMarkdown}`
-  if (/VibeShield/i.test(all)) return false
+  if (/Badger|VibeShield/i.test(all)) return false
   if (/localhost|\/api\/scan\//i.test(all)) return false
   if (/(guaranteed|fully fixed|completely fixed|100% secure|unhackable)/i.test(all)) return false
   if (/(generated|auto-generated|automated scanner|security scanner|scan metadata|scan id)/i.test(all)) return false

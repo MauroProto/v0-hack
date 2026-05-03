@@ -30,7 +30,7 @@ const SUPPORTED_EXTENSIONS = new Set([
 ])
 
 const IGNORED_SEGMENTS = new Set(["node_modules", ".next", "dist", "build", ".git"])
-const SUPPORTED_EXTENSIONLESS_FILES = new Set(["README", "LICENSE", "NOTICE", "DOCKERFILE", ".VIBESHIELDIGNORE"])
+const SUPPORTED_EXTENSIONLESS_FILES = new Set(["README", "LICENSE", "NOTICE", "DOCKERFILE", ".BADGERIGNORE", ".VIBESHIELDIGNORE"])
 const IMAGE_VIDEO_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -142,7 +142,7 @@ export function projectPathPriorityScore(filePath: string) {
   let score = 0
 
   if (isEnvFile(normalized)) score += 10_000
-  if (lowerName === ".vibeshieldignore") score += 9_500
+  if (lowerName === ".badgerignore" || lowerName === ".vibeshieldignore") score += 9_500
   if (lower.startsWith(".github/workflows/")) score += 9_000
   if (isLockfilePath(normalized)) score += 8_700
   if (isManifestPath(lowerName)) score += 8_500

@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { badgerEnv } from "@/lib/config/env"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import type { ScanBaseline, ScanReport } from "./types"
@@ -89,7 +90,7 @@ export async function saveScanReport(report: ScanReport) {
 
   const { error } = await supabase.from(TABLE).upsert(row, { onConflict: "id" })
   if (error) {
-    console.error("VibeShield Supabase save failed", error.message)
+    console.error("Badger Supabase save failed", error.message)
     if (persistentStorageRequired()) {
       throw new Error("Persistent scan storage failed. The report was not saved.")
     }
@@ -108,7 +109,7 @@ export async function getScanReport(scanId: string) {
 
   const { data, error } = await supabase.from(TABLE).select("report").eq("id", scanId).maybeSingle()
   if (error) {
-    console.error("VibeShield Supabase read failed", error.message)
+    console.error("Badger Supabase read failed", error.message)
     return undefined
   }
 
@@ -156,7 +157,7 @@ export async function saveScanBaseline(baseline: ScanBaseline) {
 
   const { error } = await supabase.from(BASELINES_TABLE).upsert(row, { onConflict: "id" })
   if (error) {
-    console.error("VibeShield Supabase baseline save failed", error.message)
+    console.error("Badger Supabase baseline save failed", error.message)
     if (persistentStorageRequired()) {
       throw new Error("Persistent baseline storage failed. The baseline was not saved.")
     }
@@ -176,7 +177,7 @@ export async function getScanBaseline(sourceLabel: string, ownerHash?: string) {
 
   const { data, error } = await supabase.from(BASELINES_TABLE).select("baseline").eq("id", id).maybeSingle()
   if (error) {
-    console.error("VibeShield Supabase baseline read failed", error.message)
+    console.error("Badger Supabase baseline read failed", error.message)
     return undefined
   }
 
@@ -189,7 +190,7 @@ export async function listScanReports(ownerHash?: string) {
   await ensureLocalStoreLoaded()
   const memoryReports = [...getMemoryStore().values()].filter((report) => canListReport(report, ownerHash))
 
-  if (getStorageMode() === "supabase" && process.env.VIBESHIELD_ENABLE_PUBLIC_SCAN_LIST !== "true") {
+  if (getStorageMode() === "supabase" && badgerEnv("ENABLE_PUBLIC_SCAN_LIST") !== "true") {
     const ownerReports = await listSupabaseOwnerReports(ownerHash)
     if (ownerReports) return mergeReports(memoryReports, ownerReports)
     return sortReports(memoryReports)
@@ -206,7 +207,7 @@ export async function listScanReports(ownerHash?: string) {
     .limit(25)
 
   if (error) {
-    console.error("VibeShield Supabase list failed", error.message)
+    console.error("Badger Supabase list failed", error.message)
     return sortReports(memoryReports)
   }
 
@@ -230,7 +231,7 @@ async function listSupabaseOwnerReports(ownerHash?: string) {
     .limit(25)
 
   if (error) {
-    console.error("VibeShield Supabase owner list failed", error.message)
+    console.error("Badger Supabase owner list failed", error.message)
     return undefined
   }
 
@@ -288,7 +289,7 @@ async function loadLocalStore() {
       return
     }
 
-    console.error("VibeShield local scan store read failed", error instanceof Error ? error.message : "unknown error")
+    console.error("Badger local scan store read failed", error instanceof Error ? error.message : "unknown error")
   } finally {
     storeGlobal.__vibeshieldScanStoreLoaded = true
     storeGlobal.__vibeshieldScanStoreLoadPromise = undefined
@@ -321,14 +322,14 @@ async function persistLocalStore() {
     )
     await rename(tmpPath, filePath)
   } catch (error) {
-    console.error("VibeShield local scan store write failed", error instanceof Error ? error.message : "unknown error")
+    console.error("Badger local scan store write failed", error instanceof Error ? error.message : "unknown error")
   }
 }
 
 function localFileStoreEnabled() {
   if (isSupabaseConfigured()) return false
-  if (process.env.VIBESHIELD_DISABLE_LOCAL_FILE_STORE === "true") return false
-  return process.env.NODE_ENV !== "production" || process.env.VIBESHIELD_ENABLE_LOCAL_FILE_STORE === "true"
+  if (badgerEnv("DISABLE_LOCAL_FILE_STORE") === "true") return false
+  return process.env.NODE_ENV !== "production" || badgerEnv("ENABLE_LOCAL_FILE_STORE") === "true"
 }
 
 async function getSupabaseClient() {
@@ -338,11 +339,11 @@ async function getSupabaseClient() {
 }
 
 function persistentStorageRequired() {
-  const value = process.env.VIBESHIELD_REQUIRE_PERSISTENT_STORAGE?.trim().toLowerCase()
+  const value = badgerEnv("REQUIRE_PERSISTENT_STORAGE")?.toLowerCase()
   if (value === "true") return true
   if (value === "false") return false
 
-  const quotaValue = process.env.VIBESHIELD_REQUIRE_PERSISTENT_QUOTA?.trim().toLowerCase()
+  const quotaValue = badgerEnv("REQUIRE_PERSISTENT_QUOTA")?.toLowerCase()
   if (quotaValue === "true") return true
   if (quotaValue === "false") return false
 
@@ -350,7 +351,7 @@ function persistentStorageRequired() {
 }
 
 function localStorePath() {
-  const fileName = (process.env.VIBESHIELD_LOCAL_STORE_FILE || "scan-reports.json").replace(/[^\w.-]/g, "_")
+  const fileName = (badgerEnv("LOCAL_STORE_FILE") || "scan-reports.json").replace(/[^\w.-]/g, "_")
   return path.join(process.cwd(), ".vibeshield", fileName)
 }
 

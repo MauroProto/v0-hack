@@ -2,17 +2,17 @@ import { execFileSync } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 
-const REQUIRED_PRODUCTION_ENV_NAMES = [
-  "SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "VIBESHIELD_IDENTITY_SALT",
-  "VIBESHIELD_REQUIRE_PERSISTENT_QUOTA",
-  "VIBESHIELD_REQUIRE_PERSISTENT_STORAGE",
-  "GITHUB_CLIENT_ID",
-  "GITHUB_CLIENT_SECRET",
-  "GITHUB_REDIRECT_URI",
-  "VIBESHIELD_GITHUB_SESSION_SECRET",
+const REQUIRED_PRODUCTION_ENV_GROUPS = [
+  ["SUPABASE_URL"],
+  ["NEXT_PUBLIC_SUPABASE_URL"],
+  ["NEXT_PUBLIC_SUPABASE_ANON_KEY"],
+  ["BADGER_IDENTITY_SALT", "VIBESHIELD_IDENTITY_SALT"],
+  ["BADGER_REQUIRE_PERSISTENT_QUOTA", "VIBESHIELD_REQUIRE_PERSISTENT_QUOTA"],
+  ["BADGER_REQUIRE_PERSISTENT_STORAGE", "VIBESHIELD_REQUIRE_PERSISTENT_STORAGE"],
+  ["GITHUB_CLIENT_ID"],
+  ["GITHUB_CLIENT_SECRET"],
+  ["GITHUB_REDIRECT_URI"],
+  ["BADGER_GITHUB_SESSION_SECRET", "VIBESHIELD_GITHUB_SESSION_SECRET"],
 ] as const
 
 const ONE_OF_PRODUCTION_ENV_NAMES = [
@@ -21,7 +21,7 @@ const ONE_OF_PRODUCTION_ENV_NAMES = [
 ] as const
 
 async function main() {
-  console.log("VibeShield Vercel verification")
+  console.log("Badger Vercel verification")
 
   if (!commandExists("vercel")) {
     console.log("[fail] vercel_cli: Vercel CLI is not installed")
@@ -49,12 +49,13 @@ async function main() {
   }
 
   let failed = 0
-  for (const name of REQUIRED_PRODUCTION_ENV_NAMES) {
-    if (envNames.has(name)) {
-      console.log(`[ok] env:${name}: configured in production`)
+  for (const group of REQUIRED_PRODUCTION_ENV_GROUPS) {
+    const label = group.join("|")
+    if (group.some((name) => envNames.has(name))) {
+      console.log(`[ok] env:${label}: configured in production`)
     } else {
       failed += 1
-      console.log(`[fail] env:${name}: missing from production`)
+      console.log(`[fail] env:${label}: missing from production`)
     }
   }
 

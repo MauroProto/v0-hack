@@ -14,9 +14,9 @@ export function generateSarif(report: ScanReport) {
       {
         tool: {
           driver: {
-            name: "VibeShield",
-            informationUri: "https://github.com/MauroProto/v0-hack",
-            semanticVersion: report.scannerVersion ?? "vibeshield-hybrid-0.2",
+            name: "Badger",
+            informationUri: "https://github.com/MauroProto/badger",
+            semanticVersion: report.scannerVersion ?? "badger-hybrid-0.3",
             rules: rules.map(toRule),
           },
         },

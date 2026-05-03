@@ -85,7 +85,7 @@ export function ScanReportLoader({ scanId }: { scanId: string }) {
     <>
       <div className="app-topbar">
         <div className="crumbs">
-          <span>VibeShield</span>
+          <span>Badger</span>
           <span className="sep">/</span>
           <span>
             <b>{loading ? "Loading report" : "Report not found"}</b>

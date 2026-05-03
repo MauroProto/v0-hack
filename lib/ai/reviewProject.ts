@@ -4,6 +4,7 @@ import { generateText, Output } from "ai"
 import { resolveScanReviewModel } from "@/lib/ai/model"
 import { AiReviewSchema, type AiFindingCandidate, type AiReviewOutput } from "@/lib/ai/structuredSchemas"
 import { applyAiTriage } from "@/lib/ai/triage"
+import { badgerEnv } from "@/lib/config/env"
 import { auditEvent } from "@/lib/scanner/scan"
 import { calculateRiskScore } from "@/lib/scanner/patches"
 import { normalizeFindings, withReportDerivedFields } from "@/lib/scanner/enrich"
@@ -108,7 +109,7 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
     })
   }
 
-  if (process.env.VIBESHIELD_ENABLE_AI_REVIEW === "false") {
+  if (badgerEnv("ENABLE_AI_REVIEW") === "false") {
     return appendAudit(report, "AI auditor skipped", "complete", {
       reason: "disabled_by_env",
     })
@@ -116,7 +117,7 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
 
   const config = getAiReviewConfig(report.analysisMode ?? "normal")
 
-  if (report.repository?.private && process.env.VIBESHIELD_ALLOW_PRIVATE_AI_REVIEW !== "true") {
+  if (report.repository?.private && badgerEnv("ALLOW_PRIVATE_AI_REVIEW") !== "true") {
     return appendAudit(report, "AI auditor skipped", "complete", {
       reason: "private_repository_requires_explicit_ai_opt_in",
     })
@@ -162,7 +163,7 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
       abortSignal: controller.signal,
       output: Output.object({ schema: AiReviewSchema }),
       system: [
-        "You are VibeShield's second-pass security auditor.",
+        "You are Badger's second-pass security auditor.",
         "You operate inside a deterministic static-analysis harness. The harness chooses files, redacts secrets, and supplies rule objectives.",
         "Review only the redacted source snippets and harness signals provided by the scanner.",
         "Your first job is to triage deterministic findings: confirm them, mark them as needs_review, downgrade posture-only signals, or flag likely false positives.",
@@ -369,17 +370,17 @@ function evidenceFromSnippet(candidate: AiFindingCandidate, snippet: SnippetCont
 }
 
 function getAiReviewConfig(mode: ScanMode): AiReviewConfig {
-  const configuredNormalTimeout = readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_TIMEOUT_MS, 30_000)
-  const configuredMaxTimeout = readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_MAX_TIMEOUT_MS, 60_000)
+  const configuredNormalTimeout = readPositiveInt(badgerEnv("AI_REVIEW_TIMEOUT_MS"), 30_000)
+  const configuredMaxTimeout = readPositiveInt(badgerEnv("AI_REVIEW_MAX_TIMEOUT_MS"), 60_000)
 
   if (mode === "max") {
     return {
       mode,
       label: "max-depth hybrid review",
-      maxFiles: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_MAX_FILES_MAX, 42), 64),
-      maxContextChars: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_CONTEXT_CHARS_MAX, 58_000), 80_000),
-      maxFindings: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_FINDINGS_MAX, 10), 12),
-      maxTriageFindings: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_TRIAGE_MAX, 80), 90),
+      maxFiles: Math.min(readPositiveInt(badgerEnv("AI_REVIEW_MAX_FILES_MAX"), 42), 64),
+      maxContextChars: Math.min(readPositiveInt(badgerEnv("AI_REVIEW_CONTEXT_CHARS_MAX"), 58_000), 80_000),
+      maxFindings: Math.min(readPositiveInt(badgerEnv("AI_REVIEW_FINDINGS_MAX"), 10), 12),
+      maxTriageFindings: Math.min(readPositiveInt(badgerEnv("AI_REVIEW_TRIAGE_MAX"), 80), 90),
       timeoutMs: Math.min(Math.max(configuredMaxTimeout, 120_000), 300_000),
       rangePadding: 28,
       maxInterestingLines: 42,
@@ -391,10 +392,10 @@ function getAiReviewConfig(mode: ScanMode): AiReviewConfig {
   return {
     mode,
     label: "targeted hybrid review",
-    maxFiles: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_MAX_FILES, 18), 32),
-    maxContextChars: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_CONTEXT_CHARS, 28_000), 40_000),
-    maxFindings: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_FINDINGS, 6), 8),
-    maxTriageFindings: Math.min(readPositiveInt(process.env.VIBESHIELD_AI_REVIEW_TRIAGE, 35), 45),
+    maxFiles: Math.min(readPositiveInt(badgerEnv("AI_REVIEW_MAX_FILES"), 18), 32),
+    maxContextChars: Math.min(readPositiveInt(badgerEnv("AI_REVIEW_CONTEXT_CHARS"), 28_000), 40_000),
+    maxFindings: Math.min(readPositiveInt(badgerEnv("AI_REVIEW_FINDINGS"), 6), 8),
+    maxTriageFindings: Math.min(readPositiveInt(badgerEnv("AI_REVIEW_TRIAGE"), 35), 45),
     timeoutMs: Math.min(Math.max(configuredNormalTimeout, 30_000), 60_000),
     rangePadding: 18,
     maxInterestingLines: 24,

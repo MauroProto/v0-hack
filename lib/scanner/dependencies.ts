@@ -1,3 +1,4 @@
+import { badgerEnv } from "@/lib/config/env"
 import type { DependencySummary, ProjectFile, ScanFinding, Severity } from "./types"
 import { redactSecrets } from "./rules"
 
@@ -46,7 +47,7 @@ export async function scanDependencies(files: ProjectFile[]): Promise<Dependency
     packages: candidates.length,
     vulnerablePackages: 0,
     ecosystems: [...new Set(candidates.map((candidate) => candidate.ecosystem))].sort(),
-    osvEnabled: process.env.VIBESHIELD_ENABLE_OSV !== "false",
+    osvEnabled: badgerEnv("ENABLE_OSV") !== "false",
   }
 
   if (!summary.osvEnabled || candidates.length === 0) {

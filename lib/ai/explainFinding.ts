@@ -1,6 +1,7 @@
 import { generateText, Output } from "ai"
 import { resolveAiModel } from "@/lib/ai/model"
 import { ExplanationSchema } from "@/lib/ai/structuredSchemas"
+import { badgerEnv } from "@/lib/config/env"
 import { createDeterministicPatch } from "@/lib/scanner/patches"
 import { redactSecrets } from "@/lib/scanner/rules"
 import type { FindingExplanation, ScanFinding, ScanReport } from "@/lib/scanner/types"
@@ -15,7 +16,7 @@ export async function explainFinding(
   context: ExplainFindingContext,
 ): Promise<FindingExplanation> {
   const fallback = fallbackExplanation(finding)
-  if (context.repositoryPrivate && process.env.VIBESHIELD_ALLOW_PRIVATE_AI_REVIEW !== "true") {
+  if (context.repositoryPrivate && badgerEnv("ALLOW_PRIVATE_AI_REVIEW") !== "true") {
     return fallback
   }
 
@@ -105,7 +106,7 @@ function formatLocation(finding: ScanFinding) {
 }
 
 function aiExplainTimeoutMs() {
-  const parsed = Number(process.env.VIBESHIELD_AI_EXPLAIN_TIMEOUT_MS)
+  const parsed = Number(badgerEnv("AI_EXPLAIN_TIMEOUT_MS"))
   if (!Number.isFinite(parsed) || parsed <= 0) return 8_000
   return Math.min(Math.floor(parsed), 12_000)
 }

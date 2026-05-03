@@ -63,7 +63,7 @@ async function fetchReportJsonWithTimeout(url: string, init: RequestInit, timeou
 
 function errorMessageForAiGeneration(error: unknown) {
   if (error instanceof Error && error.name === "AbortError") {
-    return "Generating fixes took longer than expected. Retry in a moment; VibeShield now limits AI explanations so this should not hang indefinitely."
+    return "Generating fixes took longer than expected. Retry in a moment; Badger now limits AI explanations so this should not hang indefinitely."
   }
 
   return error instanceof Error ? error.message : "Could not generate AI explanations."
@@ -72,7 +72,7 @@ function errorMessageForAiGeneration(error: unknown) {
 function dispatchQuotaUpdate(value: unknown) {
   const quota = normalizePublicQuota(value)
   if (!quota || typeof window === "undefined") return
-  window.dispatchEvent(new CustomEvent<PublicQuotaState>("vibeshield:quota", { detail: quota }))
+  window.dispatchEvent(new CustomEvent<PublicQuotaState>("badger:quota", { detail: quota }))
 }
 
 export function ScanResultsClient({
@@ -270,7 +270,7 @@ export function ScanResultsClient({
     <>
       <div className="app-topbar">
         <div className="crumbs">
-          <span>VibeShield</span>
+          <span>Badger</span>
           <span className="sep">/</span>
           <span>{report.projectName}</span>
           <span className="sep">/</span>
@@ -345,7 +345,7 @@ export function ScanResultsClient({
               <div className="coverage-note">
                 <Icon.focus style={{ width: 14, height: 14 }} />
                 <span>
-                  Limited coverage: this looks like a {report.framework ?? "non-Next.js/React"} repository. VibeShield still scanned supported text files, but absence of findings is not a full security clearance for this stack.
+                  Limited coverage: this looks like a {report.framework ?? "non-Next.js/React"} repository. Badger still scanned supported text files, but absence of findings is not a full security clearance for this stack.
                 </span>
               </div>
             )}
@@ -1145,7 +1145,7 @@ function buildContextLines(evidence: string, startLine: number, highlightLine: n
 function summaryForFinding(finding: ScanFinding) {
   const location = formatFindingLocation(finding)
   const evidence = finding.evidence ? ` Evidence: ${finding.evidence}` : ""
-  return `${finding.description} VibeShield tied this finding to ${location} with ${Math.round(finding.confidence * 100)}% confidence.${evidence}`
+  return `${finding.description} Badger tied this finding to ${location} with ${Math.round(finding.confidence * 100)}% confidence.${evidence}`
 }
 
 function impactForFinding(finding: ScanFinding) {

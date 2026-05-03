@@ -8,7 +8,7 @@ type SuppressionRule =
   | { kind: "path"; value: string; regex: RegExp }
 
 export function applyReportPolicy(report: ScanReport, files: ProjectFile[], baseline?: ScanBaseline | null): ScanReport {
-  const suppressionRules = parseVibeShieldIgnore(files)
+  const suppressionRules = parseBadgerIgnore(files)
   const suppressed = applySuppressions(report.findings, suppressionRules)
   const withBaseline = applyBaselineToFindings(suppressed, baseline)
   const resolved = countResolvedFindings(withBaseline, baseline)
@@ -49,8 +49,11 @@ export function baselineIdFor(sourceLabel: string, ownerHash?: string) {
   return `${ownerHash ?? "public"}:${sourceLabel}`.toLowerCase()
 }
 
-function parseVibeShieldIgnore(files: ProjectFile[]): SuppressionRule[] {
-  const ignore = files.find((file) => normalizePath(file.path) === ".vibeshieldignore")
+function parseBadgerIgnore(files: ProjectFile[]): SuppressionRule[] {
+  const ignore = files.find((file) => {
+    const normalized = normalizePath(file.path)
+    return normalized === ".badgerignore" || normalized === ".vibeshieldignore"
+  })
   if (!ignore) return []
 
   const rules: SuppressionRule[] = []

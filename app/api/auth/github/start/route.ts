@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const clientId = process.env.GITHUB_CLIENT_ID
   if (!clientId || !process.env.GITHUB_CLIENT_SECRET || !hasGitHubSessionSecret()) {
     return NextResponse.json(
-      { error: "GitHub OAuth is not configured. Set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and VIBESHIELD_GITHUB_SESSION_SECRET." },
+      { error: "GitHub OAuth is not configured. Set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and BADGER_GITHUB_SESSION_SECRET." },
       { status: 503, headers: apiHeaders() },
     )
   }
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   const authorizeUrl = new URL("https://github.com/login/oauth/authorize")
   authorizeUrl.searchParams.set("client_id", clientId)
   authorizeUrl.searchParams.set("redirect_uri", githubRedirectUri(request))
-  authorizeUrl.searchParams.set("scope", "repo read:user user:email")
+  authorizeUrl.searchParams.set("scope", "public_repo read:user user:email")
   authorizeUrl.searchParams.set("state", state)
   authorizeUrl.searchParams.set("allow_signup", "true")
 

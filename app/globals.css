@@ -1,4 +1,4 @@
-/* VibeShield — premium dark SaaS */
+/* Badger — premium dark SaaS */
 :root {
   --bg: #09090B;
   --bg-1: #0C0C0F;
@@ -330,6 +330,7 @@ img { max-width: 100%; display: block; }
 
 /* Logos row — full-bleed marquee carousel */
 .logos {
+  --logo-gap: clamp(72px, 5vw, 112px);
   margin-top: 104px;
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
@@ -342,12 +343,17 @@ img { max-width: 100%; display: block; }
 .logos .marquee-track {
   display: flex;
   width: max-content;
-  gap: 96px;
   align-items: center;
-  animation: marquee 50s linear infinite;
-  padding-left: 96px;
+  animation: marquee 58s linear infinite;
 }
 .logos:hover .marquee-track { animation-play-state: paused; }
+.logos .marquee-set {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--logo-gap);
+  padding-inline: calc(var(--logo-gap) / 2);
+}
 .logos .logo {
   display: inline-flex; align-items: center; gap: 20px;
   white-space: nowrap;
@@ -374,7 +380,7 @@ img { max-width: 100%; display: block; }
 }
 @keyframes marquee {
   from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
+  to   { transform: translateX(calc(-100% / 6)); }
 }
 
 /* Section */
@@ -445,6 +451,13 @@ img { max-width: 100%; display: block; }
 .scan-input .hint { color: var(--fg-5); font-size: 12px; padding-right: 8px; }
 .scan-input button,
 .scan-input .btn { margin-left: 8px; }
+
+.scan-trust-note {
+  margin: -8px 2px 0;
+  color: var(--fg-4);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
 
 .scan-drop {
   border: 1px dashed var(--line-2);

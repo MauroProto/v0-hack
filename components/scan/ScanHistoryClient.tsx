@@ -59,7 +59,7 @@ export function ScanHistoryClient() {
     <>
       <div className="app-topbar">
         <div className="crumbs">
-          <span>VibeShield</span>
+          <span>Badger</span>
           <span className="sep">/</span>
           <span>
             <b>Scans</b>

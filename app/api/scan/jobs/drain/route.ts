@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto"
 import { NextResponse } from "next/server"
 import { reviewProjectWithAi } from "@/lib/ai/reviewProject"
+import { badgerEnv } from "@/lib/config/env"
 import { getScannerLimitsForMode } from "@/lib/scanner/extract"
 import { appendScanEvent, claimNextScanJob, completeScanJob, failScanJob } from "@/lib/scanner/jobs"
 import { applyReportPolicy } from "@/lib/scanner/reportPolicy"
@@ -120,12 +121,12 @@ async function markReportFailed(job: ScanJob, message: string): Promise<ScanRepo
 }
 
 function isAuthorizedWorker(request: Request) {
-  const expected = process.env.VIBESHIELD_WORKER_SECRET?.trim()
+  const expected = badgerEnv("WORKER_SECRET")
   if (!expected) return false
 
   const authorization = request.headers.get("authorization") ?? ""
   const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
-  const provided = bearer || request.headers.get("x-vibeshield-worker-secret")?.trim()
+  const provided = bearer || request.headers.get("x-badger-worker-secret")?.trim() || request.headers.get("x-vibeshield-worker-secret")?.trim()
   if (!provided) return false
 
   return safeEqual(provided, expected)

@@ -1,5 +1,6 @@
 import "server-only"
 
+import { badgerEnv } from "@/lib/config/env"
 import { VIBESHIELD_SUPABASE_QUOTA_RPC, VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
 import type { RequestIdentity } from "./request"
@@ -58,13 +59,13 @@ export async function assertBurstAllowed(identity: RequestIdentity, action: "sca
 
   const limit = readPositiveInt(
     action === "scan"
-      ? process.env.VIBESHIELD_SCAN_BURST_LIMIT
+      ? badgerEnv("SCAN_BURST_LIMIT")
       : action === "pull_request"
-        ? process.env.VIBESHIELD_PULL_REQUEST_BURST_LIMIT
-        : process.env.VIBESHIELD_EXPLAIN_BURST_LIMIT,
+        ? badgerEnv("PULL_REQUEST_BURST_LIMIT")
+        : badgerEnv("EXPLAIN_BURST_LIMIT"),
     action === "scan" ? 6 : action === "pull_request" ? 3 : 10,
   )
-  const windowSeconds = readPositiveInt(process.env.VIBESHIELD_BURST_WINDOW_SECONDS, 60)
+  const windowSeconds = readPositiveInt(badgerEnv("BURST_WINDOW_SECONDS"), 60)
   const resetAt = Date.now() + windowSeconds * 1000
   const key = `${action}:${identity.subjectHash}`
   const result = consumeMemoryCounter(getBurstCounters(), key, limit, resetAt)
@@ -85,7 +86,7 @@ export async function assertBurstAllowed(identity: RequestIdentity, action: "sca
 }
 
 export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits = 1): Promise<QuotaState> {
-  const limit = readPositiveInt(process.env.VIBESHIELD_MONTHLY_SCAN_QUOTA, 20)
+  const limit = readPositiveInt(badgerEnv("MONTHLY_SCAN_QUOTA"), 20)
   const cost = normalizeCreditCost(credits)
   const windowStart = getUtcMonthStart()
   const resetAt = getNextUtcMonthStart()
@@ -132,7 +133,7 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits
       throw quotaExceeded(limit, resetAt)
     }
 
-    console.error("VibeShield Supabase quota failed", error.message)
+    console.error("Badger Supabase quota failed", error.message)
     if (persistentQuotaRequired()) throw persistentQuotaUnavailable()
   }
 
@@ -148,7 +149,7 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits
 }
 
 export async function peekMonthlyScanQuota(identity: RequestIdentity): Promise<QuotaState> {
-  const limit = readPositiveInt(process.env.VIBESHIELD_MONTHLY_SCAN_QUOTA, 20)
+  const limit = readPositiveInt(badgerEnv("MONTHLY_SCAN_QUOTA"), 20)
   const windowStart = getUtcMonthStart()
   const resetAt = getNextUtcMonthStart()
   const memoryKey = monthlyCounterKey(windowStart, identity.subjectHash)
@@ -187,7 +188,7 @@ export async function peekMonthlyScanQuota(identity: RequestIdentity): Promise<Q
       }
     }
 
-    console.error("VibeShield Supabase quota read failed", error.message)
+    console.error("Badger Supabase quota read failed", error.message)
     if (persistentQuotaRequired()) throw persistentQuotaUnavailable()
   }
 
@@ -229,7 +230,7 @@ export function rateLimitHeaders(quota: RateLimitHeaderState) {
 
 function quotaExceeded(limit: number, resetAt: Date) {
   return new SecurityError(
-    `Monthly scan credit quota reached. VibeShield allows ${limit} credits per user per UTC month.`,
+    `Monthly scan credit quota reached. Badger allows ${limit} credits per user per UTC month.`,
     429,
     "monthly_quota_reached",
     rateLimitHeaders({
@@ -242,7 +243,7 @@ function quotaExceeded(limit: number, resetAt: Date) {
 }
 
 function persistentQuotaRequired() {
-  const value = process.env.VIBESHIELD_REQUIRE_PERSISTENT_QUOTA?.trim().toLowerCase()
+  const value = badgerEnv("REQUIRE_PERSISTENT_QUOTA")?.toLowerCase()
   if (value === "true") return true
   if (value === "false") return false
   return process.env.NODE_ENV === "production"
@@ -259,7 +260,7 @@ function persistentQuotaUnavailable() {
 function localRateLimitsDisabled() {
   if (process.env.NODE_ENV === "production" || process.env.VERCEL === "1") return false
 
-  const value = process.env.VIBESHIELD_DISABLE_LOCAL_RATE_LIMITS?.trim().toLowerCase()
+  const value = badgerEnv("DISABLE_LOCAL_RATE_LIMITS")?.toLowerCase()
   if (value === "true") return true
   if (value === "false") return false
 

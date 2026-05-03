@@ -3,6 +3,7 @@ import "server-only"
 import { createAnthropic, type AnthropicLanguageModelOptions } from "@ai-sdk/anthropic"
 import { createDeepSeek, type DeepSeekLanguageModelOptions } from "@ai-sdk/deepseek"
 import type { LanguageModel } from "ai"
+import { badgerEnv } from "@/lib/config/env"
 
 type ScanReviewMode = "rules" | "normal" | "max"
 
@@ -36,7 +37,7 @@ const DEFAULT_ANTHROPIC_NORMAL_EFFORT = "low"
 const DEFAULT_ANTHROPIC_MAX_EFFORT = "max"
 
 export function resolveAiModel(): ResolvedAiModel | null {
-  const requestedProvider = normalizeProvider(process.env.VIBESHIELD_AI_PROVIDER)
+  const requestedProvider = normalizeProvider(badgerEnv("AI_PROVIDER"))
 
   if (requestedProvider === "anthropic") return resolveAnthropicModel()
   if (requestedProvider === "deepseek") return resolveDeepSeekModel()
@@ -47,19 +48,19 @@ export function resolveAiModel(): ResolvedAiModel | null {
 
 export function resolvePullRequestReviewModel(): ResolvedAiModel | null {
   return resolveAnthropicModel({
-    modelId: process.env.VIBESHIELD_PR_REVIEW_MODEL || process.env.VIBESHIELD_ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
-    effort: readAnthropicEffort(process.env.VIBESHIELD_PR_REVIEW_EFFORT, "max"),
+    modelId: badgerEnv("PR_REVIEW_MODEL") || badgerEnv("ANTHROPIC_MODEL") || DEFAULT_ANTHROPIC_MODEL,
+    effort: readAnthropicEffort(badgerEnv("PR_REVIEW_EFFORT"), "max"),
   })
 }
 
 export function resolveScanReviewModel(mode: ScanReviewMode): ResolvedAiModel | null {
   const isMax = mode === "max"
   const effort = isMax
-    ? readAnthropicEffort(process.env.VIBESHIELD_ANTHROPIC_MAX_EFFORT, DEFAULT_ANTHROPIC_MAX_EFFORT)
-    : readAnthropicEffort(process.env.VIBESHIELD_ANTHROPIC_NORMAL_EFFORT, DEFAULT_ANTHROPIC_NORMAL_EFFORT)
+    ? readAnthropicEffort(badgerEnv("ANTHROPIC_MAX_EFFORT"), DEFAULT_ANTHROPIC_MAX_EFFORT)
+    : readAnthropicEffort(badgerEnv("ANTHROPIC_NORMAL_EFFORT"), DEFAULT_ANTHROPIC_NORMAL_EFFORT)
 
   return resolveAnthropicModel({
-    modelId: process.env.VIBESHIELD_SCAN_REVIEW_MODEL || process.env.VIBESHIELD_ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
+    modelId: badgerEnv("SCAN_REVIEW_MODEL") || badgerEnv("ANTHROPIC_MODEL") || DEFAULT_ANTHROPIC_MODEL,
     effort,
   })
 }
@@ -83,7 +84,7 @@ export function getAiModelStatus(): AiModelStatus {
 function resolveGatewayModel(): ResolvedAiModel | null {
   if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) return null
 
-  const modelId = process.env.VIBESHIELD_MODEL || DEFAULT_GATEWAY_MODEL
+  const modelId = badgerEnv("MODEL") || DEFAULT_GATEWAY_MODEL
   return {
     configured: true,
     provider: "gateway",
@@ -96,8 +97,8 @@ function resolveAnthropicModel(options?: { modelId?: string; effort?: AnthropicL
   const apiKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY
   if (!apiKey) return null
 
-  const modelId = options?.modelId || process.env.VIBESHIELD_ANTHROPIC_MODEL || process.env.VIBESHIELD_CLAUDE_MODEL || DEFAULT_ANTHROPIC_MODEL
-  const effort = options?.effort ?? readAnthropicEffort(process.env.VIBESHIELD_ANTHROPIC_EFFORT, DEFAULT_ANTHROPIC_EFFORT)
+  const modelId = options?.modelId || badgerEnv("ANTHROPIC_MODEL") || badgerEnv("CLAUDE_MODEL") || DEFAULT_ANTHROPIC_MODEL
+  const effort = options?.effort ?? readAnthropicEffort(badgerEnv("ANTHROPIC_EFFORT"), DEFAULT_ANTHROPIC_EFFORT)
   const anthropic = createAnthropic({ apiKey })
   return {
     configured: true,
@@ -118,7 +119,7 @@ function resolveDeepSeekModel(): ResolvedAiModel | null {
   const apiKey = process.env.DEEPSEEK_API_KEY
   if (!apiKey) return null
 
-  const modelId = process.env.VIBESHIELD_DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL
+  const modelId = badgerEnv("DEEPSEEK_MODEL") || DEFAULT_DEEPSEEK_MODEL
   const deepseek = createDeepSeek({
     apiKey,
     fetch: withDeepSeekReasoningEffort(fetch),
@@ -165,7 +166,7 @@ function withDeepSeekReasoningEffort(fetchImpl: typeof fetch): typeof fetch {
 }
 
 function readDeepSeekReasoningEffort() {
-  const value = process.env.VIBESHIELD_DEEPSEEK_REASONING_EFFORT?.trim().toLowerCase()
+  const value = badgerEnv("DEEPSEEK_REASONING_EFFORT")?.toLowerCase()
   if (value === "low" || value === "medium" || value === "high") return value
   return DEFAULT_DEEPSEEK_REASONING_EFFORT
 }

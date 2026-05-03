@@ -25,7 +25,7 @@ async function main() {
   const blockers = checks.filter((check) => !check.ok && check.severity === "blocker")
   const warnings = checks.filter((check) => !check.ok && check.severity === "warning")
 
-  console.log("VibeShield production readiness")
+  console.log("Badger production readiness")
   console.log(`Mode: ${strict ? "strict production" : "advisory"}`)
   console.log("")
 
@@ -71,7 +71,7 @@ async function repositoryChecks(): Promise<Check[]> {
       ),
       severity: "blocker",
       label: "Supabase tables force RLS for defense in depth",
-      remediation: "Force RLS on every VibeShield table exposed under the public schema.",
+      remediation: "Force RLS on every Badger table exposed under the public schema.",
     },
     {
       id: "supabase_client_roles_denied",
@@ -169,9 +169,11 @@ async function applyVercelSensitiveReadinessPlaceholders() {
   }
 
   const placeholders: Record<string, string> = {
-    VIBESHIELD_IDENTITY_SALT: "vercel-sensitive-placeholder-identity-salt-64chars-minimum",
+    BADGER_IDENTITY_SALT: "placeholder://readiness/BADGER_IDENTITY_SALT",
+    VIBESHIELD_IDENTITY_SALT: "placeholder://readiness/VIBESHIELD_IDENTITY_SALT",
     GITHUB_CLIENT_SECRET: "vercel-sensitive-placeholder-github-client-secret",
-    VIBESHIELD_GITHUB_SESSION_SECRET: "vercel-sensitive-placeholder-github-session-secret",
+    BADGER_GITHUB_SESSION_SECRET: "placeholder://readiness/BADGER_GITHUB_SESSION_SECRET",
+    VIBESHIELD_GITHUB_SESSION_SECRET: "placeholder://readiness/VIBESHIELD_GITHUB_SESSION_SECRET",
     ANTHROPIC_API_KEY: "vercel-sensitive-placeholder-anthropic-key",
     CLAUDE_API_KEY: "vercel-sensitive-placeholder-claude-key",
     DEEPSEEK_API_KEY: "vercel-sensitive-placeholder-deepseek-key",

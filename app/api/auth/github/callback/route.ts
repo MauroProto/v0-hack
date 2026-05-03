@@ -74,7 +74,7 @@ async function exchangeCodeForToken(code: string, request: Request) {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      "User-Agent": "VibeShield",
+      "User-Agent": "Badger",
     },
     body: JSON.stringify({
       client_id: clientId,
@@ -102,7 +102,7 @@ async function fetchGitHubUser(token: string) {
     headers: {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${token}`,
-      "User-Agent": "VibeShield",
+      "User-Agent": "Badger",
       "X-GitHub-Api-Version": "2022-11-28",
     },
     cache: "no-store",

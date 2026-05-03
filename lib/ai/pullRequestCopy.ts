@@ -8,6 +8,7 @@ import {
   type PullRequestCopyDraft,
 } from "@/lib/ai/publicPullRequestCopy"
 import { PullRequestCopySchema } from "@/lib/ai/structuredSchemas"
+import { badgerEnv } from "@/lib/config/env"
 import { redactSecrets } from "@/lib/scanner/rules"
 import type { ScanFinding, ScanReport } from "@/lib/scanner/types"
 
@@ -20,13 +21,13 @@ export interface ProfessionalPullRequestCopyInput {
 }
 
 export async function generateProfessionalPullRequestCopy(input: ProfessionalPullRequestCopyInput): Promise<PullRequestCopyDraft> {
-  if (process.env.VIBESHIELD_ENABLE_PR_AI_COPY === "false") return sanitizePublicPullRequestCopy(input.draft)
+  if (badgerEnv("ENABLE_PR_AI_COPY") === "false") return sanitizePublicPullRequestCopy(input.draft)
 
   const aiModel = resolveAiModel()
   if (!aiModel) return sanitizePublicPullRequestCopy(input.draft)
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), readPositiveInt(process.env.VIBESHIELD_PR_AI_TIMEOUT_MS, 20_000))
+  const timeout = setTimeout(() => controller.abort(), readPositiveInt(badgerEnv("PR_AI_TIMEOUT_MS"), 20_000))
 
   try {
     const { output } = await generateText({
@@ -37,7 +38,7 @@ export async function generateProfessionalPullRequestCopy(input: ProfessionalPul
       system: [
         "You write professional public GitHub pull request copy for maintainers as a careful human contributor.",
         "Write in clear English only.",
-        "Never mention VibeShield, scanner vendor branding, model names, AI, local URLs, localhost, internal API routes, or private tooling.",
+        "Never mention Badger, VibeShield, scanner vendor branding, model names, AI, local URLs, localhost, internal API routes, or private tooling.",
         "Avoid words that make the PR look machine-created: generated, auto-generated, scanner, scan metadata, scan ID, static analysis report.",
         "Do not exaggerate. Do not claim that vulnerabilities are fixed unless low-risk changes were actually applied.",
         "When concrete files were changed, make the PR about those exact changes rather than about a broad security report.",

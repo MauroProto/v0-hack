@@ -67,7 +67,7 @@ async function deleteGitHubAppAuthorization(accessToken: string) {
       Accept: "application/vnd.github+json",
       Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`, "utf8").toString("base64")}`,
       "Content-Type": "application/json",
-      "User-Agent": "VibeShield",
+      "User-Agent": "Badger",
       "X-GitHub-Api-Version": "2022-11-28",
     },
     body: JSON.stringify({ access_token: accessToken }),

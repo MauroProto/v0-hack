@@ -1,6 +1,7 @@
 import "server-only"
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto"
+import { badgerEnv } from "@/lib/config/env"
 
 export type GitHubSession = {
   token: string
@@ -172,14 +173,14 @@ function readSessionSecret(required: true): string
 function readSessionSecret(required: false): string | null
 function readSessionSecret(required: boolean) {
   const configured =
-    process.env.VIBESHIELD_GITHUB_SESSION_SECRET ||
-    process.env.VIBESHIELD_IDENTITY_SALT ||
+    badgerEnv("GITHUB_SESSION_SECRET") ||
+    badgerEnv("IDENTITY_SALT") ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SECRET_KEY
 
   if (configured) return configured
-  if (process.env.NODE_ENV !== "production") return "vibeshield-local-development"
-  if (required) throw new Error("VIBESHIELD_GITHUB_SESSION_SECRET is required in production.")
+  if (process.env.NODE_ENV !== "production") return "badger-local-development"
+  if (required) throw new Error("BADGER_GITHUB_SESSION_SECRET is required in production.")
   return null
 }
 

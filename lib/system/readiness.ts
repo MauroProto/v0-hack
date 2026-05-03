@@ -1,6 +1,7 @@
+import { badgerEnv } from "@/lib/config/env"
 import { backgroundJobsEnabled } from "@/lib/scanner/jobs"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { isGitHubAppConfigured } from "@/lib/utils/github-app-config"
+import { isGitHubAppInstallationConfigured } from "@/lib/utils/github-app-config"
 
 export type ReadinessSeverity = "blocker" | "warning"
 
@@ -30,14 +31,14 @@ export function getProductionReadiness(): ProductionReadiness {
     },
     {
       id: "persistent_storage_required",
-      ok: productionPersistenceEnabled("VIBESHIELD_REQUIRE_PERSISTENT_STORAGE"),
+      ok: productionPersistenceEnabled("REQUIRE_PERSISTENT_STORAGE"),
       severity: "blocker",
       label: "Production storage cannot fall back to local memory or files",
       remediation: "Keep persistent report storage required in production.",
     },
     {
       id: "persistent_quota_required",
-      ok: productionPersistenceEnabled("VIBESHIELD_REQUIRE_PERSISTENT_QUOTA"),
+      ok: productionPersistenceEnabled("REQUIRE_PERSISTENT_QUOTA"),
       severity: "blocker",
       label: "Production monthly quota cannot fall back to memory",
       remediation: "Keep persistent monthly quota required in production.",
@@ -79,28 +80,28 @@ export function getProductionReadiness(): ProductionReadiness {
     },
     {
       id: "background_worker_secret",
-      ok: !backgroundJobsEnabled() || Boolean(process.env.VIBESHIELD_WORKER_SECRET?.trim()),
+      ok: !backgroundJobsEnabled() || Boolean(badgerEnv("WORKER_SECRET")),
       severity: "blocker",
       label: "Background worker endpoint is protected when jobs are enabled",
       remediation: "If background jobs are enabled, configure a long random worker secret and send it only from a trusted cron/worker.",
     },
     {
       id: "public_scan_list_disabled",
-      ok: process.env.VIBESHIELD_ENABLE_PUBLIC_SCAN_LIST !== "true",
+      ok: badgerEnv("ENABLE_PUBLIC_SCAN_LIST") !== "true",
       severity: "blocker",
       label: "Report history is not publicly enumerable",
       remediation: "Keep public report listing disabled; reports should be filtered by the request identity.",
     },
     {
       id: "legacy_report_access_disabled",
-      ok: process.env.VIBESHIELD_ALLOW_LEGACY_REPORT_ACCESS !== "true",
+      ok: badgerEnv("ALLOW_LEGACY_REPORT_ACCESS") !== "true",
       severity: "blocker",
       label: "Legacy unauthenticated report access is disabled",
       remediation: "Keep legacy report access disabled so report retrieval requires the creating identity.",
     },
     {
       id: "private_ai_review_opt_in",
-      ok: process.env.VIBESHIELD_ALLOW_PRIVATE_AI_REVIEW !== "true",
+      ok: badgerEnv("ALLOW_PRIVATE_AI_REVIEW") !== "true",
       severity: "warning",
       label: "Private repository snippets are not sent to AI by default",
       remediation: "Only enable private AI review with explicit product consent and a provider posture you can defend.",
@@ -114,10 +115,10 @@ export function getProductionReadiness(): ProductionReadiness {
     },
     {
       id: "github_app_optional",
-      ok: isGitHubAppConfigured(),
+      ok: isGitHubAppInstallationConfigured(),
       severity: "warning",
-      label: "Optional GitHub App credentials are configured",
-      remediation: "OAuth works for inline user actions; configure a GitHub App before durable private repository background jobs.",
+      label: "Badger GitHub App installation is available for server-side public scans",
+      remediation: "Configure BADGER_GITHUB_APP_ID, BADGER_GITHUB_APP_PRIVATE_KEY and BADGER_GITHUB_APP_INSTALLATION_ID so public repository scans do not depend on anonymous GitHub API limits.",
     },
   ]
 
@@ -147,15 +148,15 @@ export function isPrSafetyReviewConfigured() {
 }
 
 export function isGitHubOAuthConfigured() {
-  return Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET && process.env.VIBESHIELD_GITHUB_SESSION_SECRET)
+  return Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET && badgerEnv("GITHUB_SESSION_SECRET"))
 }
 
 function productionPersistenceEnabled(name: string) {
-  return process.env[name]?.trim().toLowerCase() !== "false"
+  return badgerEnv(name)?.toLowerCase() !== "false"
 }
 
 function hasStrongIdentitySalt() {
-  const salt = process.env.VIBESHIELD_IDENTITY_SALT?.trim()
+  const salt = badgerEnv("IDENTITY_SALT")
   return Boolean(salt && salt.length >= 24)
 }
 

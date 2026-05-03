@@ -2,18 +2,22 @@ import type { Metadata } from "next"
 import Link from "next/link"
 
 export const metadata: Metadata = {
-  title: "Docs — VibeShield",
+  title: "Docs — Badger",
   description:
-    "Plain documentation for VibeShield: what it does, how scans work, configuration, limits and safe usage.",
+    "Plain documentation for Badger: what it does, how scans work, configuration, limits and safe usage.",
 }
 
 const envVars = [
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "VIBESHIELD_IDENTITY_SALT",
-  "VIBESHIELD_REQUIRE_PERSISTENT_STORAGE=true",
-  "VIBESHIELD_REQUIRE_PERSISTENT_QUOTA=true",
-  "VIBESHIELD_GITHUB_SESSION_SECRET",
+  "BADGER_IDENTITY_SALT",
+  "BADGER_REQUIRE_PERSISTENT_STORAGE=true",
+  "BADGER_REQUIRE_PERSISTENT_QUOTA=true",
+  "BADGER_MONTHLY_SCAN_QUOTA=20",
+  "BADGER_GITHUB_SESSION_SECRET",
+  "BADGER_GITHUB_APP_ID=",
+  "BADGER_GITHUB_APP_INSTALLATION_ID=",
+  "BADGER_GITHUB_APP_PRIVATE_KEY=",
   "GITHUB_CLIENT_ID",
   "GITHUB_CLIENT_SECRET",
   "GITHUB_REDIRECT_URI",
@@ -25,7 +29,7 @@ export default function DocsPage() {
     <main className="docs-page">
       <div className="docs-shell">
         <aside className="docs-sidebar" aria-label="Documentation navigation">
-          <Link href="/" className="docs-logo">VibeShield</Link>
+          <Link href="/" className="docs-logo">Badger</Link>
           <nav>
             <a href="#overview">Overview</a>
             <a href="#quick-start">Quick start</a>
@@ -41,9 +45,9 @@ export default function DocsPage() {
         <article className="docs-content">
           <header id="overview">
             <Link href="/" className="docs-back">Back to home</Link>
-            <h1>VibeShield documentation</h1>
+            <h1>Badger documentation</h1>
             <p>
-              VibeShield is an open source security review layer for AI-built web apps. It scans
+              Badger is an open source security review layer for AI-built web apps. It scans
               GitHub repositories from the server, builds a static security inventory, runs focused
               AppSec rules, and uses AI to triage evidence instead of blindly trusting pattern
               matches.
@@ -58,8 +62,8 @@ export default function DocsPage() {
           <section id="quick-start">
             <h2>Quick start</h2>
             <ol>
-              <li>Sign in with GitHub.</li>
-              <li>Paste a public repository URL or select a repository from your account.</li>
+              <li>Paste a public repository URL without logging in.</li>
+              <li>Connect GitHub only if you want private repositories, account repository selection or PR creation.</li>
               <li>Choose Normal or Max mode.</li>
               <li>Review the grouped findings and the evidence behind each one.</li>
               <li>Generate fixes only when the selected findings are safe to remediate.</li>
@@ -68,7 +72,7 @@ export default function DocsPage() {
 
           <section id="how-it-works">
             <h2>How it works</h2>
-            <p>VibeShield does not execute the scanned repository. The scan pipeline is static:</p>
+            <p>Badger does not execute the scanned repository. The scan pipeline is static:</p>
             <ol>
               <li>Fetch the GitHub tree and supported text blobs server-side.</li>
               <li>Fingerprint the framework, routes, Server Actions, client components and configs.</li>
@@ -114,7 +118,7 @@ export default function DocsPage() {
             <h2>Security model</h2>
             <ul>
               <li>Repository code is never executed during a scan.</li>
-              <li>VibeShield does not run npm install, package scripts, tests or builds for scanned repos.</li>
+              <li>Badger does not run npm install, package scripts, tests or builds for scanned repos.</li>
               <li>Secrets and token-looking values are redacted before reports and AI review.</li>
               <li>Public pull requests should contain real code fixes, not noisy generated reports.</li>
               <li>Reports, scan history and generated artifacts are tied to the logged-in account.</li>
@@ -124,7 +128,7 @@ export default function DocsPage() {
 
           <section id="configuration">
             <h2>Configuration</h2>
-            <p>Production deployments should use Supabase for persistence and GitHub OAuth for login.</p>
+            <p>Production deployments should use Supabase for persistence. Public repo scans can run without user login through a server-side Badger GitHub App or read-only server token.</p>
             <pre><code>{envVars.join("\n")}</code></pre>
           </section>
 
@@ -135,7 +139,7 @@ export default function DocsPage() {
               <li>Large repositories are capped to keep scans predictable and affordable.</li>
               <li>Static analysis can miss runtime-only behavior.</li>
               <li>AI triage improves prioritization, but final security decisions still require human review.</li>
-              <li>VibeShield is not a guarantee of security or a replacement for a full audit.</li>
+              <li>Badger is not a guarantee of security or a replacement for a full audit.</li>
             </ul>
           </section>
 
@@ -155,7 +159,7 @@ pnpm run scanner:smoke`}</code></pre>
             <h2>Links</h2>
             <ul>
               <li><Link href="/scan">Start a scan</Link></li>
-              <li><a href="https://github.com/MauroProto/v0-hack">GitHub repository</a></li>
+              <li><a href="https://github.com/MauroProto/badger">GitHub repository</a></li>
             </ul>
           </section>
         </article>

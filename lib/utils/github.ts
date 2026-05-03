@@ -2,6 +2,7 @@ import { auditEvent } from "@/lib/scanner/scan"
 import { generateProfessionalPullRequestCopy } from "@/lib/ai/pullRequestCopy"
 import { reviewPullRequestWithClaude, type PullRequestSafetyChangedFile } from "@/lib/ai/reviewPullRequest"
 import { sanitizePublicPullRequestCopy } from "@/lib/ai/publicPullRequestCopy"
+import { badgerEnv } from "@/lib/config/env"
 import {
   decodeUtf8,
   getScannerLimits,
@@ -14,6 +15,10 @@ import {
   type ScannerLimits,
 } from "@/lib/scanner/extract"
 import { getGitHubSessionFromHeaders } from "@/lib/security/github-session"
+import {
+  createDefaultGitHubAppInstallationToken,
+  isGitHubAppInstallationConfigured,
+} from "@/lib/utils/github-app"
 import {
   pinThirdPartyActionRefsInText,
   type ActionRef,
@@ -149,8 +154,12 @@ export function getGitHubTokenFromRequest(request: Request) {
   return getGitHubSessionFromHeaders(request.headers)?.token ?? getLocalGitHubToken()
 }
 
+export async function getPublicGitHubReadTokenFromRequest(request: Request) {
+  return getGitHubSessionFromHeaders(request.headers)?.token ?? await getServerGitHubReadToken()
+}
+
 export async function listAuthenticatedGitHubRepos(token: string): Promise<GitHubRepositorySummary[]> {
-  const maxPages = readPositiveInt(process.env.VIBESHIELD_GITHUB_REPO_LIST_MAX_PAGES, 5)
+  const maxPages = readPositiveInt(badgerEnv("GITHUB_REPO_LIST_MAX_PAGES"), 5)
   const repos: GitHubRepoApi[] = []
 
   for (let page = 1; page <= maxPages; page += 1) {
@@ -271,7 +280,7 @@ async function fetchProjectFiles(
   let totalTextBytes = 0
   let skippedByTotalSizeLimit = 0
   let skippedUnsupportedEncoding = 0
-  const concurrency = Math.min(readPositiveInt(process.env.VIBESHIELD_GITHUB_BLOB_CONCURRENCY, 6), 10)
+  const concurrency = Math.min(readPositiveInt(badgerEnv("GITHUB_BLOB_CONCURRENCY"), 6), 10)
 
   for (let index = 0; index < candidates.length; index += concurrency) {
     const batch = candidates.slice(index, index + concurrency)
@@ -344,7 +353,7 @@ export async function createRemediationPullRequest(input: {
     findings: input.report.findings.filter(isSafePullRequestFinding),
   }
   if (report.findings.length === 0) {
-    throw new Error("No safe PR fixes were available. VibeShield only opens public pull requests for deterministic, low-risk code changes.")
+    throw new Error("No safe PR fixes were available. Badger only opens public pull requests for deterministic, low-risk code changes.")
   }
 
   const repository = repositoryRefFromReport(report)
@@ -1037,8 +1046,8 @@ async function githubFetch(url: string, token?: string, init: RequestInit = {}) 
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   if (token) headers.set("Authorization", `Bearer ${token}`)
 
-  const maxRetries = Math.min(readPositiveInt(process.env.VIBESHIELD_GITHUB_FETCH_RETRIES, DEFAULT_GITHUB_FETCH_RETRIES), 5)
-  const baseDelayMs = readPositiveInt(process.env.VIBESHIELD_GITHUB_RETRY_DELAY_MS, DEFAULT_GITHUB_RETRY_DELAY_MS)
+  const maxRetries = Math.min(readPositiveInt(badgerEnv("GITHUB_FETCH_RETRIES"), DEFAULT_GITHUB_FETCH_RETRIES), 5)
+  const baseDelayMs = readPositiveInt(badgerEnv("GITHUB_RETRY_DELAY_MS"), DEFAULT_GITHUB_RETRY_DELAY_MS)
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     let response: Response
@@ -1082,14 +1091,23 @@ async function githubFetch(url: string, token?: string, init: RequestInit = {}) 
 function getLocalGitHubToken() {
   if (process.env.NODE_ENV === "production" || process.env.VERCEL === "1") return undefined
 
-  const explicit = process.env.VIBESHIELD_ALLOW_LOCAL_GITHUB_TOKEN?.trim().toLowerCase()
+  const explicit = badgerEnv("ALLOW_LOCAL_GITHUB_TOKEN")?.toLowerCase()
   const localAllowed = explicit !== "false"
   if (!localAllowed) return undefined
 
   return (
-    process.env.VIBESHIELD_GITHUB_TOKEN?.trim() ||
+    badgerEnv("GITHUB_TOKEN") ||
     process.env.GITHUB_TOKEN?.trim() ||
     process.env.GH_TOKEN?.trim() ||
+    undefined
+  )
+}
+
+async function getServerGitHubReadToken() {
+  if (isGitHubAppInstallationConfigured()) return createDefaultGitHubAppInstallationToken()
+
+  return (
+    badgerEnv("GITHUB_TOKEN") ||
     undefined
   )
 }
@@ -1436,7 +1454,7 @@ async function throwGitHubResponseError(response: Response, url: string, authent
 
   if (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0") {
     throw new GitHubApiError(
-      "GitHub public API rate limit exceeded. In local development, login with GitHub or set VIBESHIELD_GITHUB_TOKEN in .env.local.",
+      "GitHub public API rate limit exceeded. In local development, set BADGER_GITHUB_TOKEN in .env.local or configure the Badger GitHub App server-side.",
       response.status,
       "github_rate_limited",
     )

@@ -10,7 +10,7 @@ async function main() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  console.log("VibeShield Supabase verification")
+  console.log("Badger Supabase verification")
 
   if (!url || !serviceKey) {
     console.log("[fail] supabase_credentials: server-side Supabase URL or service credential is missing")
@@ -25,7 +25,7 @@ async function main() {
     },
     global: {
       headers: {
-        "X-Client-Info": "vibeshield-supabase-verify",
+        "X-Client-Info": "badger-supabase-verify",
       },
     },
   })
@@ -63,8 +63,8 @@ async function main() {
     return
   }
 
-  console.log("[ok] supabase_connection: all VibeShield tables are reachable")
-  if (anonKey) console.log("[ok] supabase_client_access: anon client cannot read VibeShield tables directly")
+  console.log("[ok] supabase_connection: all Badger tables are reachable")
+  if (anonKey) console.log("[ok] supabase_client_access: anon client cannot read Badger tables directly")
   console.log("No secret values were printed.")
 }
 
@@ -108,7 +108,7 @@ async function verifyClientRolesDenied(url: string, anonKey: string) {
     },
     global: {
       headers: {
-        "X-Client-Info": "vibeshield-supabase-verify-anon",
+        "X-Client-Info": "badger-supabase-verify-anon",
       },
     },
   })

@@ -18,7 +18,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ scan
 
   return NextResponse.json(generateSarif(publicReport(report)), {
     headers: apiHeaders({
-      "Content-Disposition": `attachment; filename="vibeshield-${scanId}.sarif.json"`,
+      "Content-Disposition": `attachment; filename="badger-${scanId}.sarif.json"`,
     }),
   })
 }

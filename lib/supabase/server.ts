@@ -25,7 +25,7 @@ export function getSupabaseServiceClient() {
       },
       global: {
         headers: {
-          "X-Client-Info": "vibeshield-mvp",
+          "X-Client-Info": "badger",
         },
       },
     })

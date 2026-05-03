@@ -20,7 +20,7 @@ const STEPS: Step[] = [
 function main() {
   const results: Array<{ id: string; status: "ok" | "fail"; code: number | null }> = []
 
-  console.log("VibeShield release verification")
+  console.log("Badger release verification")
   console.log("No secret values are intentionally printed by these checks.")
 
   for (const step of STEPS) {

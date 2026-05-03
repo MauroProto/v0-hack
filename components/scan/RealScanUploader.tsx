@@ -155,11 +155,6 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   }
 
   const startPublicScan = async () => {
-    if (!githubConnected) {
-      handleScanFailure("Login with GitHub before starting a security scan.")
-      return
-    }
-
     if (!githubUrl.trim()) {
       handleScanFailure("Paste a public GitHub repository URL first.")
       return
@@ -242,153 +237,154 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
           Turn a GitHub repo into <em>security evidence.</em>
         </h1>
         <p className="onboard-sub">
-          VibeShield scans AI-built projects without running their code, separates real risk from
+          Badger scans AI-built projects without running their code, separates real risk from
           noisy findings, and uses AI to explain evidence-backed issues before you ship or open a PR.
         </p>
       </section>
 
       <div className="surface scan-card real-scan-card">
-        {sessionLoading ? (
-          <div className="scan-auth-gate">
-            <div className="auth-gate-icon">
-              <Icon.branch style={{ width: 20, height: 20 }} />
-            </div>
-            <div>
-              <b>Checking GitHub session</b>
-              <span>VibeShield ties scans, quota and report history to your account.</span>
-            </div>
-          </div>
-        ) : !githubConnected ? (
-          <div className="scan-auth-gate">
-            <div className="auth-gate-icon">
-              <Icon.branch style={{ width: 20, height: 20 }} />
-            </div>
-            <div>
-              <b>Login with GitHub to start</b>
-              <span>Scans are private to your account. After login, you can paste a public repo URL or choose one of your repositories.</span>
-            </div>
-            <button className="btn btn-accent btn-lg btn-shine" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
-              <Icon.branch style={{ width: 14, height: 14 }} />
-              {loginLoading ? "Redirecting..." : "Login with GitHub"}
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="scan-tabs">
-              <button className="scan-tab" data-active={mode === "public"} onClick={() => setMode("public")} type="button">
-                <Icon.branch /> Public repo URL
-              </button>
-              <button className="scan-tab" data-active={mode === "github"} onClick={() => setMode("github")} type="button">
-                <Icon.branch /> Your repositories
-              </button>
-            </div>
+        <div className="scan-tabs">
+          <button className="scan-tab" data-active={mode === "public"} onClick={() => setMode("public")} type="button">
+            <Icon.branch /> Public repo URL
+          </button>
+          <button className="scan-tab" data-active={mode === "github"} onClick={() => setMode("github")} type="button">
+            <Icon.branch /> {githubConnected ? "Your repositories" : "Connect GitHub"}
+          </button>
+        </div>
 
-            <div className="scan-body">
-              <fieldset className="analysis-mode-field" aria-label="Analysis depth">
-                <legend>Mode</legend>
-                <div className="analysis-mode-grid">
-                  {ANALYSIS_MODES.map((option) => (
-                    <button
-                      className="analysis-mode-choice"
-                      data-active={analysisMode === option.id}
-                      key={option.id}
-                      type="button"
-                      onClick={() => setAnalysisMode(option.id)}
-                    >
-                      <b>{option.label}</b>
-                      <span>{option.detail}</span>
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
+        <div className="scan-body">
+          <fieldset className="analysis-mode-field" aria-label="Analysis depth">
+            <legend>Mode</legend>
+            <div className="analysis-mode-grid">
+              {ANALYSIS_MODES.map((option) => (
+                <button
+                  className="analysis-mode-choice"
+                  data-active={analysisMode === option.id}
+                  key={option.id}
+                  type="button"
+                  onClick={() => setAnalysisMode(option.id)}
+                >
+                  <b>{option.label}</b>
+                  <span>{option.detail}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
 
-              {mode === "public" ? (
-                <div className="scan-input real-github-input">
-                  <input
-                    value={githubUrl}
-                    onChange={(event) => setGithubUrl(event.target.value)}
-                    placeholder="https://github.com/owner/repo"
-                  />
-                  <span className="hint mono">server-side</span>
-                </div>
-              ) : (
-                <div className="github-repo-panel">
-                  <div className="github-repo-head">
-                    <div>
-                      <b>{githubSession.name ?? githubSession.login ?? "GitHub account"}</b>
-                      <span>Choose a repository from your GitHub account.</span>
-                    </div>
-                    <button className="btn btn-outline" type="button" onClick={signOut}>
-                      Sign out
-                    </button>
-                  </div>
-
-                  <div className="repo-toolbar">
-                    <button
-                      className="btn btn-outline"
-                      type="button"
-                      onClick={() => loadRepos()}
-                      disabled={reposLoading}
-                    >
-                      <Icon.scan style={{ width: 14, height: 14 }} />
-                      {reposLoading ? "Refreshing..." : "Refresh repos"}
-                    </button>
-                  </div>
-                  <div className="repo-list">
-                    {repos.map((repo) => (
-                      <button
-                        key={repo.id}
-                        type="button"
-                        className="repo-choice"
-                        data-active={selectedRepo?.id === repo.id}
-                        onClick={() => setSelectedRepo(repo)}
-                      >
-                        <span>
-                          <b>{repo.fullName}</b>
-                          <em>{repo.language ?? "repository"} · {repo.defaultBranch}</em>
-                        </span>
-                        <small>{repo.private ? "private" : "public"}</small>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {error && (
-                <div className="scan-error" role="alert">
-                  <Icon.focus style={{ width: 14, height: 14 }} />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              {scanLoading && (
-                <ScanProgress
-                  key={scanKey}
-                  done={scanFinished}
+          {mode === "public" ? (
+            <>
+              <div className="scan-input real-github-input">
+                <input
+                  value={githubUrl}
+                  onChange={(event) => setGithubUrl(event.target.value)}
+                  placeholder="https://github.com/owner/repo"
                 />
-              )}
-
-              <div className="scan-actions-row">
-                {mode === "public" ? (
-                  <button className="btn btn-outline" onClick={startPublicScan} disabled={scanLoading} type="button">
-                    <Icon.bolt style={{ width: 14, height: 14 }} />
-                    {scanLoading ? "Scanning..." : "Scan public repository"}
-                  </button>
-                ) : (
-                  <button
-                    className="btn btn-outline"
-                    onClick={() => selectedRepo && startRepoScan(selectedRepo)}
-                    disabled={scanLoading || !selectedRepo}
-                    type="button"
-                  >
-                    <Icon.bolt style={{ width: 14, height: 14 }} />
-                    {scanLoading ? "Scanning..." : "Scan selected repository"}
-                  </button>
-                )}
+                <span className="hint mono">no login</span>
+              </div>
+              <p className="scan-trust-note">
+                Public scans do not require GitHub login. Badger reads supported public repository files server-side and only asks for GitHub access if you choose account repositories or PR creation.
+              </p>
+            </>
+          ) : sessionLoading ? (
+            <div className="scan-auth-gate">
+              <div className="auth-gate-icon">
+                <Icon.branch style={{ width: 20, height: 20 }} />
+              </div>
+              <div>
+                <b>Checking GitHub session</b>
+                <span>Public scans still work without connecting an account.</span>
               </div>
             </div>
-          </>
-        )}
+          ) : !githubConnected ? (
+            <div className="scan-auth-gate">
+              <div className="auth-gate-icon">
+                <Icon.branch style={{ width: 20, height: 20 }} />
+              </div>
+              <div>
+                <b>Connect GitHub for private or account repositories</b>
+                <span>Skip this for public repo URLs. Login is only needed when Badger needs your repository list or PR permissions.</span>
+              </div>
+              <button className="btn btn-accent btn-lg btn-shine" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
+                <Icon.branch style={{ width: 14, height: 14 }} />
+                {loginLoading ? "Redirecting..." : "Login with GitHub"}
+              </button>
+            </div>
+          ) : (
+            <div className="github-repo-panel">
+              <div className="github-repo-head">
+                <div>
+                  <b>{githubSession.name ?? githubSession.login ?? "GitHub account"}</b>
+                  <span>Choose a repository from your GitHub account.</span>
+                </div>
+                <button className="btn btn-outline" type="button" onClick={signOut}>
+                  Sign out
+                </button>
+              </div>
+
+              <div className="repo-toolbar">
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => loadRepos()}
+                  disabled={reposLoading}
+                >
+                  <Icon.scan style={{ width: 14, height: 14 }} />
+                  {reposLoading ? "Refreshing..." : "Refresh repos"}
+                </button>
+              </div>
+              <div className="repo-list">
+                {repos.map((repo) => (
+                  <button
+                    key={repo.id}
+                    type="button"
+                    className="repo-choice"
+                    data-active={selectedRepo?.id === repo.id}
+                    onClick={() => setSelectedRepo(repo)}
+                  >
+                    <span>
+                      <b>{repo.fullName}</b>
+                      <em>{repo.language ?? "repository"} · {repo.defaultBranch}</em>
+                    </span>
+                    <small>{repo.private ? "private" : "public"}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="scan-error" role="alert">
+              <Icon.focus style={{ width: 14, height: 14 }} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {scanLoading && (
+            <ScanProgress
+              key={scanKey}
+              done={scanFinished}
+            />
+          )}
+
+          <div className="scan-actions-row">
+            {mode === "public" ? (
+              <button className="btn btn-outline" onClick={startPublicScan} disabled={scanLoading} type="button">
+                <Icon.bolt style={{ width: 14, height: 14 }} />
+                {scanLoading ? "Scanning..." : "Scan public repository"}
+              </button>
+            ) : (
+              <button
+                className="btn btn-outline"
+                onClick={() => selectedRepo && startRepoScan(selectedRepo)}
+                disabled={scanLoading || !selectedRepo || !githubConnected}
+                type="button"
+              >
+                <Icon.bolt style={{ width: 14, height: 14 }} />
+                {scanLoading ? "Scanning..." : "Scan selected repository"}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -432,7 +428,7 @@ function notifyQuotaFromResponse(data: unknown, headers: Headers) {
   const quota = normalizePublicQuota((data as { quota?: unknown } | null)?.quota) ?? quotaFromHeaders(headers)
   if (!quota) return
 
-  window.dispatchEvent(new CustomEvent<PublicQuotaState>("vibeshield:quota", { detail: quota }))
+  window.dispatchEvent(new CustomEvent<PublicQuotaState>("badger:quota", { detail: quota }))
 }
 
 function quotaFromHeaders(headers: Headers) {

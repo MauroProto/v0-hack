@@ -1,3 +1,4 @@
+import { badgerEnv } from "@/lib/config/env"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { VIBESHIELD_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import type { ScanEvent, ScanJob, ScanMode, ScanRepositoryRef } from "./types"
@@ -63,7 +64,7 @@ export async function claimNextScanJob(): Promise<ScanJob | undefined> {
       .maybeSingle()
 
     if (error) {
-      console.error("VibeShield Supabase job claim read failed", error.message)
+      console.error("Badger Supabase job claim read failed", error.message)
       return undefined
     }
 
@@ -139,7 +140,7 @@ export async function appendScanEvent(input: AppendScanEventInput): Promise<Scan
       metadata: event.metadata ?? {},
       event,
     })
-    if (error) console.error("VibeShield Supabase event insert failed", error.message)
+    if (error) console.error("Badger Supabase event insert failed", error.message)
   }
 
   return event
@@ -157,7 +158,7 @@ export async function listScanEvents(reportId: string): Promise<ScanEvent[]> {
     .order("created_at", { ascending: true })
 
   if (error) {
-    console.error("VibeShield Supabase event list failed", error.message)
+    console.error("Badger Supabase event list failed", error.message)
     return memoryEvents.sort(sortEvents)
   }
 
@@ -169,7 +170,7 @@ export async function listScanEvents(reportId: string): Promise<ScanEvent[]> {
 }
 
 export function backgroundJobsEnabled() {
-  return process.env.VIBESHIELD_ENABLE_BACKGROUND_JOBS?.trim().toLowerCase() === "true"
+  return badgerEnv("ENABLE_BACKGROUND_JOBS")?.toLowerCase() === "true"
 }
 
 async function markJobRunning(job: ScanJob) {
@@ -196,7 +197,7 @@ async function getScanJob(jobId: string) {
 
   const { data, error } = await supabase.from(JOBS_TABLE).select("job").eq("id", jobId).maybeSingle()
   if (error) {
-    console.error("VibeShield Supabase job read failed", error.message)
+    console.error("Badger Supabase job read failed", error.message)
     return undefined
   }
   return (data as { job?: ScanJob } | null)?.job
@@ -221,7 +222,7 @@ async function persistJob(job: ScanJob) {
     error: job.error ?? null,
     job,
   }, { onConflict: "id" })
-  if (error) console.error("VibeShield Supabase job save failed", error.message)
+  if (error) console.error("Badger Supabase job save failed", error.message)
 }
 
 function getJobStore() {

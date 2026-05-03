@@ -1,6 +1,7 @@
 import { generateText, Output } from "ai"
 import { resolvePullRequestReviewModel } from "@/lib/ai/model"
 import { PullRequestSafetyReviewSchema } from "@/lib/ai/structuredSchemas"
+import { badgerEnv } from "@/lib/config/env"
 import { redactSecrets } from "@/lib/scanner/rules"
 import type { ScanFinding, ScanReport } from "@/lib/scanner/types"
 import {
@@ -34,7 +35,7 @@ export async function reviewPullRequestWithClaude(input: {
   }
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), readPositiveInt(process.env.VIBESHIELD_PR_REVIEW_TIMEOUT_MS, 180_000))
+  const timeout = setTimeout(() => controller.abort(), readPositiveInt(badgerEnv("PR_REVIEW_TIMEOUT_MS"), 180_000))
 
   try {
     const { output } = await generateText({

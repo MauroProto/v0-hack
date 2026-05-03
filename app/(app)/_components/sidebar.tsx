@@ -109,8 +109,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       if (nextQuota) setQuota(nextQuota)
     }
 
+    window.addEventListener("badger:quota", handleQuotaUpdate)
     window.addEventListener("vibeshield:quota", handleQuotaUpdate)
-    return () => window.removeEventListener("vibeshield:quota", handleQuotaUpdate)
+    return () => {
+      window.removeEventListener("badger:quota", handleQuotaUpdate)
+      window.removeEventListener("vibeshield:quota", handleQuotaUpdate)
+    }
   }, [])
 
   useEffect(() => {
@@ -174,7 +178,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         <div className="app-side-scroll">
           <div className="brand-row">
             <button type="button" className="brand" onClick={() => router.push("/")}>
-              <span>VibeShield</span>
+              <span>Badger</span>
             </button>
           </div>
 

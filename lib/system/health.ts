@@ -1,7 +1,8 @@
+import { badgerEnv } from "@/lib/config/env"
 import { backgroundJobsEnabled } from "@/lib/scanner/jobs"
 import { getStorageMode } from "@/lib/scanner/store"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { isGitHubAppConfigured } from "@/lib/utils/github-app-config"
+import { isGitHubAppInstallationConfigured } from "@/lib/utils/github-app-config"
 import {
   getProductionReadiness,
   isAiConfigured,
@@ -61,13 +62,13 @@ export function getSystemHealth(options: SystemHealthOptions = {}): DetailedSyst
     ...base,
     supabaseConfigured: isSupabaseConfigured(),
     storageMode: getStorageMode(),
-    persistentQuotaRequired: persistentEnvEnabled("VIBESHIELD_REQUIRE_PERSISTENT_QUOTA"),
-    persistentStorageRequired: persistentEnvEnabled("VIBESHIELD_REQUIRE_PERSISTENT_STORAGE"),
+    persistentQuotaRequired: persistentEnvEnabled("REQUIRE_PERSISTENT_QUOTA"),
+    persistentStorageRequired: persistentEnvEnabled("REQUIRE_PERSISTENT_STORAGE"),
     aiConfigured: isAiConfigured(),
     prSafetyReviewConfigured: isPrSafetyReviewConfigured(),
     githubOAuthConfigured: isGitHubOAuthConfigured(),
-    githubAppConfigured: isGitHubAppConfigured(),
-    osvEnabled: process.env.VIBESHIELD_ENABLE_OSV !== "false",
+    githubAppConfigured: isGitHubAppInstallationConfigured(),
+    osvEnabled: badgerEnv("ENABLE_OSV") !== "false",
     backgroundJobsEnabled: backgroundJobsEnabled(),
     blockingChecks: readiness.blockingChecks,
     warningChecks: readiness.warningChecks,
@@ -76,12 +77,12 @@ export function getSystemHealth(options: SystemHealthOptions = {}): DetailedSyst
 
 function shouldExposeDetailedHealth(publicView?: boolean) {
   if (!publicView) return true
-  if (process.env.VIBESHIELD_PUBLIC_HEALTH_DETAILS === "true") return true
+  if (badgerEnv("PUBLIC_HEALTH_DETAILS") === "true") return true
   return process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1"
 }
 
 function persistentEnvEnabled(name: string) {
-  const value = process.env[name]?.trim().toLowerCase()
+  const value = badgerEnv(name)?.toLowerCase()
   if (value === "true") return true
   if (value === "false") return false
   return process.env.NODE_ENV === "production"

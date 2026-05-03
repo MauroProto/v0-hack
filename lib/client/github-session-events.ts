@@ -8,9 +8,9 @@ export type GitHubSessionChange = {
   at: number
 }
 
-const SESSION_EVENT = "vibeshield:github-session"
-const STORAGE_KEY = "vibeshield:github-session-event"
-const CHANNEL_NAME = "vibeshield:github-session"
+const SESSION_EVENT = "badger:github-session"
+const STORAGE_KEY = "badger:github-session-event"
+const CHANNEL_NAME = "badger:github-session"
 
 export function publishGitHubSessionChange(reason: GitHubSessionChangeReason) {
   if (typeof window === "undefined") return

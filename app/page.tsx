@@ -1,9 +1,29 @@
 "use client"
 
-import { useState, useEffect, type ReactNode, type SVGProps, Fragment } from "react"
+import { useState, useEffect, type ReactNode, type SVGProps } from "react"
 import Link from "next/link"
 
 type IconProps = SVGProps<SVGSVGElement>
+
+type LogoItem = {
+  src: string
+  alt: string
+  name?: string
+  mono?: boolean
+}
+
+const LOGO_ITEMS: LogoItem[] = [
+  { src: "/logos/v0.png", alt: "v0", mono: true },
+  { src: "/logos/cursor.png", alt: "Copilot", name: "Copilot", mono: true },
+  { src: "/logos/claude.png", alt: "Claude Code", name: "Claude Code" },
+  { src: "/logos/lovable.png", alt: "Lovable", name: "Lovable" },
+  { src: "/logos/bolt.png", alt: "Bolt", name: "Bolt", mono: true },
+  { src: "/logos/windsurf.png", alt: "Windsurf", name: "Windsurf", mono: true },
+  { src: "/logos/replit.png", alt: "Replit", name: "Replit" },
+  { src: "/logos/tempo.png", alt: "Cursor", name: "Cursor", mono: true },
+]
+
+const LOGO_MARQUEE_COPIES = 6
 
 // ---------- Icons (hairline) ----------
 const I = {
@@ -155,7 +175,7 @@ function Nav() {
     <header className={`nav ${scrolled ? "is-scrolled" : ""}`}>
       <div className="wrap nav-inner">
         <Link href="/" className="brand">
-          <span style={{ fontSize: 17 }}>VibeShield</span>
+          <span style={{ fontSize: 17 }}>Badger</span>
           <span className="pill" style={{ marginLeft: 10, height: 24, fontSize: 12, padding: "0 9px" }}>Beta</span>
         </Link>
         <nav className="nav-links">
@@ -186,7 +206,7 @@ function Hero() {
         </h1>
         <p className="lead">
           AI builders can turn an idea into a working app in hours, but the security
-          review still lands on you. VibeShield turns a GitHub repo into an evidence-based
+          review still lands on you. Badger turns a GitHub repo into an evidence-based
           AppSec report so you can spot exposed secrets, missing auth, risky AI endpoints,
           unsafe tool calls and supply-chain issues before customers or maintainers do.
         </p>
@@ -194,7 +214,7 @@ function Hero() {
           <Link href="/scan" className="btn btn-accent btn-lg btn-border-spin btn-shine">Start free scan <I.scan style={{ width: 14, height: 14 }} /></Link>
         </div>
         <div className="hero-meta">
-          <span><b>No install.</b> Login with GitHub or paste a public repo.</span>
+          <span><b>No install.</b> Paste a public repo without GitHub login.</span>
           <span className="sep" />
           <span><b>Server-side.</b> GitHub tree and blob APIs, no browser repo reads.</span>
           <span className="sep" />
@@ -204,17 +224,21 @@ function Hero() {
         {/* logos marquee */}
         <div className="logos">
           <div className="marquee-track">
-            {[0, 1].map((dup) => (
-              <Fragment key={dup}>
-                <span className="logo"><span className="logo-mono"><img src="/logos/v0.png" alt="v0" /></span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/cursor.png" alt="Copilot" /></span><span className="name">Copilot</span></span>
-                <span className="logo"><img src="/logos/claude.png" alt="Claude Code" /><span className="name">Claude Code</span></span>
-                <span className="logo"><img src="/logos/lovable.png" alt="Lovable" /><span className="name">Lovable</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/bolt.png" alt="Bolt" /></span><span className="name">Bolt</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/windsurf.png" alt="Windsurf" /></span><span className="name">Windsurf</span></span>
-                <span className="logo"><img src="/logos/replit.png" alt="Replit" /><span className="name">Replit</span></span>
-                <span className="logo"><span className="logo-mono"><img src="/logos/tempo.png" alt="Cursor" /></span><span className="name">Cursor</span></span>
-              </Fragment>
+            {Array.from({ length: LOGO_MARQUEE_COPIES }, (_, copyIndex) => (
+              <div className="marquee-set" key={copyIndex} aria-hidden={copyIndex > 0}>
+                {LOGO_ITEMS.map((item) => (
+                  <span className="logo" key={`${copyIndex}-${item.alt}`}>
+                    {item.mono ? (
+                      <span className="logo-mono">
+                        <img src={item.src} alt={copyIndex === 0 ? item.alt : ""} />
+                      </span>
+                    ) : (
+                      <img src={item.src} alt={copyIndex === 0 ? item.alt : ""} />
+                    )}
+                    {item.name && <span className="name">{item.name}</span>}
+                  </span>
+                ))}
+              </div>
             ))}
           </div>
         </div>
@@ -291,7 +315,7 @@ function Dashboard() {
           <span className="eyebrow">The report</span>
           <h2>Know what is risky, what is noise, and what deserves action.</h2>
           <p>
-            VibeShield separates vulnerabilities from hardening and posture debt, then shows
+            Badger separates vulnerabilities from hardening and posture debt, then shows
             the evidence behind each call: file and line references, confidence, risk category,
             AI triage, and conservative fix paths that still require human review.
           </p>
@@ -302,7 +326,7 @@ function Dashboard() {
             <div className="dash-dots"><span /><span /><span /></div>
             <div className="dash-url">
               <I.lock style={{ width: 12, height: 12 }} />
-              <span>app.vibeshield.dev/</span>
+              <span>app.badger.dev/</span>
               <span className="path">report/{'{scanId}'}</span>
             </div>
             <span className="pill" style={{ height: 22, fontSize: 11 }}>
@@ -316,7 +340,7 @@ function Dashboard() {
               <div className="dash-head">
                 <div className="title">
                   <div className="crumb">
-                    VibeShield <I.chevron style={{ width: 12, height: 12 }} /> real scan output{" "}
+                    Badger <I.chevron style={{ width: 12, height: 12 }} /> real scan output{" "}
                     <I.chevron style={{ width: 12, height: 12 }} /> report interface
                   </div>
                   <h3>Security report <span className="repo">· GitHub tree + blobs</span></h3>
@@ -428,7 +452,7 @@ function Features() {
           <span className="eyebrow">What it reviews</span>
           <h2>Built for teams moving faster than their security review process.</h2>
           <p>
-            VibeShield checks the places where AI-built apps usually break security: auth,
+            Badger checks the places where AI-built apps usually break security: auth,
             secrets, agent tools, data access, dependencies and remediation workflow.
           </p>
         </div>
@@ -496,7 +520,7 @@ function Features() {
 // ---------- How it works ----------
 function How() {
   const steps = [
-    { n: "01", title: "Connect GitHub or paste a repo", body: "Login with GitHub to list repositories, or paste a public GitHub URL without logging in.", ico: <I.github /> },
+    { n: "01", title: "Paste a repo or connect GitHub", body: "Scan public GitHub URLs without logging in. Connect GitHub only when you want account repositories, private repos or PR creation.", ico: <I.github /> },
     { n: "02", title: "Run the harness", body: "The server reads GitHub metadata, tree entries and selected blobs, then runs deterministic analyzers for secrets, routes, dependencies, AI endpoints and repo posture.", ico: <I.scan /> },
     { n: "03", title: "Review evidence", body: "The report ranks findings with file:line references, confidence, risk breakdown and AI triage so you can tell signal from noise.", ico: <I.search /> },
     { n: "04", title: "Fix what is safe", body: "Generate review-required patch previews and PR-ready hygiene changes only when the evidence supports them.", ico: <I.wand /> },
@@ -545,7 +569,7 @@ function Closing() {
         <div className="footer-inner">
           <div className="footer-brand">
             <Link href="/" className="brand">
-              <span>VibeShield</span>
+              <span>Badger</span>
             </Link>
             <p>An evidence-first security review layer for apps built with AI.</p>
             <span className="status"><span className="dot" /> All systems operational</span>
@@ -574,13 +598,13 @@ function Closing() {
         </div>
 
         <div className="wordmark" aria-hidden="true">
-          Vibe<em>Shield</em>
+          Badger
         </div>
 
         <div className="footer-bottom">
-          <span>© 2026 VibeShield Labs · Not a guarantee of security.</span>
+          <span>© 2026 Badger Labs · Not a guarantee of security.</span>
           <div className="socials">
-            <a href="https://github.com/MauroProto/v0-hack" aria-label="GitHub">
+            <a href="https://github.com/MauroProto/badger" aria-label="GitHub">
               <I.github />
             </a>
             <a href="https://x.com/ProtoMauro" aria-label="X">

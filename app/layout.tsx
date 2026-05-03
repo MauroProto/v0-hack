@@ -21,9 +21,9 @@ const instrumentSerif = Instrument_Serif({
 })
 
 export const metadata: Metadata = {
-  title: "VibeShield — Security review for AI-built apps",
+  title: "Badger — Security review for AI-built apps",
   description:
-    "VibeShield turns AI-built GitHub repositories into evidence-based AppSec reports, helping teams review secrets, auth gaps, AI endpoints, agent tools and supply-chain posture before shipping.",
+    "Badger turns AI-built GitHub repositories into evidence-based AppSec reports, helping teams review secrets, auth gaps, AI endpoints, agent tools and supply-chain posture before shipping.",
   keywords: ["security", "scanner", "AI", "vulnerability", "vibe coding", "v0", "cursor", "bolt", "lovable"],
   icons: {
     icon: "/icon.svg",

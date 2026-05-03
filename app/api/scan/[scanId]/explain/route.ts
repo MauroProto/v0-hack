@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { explainFinding, fallbackExplanation } from "@/lib/ai/explainFinding"
 import { getAiModelStatus } from "@/lib/ai/model"
+import { badgerEnv } from "@/lib/config/env"
 import { withReportDerivedFields } from "@/lib/scanner/enrich"
 import { compareFindingsForReport } from "@/lib/scanner/prioritize"
 import { auditEvent } from "@/lib/scanner/scan"
@@ -127,7 +128,7 @@ async function withFindingTimeout(promise: Promise<ReturnType<typeof fallbackExp
 }
 
 function maxAiExplanationsForReport(report: { analysisMode?: "rules" | "normal" | "max" }) {
-  const envValue = Number(process.env.VIBESHIELD_AI_EXPLAIN_MAX_FINDINGS)
+  const envValue = Number(badgerEnv("AI_EXPLAIN_MAX_FINDINGS"))
   if (Number.isFinite(envValue) && envValue >= 0) return Math.min(Math.floor(envValue), 6)
   if (report.analysisMode === "max") return 3
   return 2
@@ -138,7 +139,7 @@ function needsGeneratedFixes(report: { findings: Array<{ suppressed?: boolean; e
 }
 
 function aiFindingBudgetMs() {
-  const parsed = Number(process.env.VIBESHIELD_AI_EXPLAIN_FINDING_BUDGET_MS)
+  const parsed = Number(badgerEnv("AI_EXPLAIN_FINDING_BUDGET_MS"))
   if (!Number.isFinite(parsed) || parsed <= 0) return 9_000
   return Math.min(Math.floor(parsed), 15_000)
 }
