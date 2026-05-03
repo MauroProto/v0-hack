@@ -80,7 +80,7 @@ async function verifyQuotaRpc(supabase: SupabaseClient) {
   const { error } = await callRpc(VIBESHIELD_SUPABASE_QUOTA_RPC, {
     p_subject_hash: testSubjectHash,
     p_window_start: windowStart,
-    p_limit: 20,
+    p_limit: 10,
     p_cost: 2,
   })
 

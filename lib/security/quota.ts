@@ -86,7 +86,7 @@ export async function assertBurstAllowed(identity: RequestIdentity, action: "sca
 }
 
 export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits = 1): Promise<QuotaState> {
-  const limit = readPositiveInt(badgerEnv("MONTHLY_SCAN_QUOTA"), 20)
+  const limit = readPositiveInt(badgerEnv("MONTHLY_SCAN_QUOTA"), 10)
   const cost = normalizeCreditCost(credits)
   const windowStart = getUtcMonthStart()
   const resetAt = getNextUtcMonthStart()
@@ -149,7 +149,7 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits
 }
 
 export async function peekMonthlyScanQuota(identity: RequestIdentity): Promise<QuotaState> {
-  const limit = readPositiveInt(badgerEnv("MONTHLY_SCAN_QUOTA"), 20)
+  const limit = readPositiveInt(badgerEnv("MONTHLY_SCAN_QUOTA"), 10)
   const windowStart = getUtcMonthStart()
   const resetAt = getNextUtcMonthStart()
   const memoryKey = monthlyCounterKey(windowStart, identity.subjectHash)
