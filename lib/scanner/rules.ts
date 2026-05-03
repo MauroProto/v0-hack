@@ -278,6 +278,7 @@ function scanHighEntropySecretAssignments(file: ProjectFile, add: (finding: Rule
   if (isDocumentationPath(file.path) || isTestOrFixturePath(file.path) || isExampleOrTemplatePath(file.path)) return
 
   file.text.split(/\r?\n/).forEach((line, index) => {
+    if (isScannerSelfTestOrDetectorLine(file.path, line)) return
     if (isCommentOnlyLine(line)) return
     if (isEnvVarReferenceLine(line)) return
     if (isGitHubActionsSecretReference(line)) return
@@ -317,6 +318,8 @@ function scanHighEntropySecretAssignments(file: ProjectFile, add: (finding: Rule
 function scanDangerousNextPublic(file: ProjectFile, add: (finding: RuleFinding) => void) {
   file.text.split(/\r?\n/).forEach((line, index) => {
     if (isCommentOnlyLine(line)) return
+    if (isScannerSelfTestOrDetectorLine(file.path, line)) return
+    if (isScannerReportPresentationLine(file.path, line)) return
 
     const matches = line.match(/\bNEXT_PUBLIC_[A-Z0-9_]+\b/g)
     if (!matches) return
@@ -437,6 +440,7 @@ function scanUnsafeToolCalling(file: ProjectFile, add: (finding: RuleFinding) =>
   for (const pattern of patterns) {
     const hit = findLineMatching(file.text, pattern)
     if (!hit) continue
+    if (isScannerSelfTestOrDetectorLine(file.path, hit.line)) continue
 
     add({
       severity: "high",
@@ -647,6 +651,8 @@ function scanCookieHardening(file: ProjectFile, add: (finding: RuleFinding) => v
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]
     if (!/\b(cookies\(\)\.set|response\.cookies\.set|Set-Cookie)\b/i.test(line)) continue
+    if (isScannerSelfTestOrDetectorLine(file.path, line)) continue
+    if (/\bSet-Cookie\b[\s\S]*\bcreate[A-Za-z0-9_$]*Cookie\s*\(/.test(line)) continue
 
     const window = lines.slice(index, index + 10).join("\n")
     if (!/\b(session|token|auth|jwt|refresh|access)\b/i.test(window)) continue
@@ -890,8 +896,10 @@ function scanSupabaseRisks(file: ProjectFile, add: (finding: RuleFinding) => voi
     }
   }
 
-  if (isClientComponent(file.text) && /\b(service[_-]?role|supabaseAdmin|createClient\s*\([^)]*SERVICE_ROLE)/i.test(file.text)) {
-    const hit = findLineMatching(file.text, /\b(service[_-]?role|supabaseAdmin|SERVICE_ROLE)\b/i)
+  const clientServiceRoleHit = isClientComponent(file.text)
+    ? findCodeLineMatching(file.text, /\b(supabaseAdmin|SERVICE_ROLE|SUPABASE_SERVICE_ROLE_KEY|createClient\s*\([^)]*(?:service[_-]?role|process\.env))\b/i)
+    : undefined
+  if (clientServiceRoleHit && !isScannerReportPresentationLine(file.path, clientServiceRoleHit.line)) {
     add({
       kind: "vulnerability",
       severity: "critical",
@@ -900,8 +908,8 @@ function scanSupabaseRisks(file: ProjectFile, add: (finding: RuleFinding) => voi
       title: "Supabase service-role access appears in client code",
       description: "Service-role keys and admin clients must never be reachable from browser/client components.",
       filePath: file.path,
-      lineStart: hit?.lineNumber,
-      evidence: redactSecrets(hit?.line.trim() ?? ""),
+      lineStart: clientServiceRoleHit.lineNumber,
+      evidence: redactSecrets(clientServiceRoleHit.line.trim()),
       confidence: 0.88,
       confidenceReason: "Client component references service-role/admin Supabase access.",
       reachability: "reachable",
@@ -1174,6 +1182,7 @@ function scanDangerousCode(file: ProjectFile, add: (finding: RuleFinding) => voi
 
     const hit = check.find(file.text)
     if (!hit) continue
+    if (isScannerSelfTestOrDetectorLine(file.path, hit.line)) continue
     const postureOnly = isTestOrFixturePath(file.path) || isLowRiskToolingScriptPath(file.path)
     const severity = postureOnly ? "info" : check.severity
     const kind = postureOnly ? "info" : "vulnerability"
@@ -1620,6 +1629,7 @@ function shouldIgnoreSecretPatternMatch(path: string, line: string) {
   if (isEnvVarReferenceLine(line)) return true
   if (isGitHubActionsSecretReference(line)) return true
   if (isSecretDetectorPatternLine(line)) return true
+  if (isScannerSelfTestOrDetectorLine(path, line)) return true
   if (isTestSecretFixtureLine(path, line)) return true
   return false
 }
@@ -1646,6 +1656,39 @@ function isSecretDetectorPatternLine(line: string) {
     return false
   }
   return /(?:\\b|\\w|\[A-Z|A-Za-z|\{\d|sk-\[|ghp_\[|github_pat_)/i.test(line) || /\b(redacted|redaction|contains)\b/i.test(line)
+}
+
+function isScannerSelfTestOrDetectorLine(path: string, line: string) {
+  const normalized = normalizePath(path).toLowerCase()
+  if (normalized === "scripts/scanner-smoke.ts" || normalized.endsWith("/scanner-smoke.ts")) {
+    return /\b(assert|fixture|mock|redacted|fake|demo|sample|placeholder|NEXT_PUBLIC_|paymentApiSecret|sk-|ghp_|github_pat_)\b/i.test(line)
+  }
+
+  const scannerDetectorPath =
+    normalized.startsWith("lib/scanner/") ||
+    normalized.startsWith("src/scanner/") ||
+    normalized.includes("/scanner/") ||
+    normalized === "lib/ai/reviewproject.ts" ||
+    /(^|\/)(rules?|detectors?|analyzers?|reviewproject)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(normalized)
+  if (!scannerDetectorPath) return false
+
+  if (/(NEXT_PUBLIC_[A-Z0-9_]+|SECRET_PATTERNS|DANGEROUS_|SIGNAL|RULE|HARNESS|objective|evidenceRequired|ruleId|title)/.test(line)) {
+    return true
+  }
+  if (/(\\b|\\s|\\(|\\)|\(\?:|\[A-Z|A-Za-z)/.test(line) && /\b(dangerouslySetInnerHTML|eval|exec|spawn|toolName|request|req|Set-Cookie|sameSite|httpOnly)\b/i.test(line)) {
+    return true
+  }
+  if (/\.test\s*\(/.test(line) && /\b(dangerouslySetInnerHTML|eval|exec|spawn|toolName|request|req|Set-Cookie|sameSite|httpOnly|cookies\(\))\b/i.test(line)) {
+    return true
+  }
+  return isSecretDetectorPatternLine(line)
+}
+
+function isScannerReportPresentationLine(path: string, line: string) {
+  const normalized = normalizePath(path).toLowerCase()
+  if (!/components\/scan\/scanresultsclient\.(tsx|jsx|ts|js)$/.test(normalized)) return false
+  if (!/(NEXT_PUBLIC_|service-role|service_role|\bsecret\b|\btoken\b|api[_-]?key|database url|DATABASE_URL)/i.test(line)) return false
+  return /(return\s+["'`]|\.join\(|templatePatchForFinding|finding\.category|finding\.description|\[\s*$|["'`][,+]?\s*$)/i.test(line)
 }
 
 function isTestSecretFixtureLine(path: string, line: string) {

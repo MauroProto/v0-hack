@@ -101,6 +101,37 @@ function applyFindingTriage(finding: ScanFinding, triage?: AiFindingTriage): Sca
     priority: triage.priority,
   }
 
+  if (shouldSuppressSupportedFalsePositive(finding, triage, baseTriage.reason)) {
+    const adjustedSeverity = normalizeAdjustedSeverity(finding, triage)
+    const adjustedKind = normalizeAdjustedKind(finding, triage)
+    const adjustedCategory = normalizeAdjustedCategory(finding, triage)
+    const changed =
+      adjustedSeverity !== finding.severity ||
+      adjustedKind !== finding.kind ||
+      adjustedCategory !== finding.category
+
+    return {
+      ...finding,
+      severity: adjustedSeverity,
+      kind: adjustedKind,
+      category: adjustedCategory,
+      confidence: adjustedConfidence(finding, triage),
+      suppressed: true,
+      suppressionReason: "ai:likely_false_positive",
+      patchable: false,
+      triage: {
+        ...baseTriage,
+        adjustedFrom: changed
+          ? {
+              severity: finding.severity,
+              kind: finding.kind,
+              category: finding.category,
+            }
+          : undefined,
+      },
+    }
+  }
+
   if (shouldBlockTriageAdjustment(finding, triage)) {
     return {
       ...finding,
@@ -144,12 +175,62 @@ function shouldBlockTriageAdjustment(finding: ScanFinding, triage: AiFindingTria
     (finding.category === "secret_exposure" || finding.category === "public_env_misuse") &&
     (finding.severity === "critical" || /sk-|secret|private|token|service[_-]?role|database_url/i.test(finding.evidence ?? finding.title))
 
+  if (protectedSecret && isSupportedFalsePositiveContext(finding, triage.reason) && triage.confidence >= 0.9) return false
   if (!protectedSecret) return false
   if (triage.verdict === "likely_false_positive" || triage.verdict === "posture_only") return true
   if (triage.adjustedKind && triage.adjustedKind !== "vulnerability") return true
   if (triage.adjustedCategory && triage.adjustedCategory !== finding.category) return true
   if (triage.adjustedSeverity && severityRank(triage.adjustedSeverity) < severityRank(finding.severity)) return true
   return false
+}
+
+function shouldSuppressSupportedFalsePositive(finding: ScanFinding, triage: AiFindingTriage, reason: string) {
+  if (triage.verdict !== "likely_false_positive") return false
+  if (triage.confidence < 0.85) return false
+  return isSupportedFalsePositiveContext(finding, reason)
+}
+
+function isSupportedFalsePositiveContext(finding: ScanFinding, reason: string) {
+  const path = finding.filePath.replaceAll("\\", "/").toLowerCase()
+  const evidence = `${finding.evidence ?? ""}\n${finding.title}\n${finding.ruleId ?? ""}\n${reason}`.toLowerCase()
+
+  if (isEnvFilePath(path) && !isClearlyFixtureOrDetectorPath(path)) return false
+
+  const detectorContext =
+    /(^|\/)(lib|src)\/(?:scanner|security-scanner|sast|rules?)\//.test(path) ||
+    /(^|\/)(rules?|detectors?|analyzers?|reviewproject)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(path)
+  if (detectorContext && /\b(detector|allowlist|denylist|pattern|regex|regexp|rule|harness|scanner|triage|redaction)\b/.test(evidence)) {
+    return true
+  }
+
+  const fixtureContext =
+    /(^|\/)(__tests__|__fixtures__|tests?|fixtures?|snapshots?|examples?)\//.test(path) ||
+    /(^|[._-])(test|tests|spec|fixture|fixtures|smoke)\.(ts|tsx|js|jsx|rs|py|go|java|rb|php|md|yml|yaml)$/.test(path)
+  if (fixtureContext && /\b(test|fixture|snapshot|mock|example|demo|placeholder|redacted|redaction|assert|expect|not a real|not real)\b/.test(evidence)) {
+    return true
+  }
+
+  const documentationContext = /(^|\/)(docs?|readme|examples?)\//.test(path) || /(^|\/)readme(\.|$)/.test(path)
+  if (documentationContext && /\b(example|placeholder|demo|redacted|documentation|docs|readme)\b/.test(evidence)) {
+    return true
+  }
+
+  if (/\b(comment|regex\.exec|regexp\.exec|detector code|rule definition|string literal|scanner's own|scanner own)\b/.test(evidence)) {
+    return true
+  }
+
+  return false
+}
+
+function isEnvFilePath(path: string) {
+  const name = path.split("/").pop() ?? path
+  return name === ".env" || name.startsWith(".env.")
+}
+
+function isClearlyFixtureOrDetectorPath(path: string) {
+  return /(^|\/)(__tests__|__fixtures__|tests?|fixtures?|snapshots?|examples?)\//.test(path) ||
+    /(^|[._-])(test|tests|spec|fixture|fixtures|smoke)\./.test(path) ||
+    /(^|\/)(lib|src)\/(?:scanner|security-scanner|sast|rules?)\//.test(path)
 }
 
 function normalizeAdjustedSeverity(finding: ScanFinding, triage: AiFindingTriage): Severity {

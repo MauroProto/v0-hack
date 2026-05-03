@@ -93,7 +93,12 @@ async function main() {
     await assertVibeshieldIgnoreSuppressesFindingsAndRisk()
     await assertBaselineMarksNewExistingResolved()
     assertAiTriageCanDowngradeAmbiguousProcessFinding()
+    assertAiTriageCanSuppressCriticalDetectorFalsePositive()
     assertAiTriageCannotHideCriticalSecretEvidence()
+    await assertScannerSelfScanFixturesDoNotBecomeCritical()
+    await assertReportPresentationTextDoesNotBecomeSecretExposure()
+    await assertScannerDetectorPatternsDoNotBecomeDangerousCode()
+    await assertSafeCookieHelpersDoNotBecomeMissingCookieHardening()
     await assertAnthropicOutputSchemasAvoidUnsupportedArrayBounds()
     await assertThirdPartyActionPinningKeepsGitHubOwnedActionsUnchanged()
     assertZeroDependencyRiskCannotBeRaisedByAiLabel()
@@ -1087,6 +1092,183 @@ function assertAiTriageCannotHideCriticalSecretEvidence() {
   assert(finding.category === "secret_exposure", "AI triage must not recategorize critical secret evidence")
   assert(finding.kind === "vulnerability", "AI triage must not hide critical secret evidence as info")
   assert(finding.triage?.verdict === "needs_review", "blocked critical downgrades should be retained as needs-review triage")
+}
+
+function assertAiTriageCanSuppressCriticalDetectorFalsePositive() {
+  const report = makeTriageReport([
+    makeFinding({
+      id: "F-001",
+      kind: "vulnerability",
+      severity: "critical",
+      category: "public_env_misuse",
+      ruleId: "rule.public_env_misuse.dangerous.next.public.environment.variable",
+      title: "Dangerous NEXT_PUBLIC environment variable",
+      filePath: "lib/scanner/rules.ts",
+      evidence: '"NEXT_PUBLIC_OPENAI_API_KEY",',
+      confidence: 0.97,
+    }),
+  ])
+
+  const reviewed = applyAiTriage(report, {
+    triage: [
+      {
+        findingId: "F-001",
+        verdict: "likely_false_positive",
+        reason: "The evidence is the scanner's own detector allowlist, not an application env contract.",
+        adjustedSeverity: "info",
+        adjustedKind: "info",
+        adjustedCategory: "repo_security_posture",
+        confidence: 0.98,
+        priority: "low",
+      },
+    ],
+    reportSummary: {
+      riskNarrative: "The critical signal is detector code noise, not a real secret exposure.",
+      recommendedNextSteps: ["Fix scanner self-exclusion for detector constants."],
+      runtimeAgentRisk: "none",
+      repoPostureRisk: "low",
+      dependencyRisk: "none",
+      secretsRisk: "none",
+    },
+  })
+
+  const finding = reviewed.findings[0]
+  assert(finding.suppressed, "high-confidence detector-code false positives should be suppressed")
+  assert(finding.severity === "info", "suppressed detector-code false positives should be downgraded to info")
+  assert(finding.kind === "info", "suppressed detector-code false positives should not remain vulnerabilities")
+  assert(reviewed.riskScore === 0, "suppressed detector-code false positives should not contribute to risk score")
+  assert(reviewed.riskBreakdown?.secretsRisk.label === "None", "suppressed detector-code false positives should not create secrets risk")
+}
+
+async function assertScannerSelfScanFixturesDoNotBecomeCritical() {
+  const report = await scanProject({
+    projectName: "scanner-self-fixtures",
+    sourceType: "github",
+    sourceLabel: "fixture://scanner-self-fixtures",
+    analysisMode: "rules",
+    files: [
+      {
+        path: "lib/scanner/rules.ts",
+        size: 250,
+        text: [
+          "const DANGEROUS_NEXT_PUBLIC_NAMES = [",
+          '  "NEXT_PUBLIC_OPENAI_API_KEY",',
+          '  "NEXT_PUBLIC_ANTHROPIC_API_KEY",',
+          "]",
+        ].join("\n"),
+      },
+      {
+        path: "scripts/scanner-smoke.ts",
+        size: 340,
+        text: [
+          "async function assertSecretFixturesAndRedactionPatternsDoNotBecomeCritical() {",
+          "  let input = \"access=sk-ant-api03-fakefixture\\nopenrouter=sk-or-v1-fakefixture\\ngithub=ghp_1234567890abcdef1234567890abcdef\\n\";",
+          "}",
+          "async function assertHighEntropySecretAssignmentsUseGitleaksStyleContext() {",
+          "  const text = \"export const paymentApiSecret = 'n98Y2fL4aQw7mPz0KjR6sVt3XbC9dN2p'\\n\"",
+          "}",
+        ].join("\n"),
+      },
+    ],
+  })
+
+  assert(!report.findings.some((finding) => finding.severity === "critical"), "scanner detector code and smoke fixtures must not produce critical findings")
+  assert(report.riskScore < 50, "scanner detector code and smoke fixtures must not create a critical/action-required self-scan score")
+}
+
+async function assertReportPresentationTextDoesNotBecomeSecretExposure() {
+  const report = await scanProject({
+    projectName: "report-presentation-text",
+    sourceType: "github",
+    sourceLabel: "fixture://report-presentation-text",
+    analysisMode: "rules",
+    files: [
+      {
+        path: "components/scan/ScanResultsClient.tsx",
+        size: 520,
+        text: [
+          '"use client"',
+          "function impactForFinding(finding) {",
+          "  if (finding.category === \"public_env_misuse\") {",
+          "    return \"Next.js bundles NEXT_PUBLIC values into browser JavaScript. If the value is a secret, token, service-role key, or private database URL, visitors can extract it from client assets.\"",
+          "  }",
+          "}",
+          "function templatePatchForFinding(finding) {",
+          "  return [",
+          "    \"- NEXT_PUBLIC_SECRET_VALUE=...\",",
+          "    \"+ SECRET_VALUE=...\",",
+          "  ].join(\"\\n\")",
+          "}",
+        ].join("\n"),
+      },
+    ],
+  })
+
+  assert(!report.findings.some((finding) => finding.category === "public_env_misuse"), "report UI copy must not become public env misuse")
+  assert(!report.findings.some((finding) => finding.ruleId === "supabase.service-role.in-client-component"), "report UI copy must not become service-role exposure")
+}
+
+async function assertScannerDetectorPatternsDoNotBecomeDangerousCode() {
+  const report = await scanProject({
+    projectName: "scanner-detector-patterns",
+    sourceType: "github",
+    sourceLabel: "fixture://scanner-detector-patterns",
+    analysisMode: "rules",
+    files: [
+      {
+        path: "lib/scanner/inventory.ts",
+        size: 200,
+        text: "const DANGEROUS_SINK_RE = /\\b(eval|Function|dangerouslySetInnerHTML|exec|spawn)\\b/i",
+      },
+      {
+        path: "lib/scanner/rules.ts",
+        size: 260,
+        text: [
+          "const patterns = [",
+          "  /\\bconst\\s+toolName\\s*=\\s*(?:await\\s+)?(?:req|request)\\.json\\(\\)/i,",
+          "]",
+          "if (!/(dangerouslySetInnerHTML|eval\\s*\\(|new\\s+Function\\s*\\()/i.test(line)) return",
+        ].join("\n"),
+      },
+    ],
+  })
+
+  assert(!report.findings.some((finding) => finding.category === "dangerous_code"), "scanner detector regexes must not become dangerous-code findings")
+  assert(!report.findings.some((finding) => finding.category === "unsafe_tool_calling"), "scanner detector regexes must not become unsafe-tool findings")
+}
+
+async function assertSafeCookieHelpersDoNotBecomeMissingCookieHardening() {
+  const report = await scanProject({
+    projectName: "cookie-helper",
+    sourceType: "github",
+    sourceLabel: "fixture://cookie-helper",
+    analysisMode: "rules",
+    files: [
+      {
+        path: "app/api/auth/github/callback/route.ts",
+        size: 180,
+        text: [
+          "import { createGitHubSessionCookie } from '@/lib/security/github-session'",
+          "export async function GET() {",
+          "  const response = new Response(null)",
+          "  response.headers.append(\"Set-Cookie\", createGitHubSessionCookie(session))",
+          "  return response",
+          "}",
+        ].join("\n"),
+      },
+      {
+        path: "lib/security/github-session.ts",
+        size: 220,
+        text: [
+          "export function createGitHubSessionCookie(session) {",
+          "  return serializeCookie('gh', session, { httpOnly: true, sameSite: 'Lax', secure: true, path: '/', maxAge: 100 })",
+          "}",
+        ].join("\n"),
+      },
+    ],
+  })
+
+  assert(!report.findings.some((finding) => finding.title === "Session-like cookie missing hardened attributes"), "safe cookie helper call sites must not be flagged as missing hardening")
 }
 
 async function assertAnthropicOutputSchemasAvoidUnsupportedArrayBounds() {
