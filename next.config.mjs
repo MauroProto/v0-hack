@@ -6,14 +6,15 @@ const isDev = process.env.NODE_ENV !== "production"
 
 const contentSecurityPolicy = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://*.clerk.accounts.dev https://*.clerk.com`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://avatars.githubusercontent.com https://*.githubusercontent.com",
+  "img-src 'self' data: blob: https://avatars.githubusercontent.com https://*.githubusercontent.com https://img.clerk.com https://images.clerk.dev https://*.clerk.com https://*.clerk.accounts.dev",
   "font-src 'self' data:",
-  `connect-src 'self'${isDev ? " ws: http://localhost:*" : ""} https://api.github.com https://*.supabase.co`,
+  `connect-src 'self'${isDev ? " ws: http://localhost:*" : ""} https://api.github.com https://*.supabase.co https://api.clerk.com https://*.clerk.com https://*.clerk.accounts.dev`,
+  "frame-src https://*.clerk.com https://*.clerk.accounts.dev",
   "frame-ancestors 'none'",
   "base-uri 'self'",
-  "form-action 'self' https://github.com",
+  "form-action 'self' https://github.com https://*.clerk.com https://*.clerk.accounts.dev",
   "object-src 'none'",
   "upgrade-insecure-requests",
 ].join("; ")
