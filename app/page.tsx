@@ -428,137 +428,63 @@ function Features() {
           <span className="eyebrow">What it reviews</span>
           <h2>Built for teams moving faster than their security review process.</h2>
           <p>
-            VibeShield focuses on the mistakes that show up when AI-generated code becomes a
-            real product: secrets in the wrong place, public routes without guards, AI tools
-            with too much agency, weak Supabase policies, and CI workflows that trust too much.
+            VibeShield checks the places where AI-built apps usually break security: auth,
+            secrets, agent tools, data access, dependencies and remediation workflow.
           </p>
         </div>
 
         <div className="features">
-          <article className="feature f-two-third">
+          <article className="feature f-third">
             <div className="f-icon"><I.scan /></div>
-            <h3>Repo &amp; snapshot scanning</h3>
+            <h3>Server-side repo scan</h3>
             <p>
-              Paste a public GitHub repo or choose one after login. VibeShield reads supported
-              text files through GitHub APIs, without cloning, installing dependencies, running
-              untrusted code or asking users to upload ZIP files.
+              Reads supported GitHub files through the API without cloning, installing dependencies
+              or running untrusted code.
             </p>
-            <div className="f-art">
-              <div className="mini-list">
-                <div className="row">
-                  <span className="dot" style={{ background: "var(--accent)" }} /> github.com/owner/repo
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>main · auto</span>
-                </div>
-                <div className="row">
-                  <span className="dot" style={{ background: "var(--accent)" }} /> github.com/team/ai-dashboard
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>master · public</span>
-                </div>
-                <div className="row">
-                  <span className="dot" style={{ background: "var(--warn)" }} /> github.com/org/private-agent-app
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>login · private</span>
-                </div>
-              </div>
-            </div>
           </article>
 
           <article className="feature f-third">
             <div className="f-icon"><I.sparkle /></div>
-            <h3>AI risk detection</h3>
+            <h3>AI and agent risk</h3>
             <p>
-              Reviews AI endpoints, agent tools and MCP surfaces for missing rate limits,
-              weak auth boundaries, broad shell access, unsafe tool dispatch and places where
-              secrets can leak into child processes.
+              Reviews AI routes, tool calling and MCP surfaces for weak auth, missing limits and
+              overly broad execution paths.
             </p>
-            <div className="f-art">
-              <div className="mini-list">
-                <div className="row">
-                  <span className="dot" style={{ background: "var(--danger)" }} />{" "}
-                  <code style={{ color: "var(--fg-2)" }}>POST /api/chat</code>
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>no rate limit</span>
-                </div>
-                <div className="row">
-                  <span className="dot" style={{ background: "var(--warn)" }} />{" "}
-                  <code style={{ color: "var(--fg-2)" }}>tool:shell</code>
-                  <span style={{ color: "var(--fg-5)", marginLeft: "auto" }}>no allow-list</span>
-                </div>
-              </div>
-            </div>
-          </article>
-
-          <article className="feature f-third">
-            <div className="f-icon"><I.wand /></div>
-            <h3>Safe remediation workflow</h3>
-            <p>
-              Findings include plain-English impact, concrete next steps and conservative
-              patch previews. Public PRs are intentionally limited to deterministic, low-risk
-              hygiene changes so the tool does not spam maintainers with speculative fixes.
-            </p>
-            <div className="f-art">
-              <div className="diff">
-                <span className="c">app/api/chat/route.ts</span>{"\n"}
-                <span className="del">{"- export async function POST(req) {"}</span>
-                <span className="add">{'+ import { rateLimit } from "@/lib/limit";'}</span>
-                <span className="add">{"+ export const POST = rateLimit(async (req) => {"}</span>
-              </div>
-            </div>
-          </article>
-
-          <article className="feature f-two-third">
-            <div className="f-icon"><I.share /></div>
-            <h3>Decision-ready reports</h3>
-            <p>
-              Share a stable report URL with a teammate, client or reviewer. Each report keeps
-              the scan metadata, risk breakdown, finding groups, evidence, suppression state
-              and audit trail together in one place.
-            </p>
-            <div className="f-art" style={{ display: "grid", gap: 8 }}>
-              <div className="share-card">
-                <div className="avatar" />
-                <div className="txt">
-	                  <span>Copy a generated <b style={{ color: "var(--fg)" }}>VibeShield report</b> for review</span>
-                  <small>app.vibeshield.dev/report/{'{scanId}'}</small>
-                </div>
-                <span className="btn btn-outline" style={{ height: 28, fontSize: 12 }} aria-hidden="true">
-                  <I.link style={{ width: 12, height: 12 }} /> Copy link
-                </span>
-              </div>
-              <div className="share-card">
-                <div className="avatar" style={{ background: "linear-gradient(135deg,#60a5fa,#7FE7C4)" }} />
-                <div className="txt">
-                  <span>Copied GitHub issue body <b style={{ color: "var(--fg)" }}>VibeShield security scan</b></span>
-                  <small>top findings · affected files · next steps</small>
-                </div>
-                <span className="btn btn-outline" style={{ height: 28, fontSize: 12 }} aria-hidden="true">
-                  <I.github style={{ width: 12, height: 12 }} /> Preview
-                </span>
-              </div>
-            </div>
           </article>
 
           <article className="feature f-third">
             <div className="f-icon"><I.key /></div>
-            <h3>Secret &amp; env-var audit</h3>
+            <h3>Secrets and env vars</h3>
             <p>
-              Looks for committed credentials, risky env files and dangerous <code style={{ fontSize: 12 }}>NEXT_PUBLIC_*</code>
-              contracts with context checks for examples, fixtures and redaction code.
+              Detects committed credentials, risky env files and dangerous browser-exposed
+              <code> NEXT_PUBLIC_*</code> contracts with context-aware filtering.
             </p>
           </article>
 
           <article className="feature f-third">
             <div className="f-icon"><I.lock /></div>
-            <h3>Route &amp; auth graph</h3>
+            <h3>Routes and auth</h3>
             <p>
-              Inventories route handlers, Server Actions, validation calls, auth signals and
-              database writes so sensitive surfaces are not treated like ordinary UI code.
+              Maps route handlers, Server Actions, validation calls, auth signals and database
+              writes so sensitive code gets reviewed first.
             </p>
           </article>
 
           <article className="feature f-third">
             <div className="f-icon"><I.agent /></div>
-            <h3>Tool &amp; MCP review</h3>
+            <h3>Tool and MCP review</h3>
             <p>
-              Flags agentic execution surfaces such as shell tools, MCP process spawning,
-              full environment inheritance and tool calls without clear bounds.
+              Flags shell tools, MCP process spawning, full environment inheritance and tool calls
+              without clear boundaries.
+            </p>
+          </article>
+
+          <article className="feature f-third">
+            <div className="f-icon"><I.share /></div>
+            <h3>Reports and fixes</h3>
+            <p>
+              Produces evidence-based reports and conservative fix drafts that stay reviewable
+              instead of creating noisy public PRs.
             </p>
           </article>
         </div>
