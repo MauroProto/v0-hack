@@ -4,7 +4,7 @@
 
 Built for the **Zero to Action Hackathon by Berset**.
 
-Production demo: configure the Vercel project/domain for the Badger deployment before sharing a public launch URL.
+Production demo: [https://badger-security.vercel.app](https://badger-security.vercel.app)
 
 <p align="center">
   <img src="public/readme/scan.png" alt="Badger scan workspace" width="100%" />
