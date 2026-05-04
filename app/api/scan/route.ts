@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const token = body.githubUrl ? await getPublicGitHubReadTokenFromRequest(request) : getGitHubTokenFromRequest(request)
+    const token = (body.githubUrl ? await getPublicGitHubReadTokenFromRequest(request) : await getGitHubTokenFromRequest(request)) ?? undefined
     const repo = body.repoFullName ? parseGitHubFullName(body.repoFullName) : parsePublicGitHubUrl(body.githubUrl ?? "")
     const creditsUsed = scanCreditCostForMode(body.analysisMode)
 

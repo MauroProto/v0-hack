@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode, WheelEvent } from "react"
+import { useClerk, useUser } from "@clerk/nextjs"
 import { Icon } from "@/app/(app)/_components/icons"
 import { generateFixesBody, generateFullReportBody, generateIssueBody, getRiskLabel } from "@/lib/scanner/patches"
 import type { AuditTrailEvent, FindingCategory, FindingKind, ScanFinding, ScanPullRequest, ScanReport, Severity } from "@/lib/scanner/types"
@@ -82,6 +83,8 @@ export function ScanResultsClient({
   initialReport: ScanReport
   githubConnected?: boolean
 }) {
+  const clerkClient = useClerk()
+  const { isSignedIn } = useUser()
   const [report, setReport] = useState(initialReport)
   const [loadingAi, setLoadingAi] = useState(false)
   const [creatingPr, setCreatingPr] = useState(false)
@@ -169,11 +172,15 @@ export function ScanResultsClient({
     setSelectionMode(mode)
   }
 
-  const signInWithGitHub = (intent?: "pull_request") => {
-    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
-    const params = new URLSearchParams({ returnTo })
-    if (intent) params.set("intent", intent)
-    window.location.assign(`/api/auth/github/start?${params.toString()}`)
+  const signInWithGitHub = () => {
+    setError(null)
+    if (isSignedIn) {
+      clerkClient.openUserProfile()
+      setError("Open account settings and reconnect GitHub if repository or PR access is missing.")
+      return
+    }
+
+    clerkClient.openSignIn()
   }
 
   const createPullRequest = async (findingIdsToInclude: string[]) => {
@@ -202,7 +209,7 @@ export function ScanResultsClient({
       if (!response.ok) {
         if (data.code === "github_pr_scope_required") {
           setError("GitHub needs one-time public repository write permission before Badger can open this PR.")
-          signInWithGitHub("pull_request")
+          signInWithGitHub()
           return
         }
 

@@ -1,13 +1,25 @@
 import { NextResponse } from "next/server"
 import { apiHeaders } from "@/lib/security/headers"
+import { getClerkGitHubSession } from "@/lib/security/clerk-github"
 import { clearGitHubSessionCookie, getGitHubSessionFromHeaders, publicGitHubSession } from "@/lib/security/github-session"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function GET(request: Request) {
-  const session = getGitHubSessionFromHeaders(request.headers)
-  return NextResponse.json({ session: publicGitHubSession(session) }, { headers: apiHeaders() })
+  const legacySession = getGitHubSessionFromHeaders(request.headers)
+  if (legacySession) {
+    return NextResponse.json(
+      { session: { ...publicGitHubSession(legacySession), source: "legacy" } },
+      { headers: apiHeaders() },
+    )
+  }
+
+  const clerkSession = await getClerkGitHubSession()
+  return NextResponse.json(
+    { session: { ...publicGitHubSession(clerkSession), source: clerkSession ? "clerk" : undefined } },
+    { headers: apiHeaders() },
+  )
 }
 
 export async function DELETE(request: Request) {

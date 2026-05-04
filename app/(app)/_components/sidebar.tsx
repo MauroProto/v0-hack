@@ -3,7 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { useEffect, useRef, useState } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useClerk, useUser } from "@clerk/nextjs"
 import { usePathname, useRouter } from "next/navigation"
 import type { ScanReport } from "@/lib/scanner/types"
 import { publishGitHubSessionChange, subscribeGitHubSessionChange } from "@/lib/client/github-session-events"
@@ -26,6 +26,7 @@ type GitHubAuthSession = {
   login?: string
   name?: string
   avatarUrl?: string
+  source?: "legacy" | "clerk"
 }
 
 const PRIMARY: Item[] = [
@@ -43,6 +44,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   const pathname = usePathname() || ""
   const router = useRouter()
   const clerk = useUser()
+  const clerkClient = useClerk()
   const [githubSession, setGitHubSession] = useState<GitHubAuthSession>({ authenticated: false })
   const guestSession = useGuestSession()
   const [reports, setReports] = useState<ScanReport[]>([])
@@ -61,6 +63,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     username: clerk.user?.username || null,
   })
   const accountBusy = accountAction !== null
+  const clerkSignedIn = clerk.isLoaded && Boolean(clerk.isSignedIn)
+  const canManageAccount = clerkSignedIn || githubSession.authenticated
   const sessionVersion = useRef(0)
 
   const isActive = (it: Item) => {
@@ -69,6 +73,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   }
 
   useEffect(() => {
+    if (!clerk.isLoaded) return
+
     async function loadGitHubSession() {
       const activeSessionVersion = sessionVersion.current
       try {
@@ -83,7 +89,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     }
 
     void loadGitHubSession()
-  }, [pathname])
+  }, [clerk.isLoaded, clerk.isSignedIn, pathname])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -122,9 +128,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     }
 
     window.addEventListener("badger:quota", handleQuotaUpdate)
-    window.addEventListener("badger:quota", handleQuotaUpdate)
     return () => {
-      window.removeEventListener("badger:quota", handleQuotaUpdate)
       window.removeEventListener("badger:quota", handleQuotaUpdate)
     }
   }, [])
@@ -154,19 +158,26 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [accountDialogOpen, accountBusy])
 
-  const endGitHubSession = async (disconnect: boolean) => {
-    if (!githubSession.authenticated || accountBusy) return
+  const endAccountSession = async (disconnect: boolean) => {
+    if (!canManageAccount || accountBusy) return
 
     setAccountAction(disconnect ? "disconnect" : "signout")
     setAccountError(null)
     try {
-      const response = await fetch(`/api/auth/github/session${disconnect ? "?disconnect=1" : ""}`, {
-        method: "DELETE",
-        headers: disconnect ? { "Content-Type": "application/json" } : undefined,
-        body: disconnect ? JSON.stringify({ disconnect: true }) : undefined,
-      })
-      const data = (await response.json().catch(() => ({}))) as { error?: string }
-      if (!response.ok) throw new Error(data.error ?? "Could not update the GitHub connection.")
+      if (githubSession.authenticated) {
+        const canDisconnectLegacyGitHub = disconnect && githubSession.source === "legacy"
+        const response = await fetch(`/api/auth/github/session${canDisconnectLegacyGitHub ? "?disconnect=1" : ""}`, {
+          method: "DELETE",
+          headers: canDisconnectLegacyGitHub ? { "Content-Type": "application/json" } : undefined,
+          body: canDisconnectLegacyGitHub ? JSON.stringify({ disconnect: true }) : undefined,
+        })
+        const data = (await response.json().catch(() => ({}))) as { error?: string }
+        if (!response.ok) throw new Error(data.error ?? "Could not update the GitHub connection.")
+      }
+
+      if (clerkSignedIn) {
+        await clerkClient.signOut()
+      }
 
       setGitHubSession({ authenticated: false })
       setReports([])
@@ -178,7 +189,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       }
       router.refresh()
     } catch (error) {
-      setAccountError(error instanceof Error ? error.message : "Could not update the GitHub connection.")
+      setAccountError(error instanceof Error ? error.message : "Could not update the account session.")
     } finally {
       setAccountAction(null)
     }
@@ -223,13 +234,13 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <button
             type="button"
             className="user-card"
-            data-clickable={githubSession.authenticated}
-            disabled={!githubSession.authenticated || accountBusy}
+            data-clickable={canManageAccount}
+            disabled={!canManageAccount || accountBusy}
             onClick={() => {
               setAccountError(null)
               setAccountDialogOpen(true)
             }}
-            title={githubSession.authenticated ? "Manage GitHub connection" : "Public scans do not require login"}
+            title={canManageAccount ? "Manage account" : "Public scans do not require login"}
           >
             {profile.avatarUrl ? (
               <Image
@@ -255,7 +266,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         </div>
       </aside>
 
-      {accountDialogOpen && githubSession.authenticated ? (
+      {accountDialogOpen && canManageAccount ? (
         <div
           className="account-dialog-backdrop"
           role="presentation"
@@ -272,8 +283,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           >
             <div className="account-dialog-head">
               <div>
-                <h3 id="account-dialog-title">GitHub connection</h3>
-                <p>Choose what should happen to this browser session and the GitHub authorization.</p>
+                <h3 id="account-dialog-title">Account</h3>
+                <p>Choose what should happen to this browser session.</p>
               </div>
               <button
                 type="button"
@@ -311,26 +322,42 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             {accountError ? <div className="account-dialog-error">{accountError}</div> : null}
 
             <div className="account-dialog-actions">
+              {clerkSignedIn ? (
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  disabled={accountBusy}
+                  onClick={() => clerkClient.openUserProfile()}
+                >
+                  Manage profile
+                </button>
+              ) : null}
               <button
                 className="btn btn-outline"
                 type="button"
                 disabled={accountBusy}
-                onClick={() => void endGitHubSession(false)}
+                onClick={() => void endAccountSession(false)}
               >
-                {accountAction === "signout" ? "Signing out..." : "Sign out only"}
+                {accountAction === "signout" ? "Signing out..." : "Sign out"}
               </button>
-              <button
-                className="btn btn-outline account-danger"
-                type="button"
-                disabled={accountBusy}
-                onClick={() => void endGitHubSession(true)}
-              >
-                {accountAction === "disconnect" ? "Disconnecting..." : "Disconnect GitHub"}
-              </button>
+              {githubSession.source === "legacy" ? (
+                <button
+                  className="btn btn-outline account-danger"
+                  type="button"
+                  disabled={accountBusy}
+                  onClick={() => void endAccountSession(true)}
+                >
+                  {accountAction === "disconnect" ? "Disconnecting..." : "Disconnect GitHub"}
+                </button>
+              ) : (
+                <a className="btn btn-outline" href="https://github.com/settings/applications" target="_blank" rel="noreferrer">
+                  Review GitHub access
+                </a>
+              )}
             </div>
 
             <p className="account-dialog-note">
-              Sign out only clears this browser. Disconnect GitHub revokes the OAuth authorization and removes this app from your authorized GitHub apps. You can also review access in{" "}
+              Sign out clears this browser session. GitHub access for Clerk sign-ins is managed by Clerk and GitHub, so you can also review access in{" "}
               <a href="https://github.com/settings/applications" target="_blank" rel="noreferrer">
                 GitHub settings
               </a>

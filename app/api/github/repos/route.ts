@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic"
 
 export async function GET(request: Request) {
   try {
-    const token = getGitHubTokenFromRequest(request)
+    const token = await getGitHubTokenFromRequest(request)
     if (!token) {
       return NextResponse.json({ error: "GitHub login token is required." }, { status: 401, headers: apiHeaders() })
     }

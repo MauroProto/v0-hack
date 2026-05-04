@@ -16,6 +16,7 @@ import {
   type ScannerLimits,
 } from "@/lib/scanner/extract"
 import { getGitHubSessionFromHeaders } from "@/lib/security/github-session"
+import { getClerkGitHubAccessToken } from "@/lib/security/clerk-github"
 import {
   createDefaultGitHubAppInstallationToken,
   isGitHubAppInstallationConfigured,
@@ -154,12 +155,56 @@ export function parseGitHubFullName(input: string): ParsedGitHubUrl {
   return normalizeRepoParts(match[1], match[2])
 }
 
-export function getGitHubTokenFromRequest(request: Request) {
-  return getGitHubSessionFromHeaders(request.headers)?.token ?? getLocalGitHubToken()
+export type GitHubRequestAuth = {
+  token: string
+  scopes: string[]
+  source: "legacy" | "clerk" | "local"
+}
+
+type GitHubRequestAuthOptions = {
+  allowLocalToken?: boolean
+}
+
+export async function getGitHubAuthFromRequest(
+  request: Request,
+  options: GitHubRequestAuthOptions = {},
+): Promise<GitHubRequestAuth | null> {
+  const legacySession = getGitHubSessionFromHeaders(request.headers)
+  if (legacySession) {
+    return {
+      token: legacySession.token,
+      scopes: legacySession.scopes,
+      source: "legacy",
+    }
+  }
+
+  const clerkToken = await getClerkGitHubAccessToken()
+  if (clerkToken) {
+    return {
+      token: clerkToken.token,
+      scopes: clerkToken.scopes,
+      source: "clerk",
+    }
+  }
+
+  if (!options.allowLocalToken) return null
+
+  const localToken = getLocalGitHubToken()
+  if (!localToken) return null
+
+  return {
+    token: localToken,
+    scopes: [],
+    source: "local",
+  }
+}
+
+export async function getGitHubTokenFromRequest(request: Request, options?: GitHubRequestAuthOptions) {
+  return (await getGitHubAuthFromRequest(request, options))?.token ?? null
 }
 
 export async function getPublicGitHubReadTokenFromRequest(request: Request) {
-  return getGitHubSessionFromHeaders(request.headers)?.token ?? await getServerGitHubReadToken()
+  return (await getGitHubTokenFromRequest(request)) ?? await getServerGitHubReadToken()
 }
 
 export function isGitHubApiError(error: unknown): error is GitHubApiError {

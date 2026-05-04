@@ -7,9 +7,8 @@ import type { ScanReport } from "@/lib/scanner/types"
 import { readJsonBodyWithLimit } from "@/lib/security/body"
 import { apiHeaders } from "@/lib/security/headers"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
-import { getGitHubSessionFromHeaders } from "@/lib/security/github-session"
 import { assertBurstAllowed, assertContentLengthAllowed, isSecurityError } from "@/lib/security/quota"
-import { createRemediationPullRequest, getGitHubTokenFromRequest } from "@/lib/utils/github"
+import { createRemediationPullRequest, getGitHubAuthFromRequest } from "@/lib/utils/github"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -62,16 +61,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
       )
     }
 
-    const token = getGitHubTokenFromRequest(request)
-    if (!token) {
+    const githubAuth = await getGitHubAuthFromRequest(request)
+    if (!githubAuth) {
       return NextResponse.json(
         { error: "GitHub login is required to create a pull request.", code: "github_login_required" },
         { status: 401, headers: apiHeaders() },
       )
     }
 
-    const githubSession = getGitHubSessionFromHeaders(request.headers)
-    if (githubSession && !hasPublicPullRequestScope(githubSession.scopes)) {
+    if (githubAuth.scopes.length > 0 && !hasPublicPullRequestScope(githubAuth.scopes)) {
       return NextResponse.json(
         {
           error: "GitHub PR permission is required before Badger can fork or push a remediation branch.",
@@ -83,7 +81,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
 
     const pullRequest = await createRemediationPullRequest({
       report: scopedReport,
-      token,
+      token: githubAuth.token,
     })
 
     const report = await saveScanReport({

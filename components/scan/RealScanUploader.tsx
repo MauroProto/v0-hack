@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { SignInButton, useUser } from "@clerk/nextjs"
+import { SignInButton, useClerk, useUser } from "@clerk/nextjs"
 import { useRouter } from "next/navigation"
 import { Icon } from "@/app/(app)/_components/icons"
 import { ScanProgress } from "@/app/(app)/_components/scan-progress"
@@ -37,6 +37,7 @@ type GitHubAuthSession = {
   name?: string
   avatarUrl?: string
   scopes?: string[]
+  source?: "legacy" | "clerk"
 }
 
 type ScanNoticeKind = "error" | "busy"
@@ -44,6 +45,7 @@ type ScanNoticeKind = "error" | "busy"
 export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mode }) {
   const router = useRouter()
   const { isLoaded: clerkLoaded, isSignedIn } = useUser()
+  const clerkClient = useClerk()
   const [mode, setMode] = useState<Mode>(initialMode)
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("normal")
   const [githubUrl, setGithubUrl] = useState("")
@@ -106,6 +108,8 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   }, [pendingScanId, router, scanFinished])
 
   useEffect(() => {
+    if (!clerkLoaded) return
+
     let cancelled = false
     const activeSessionVersion = sessionVersion.current
 
@@ -127,7 +131,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     return () => {
       cancelled = true
     }
-  }, [loadRepos])
+  }, [clerkLoaded, isSignedIn, loadRepos])
 
   useEffect(() => {
     return subscribeGitHubSessionChange(() => {
@@ -214,21 +218,25 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     }
   }
 
-  const connectGitHub = async () => {
+  const connectGitHub = () => {
     setError(null)
     setLoginLoading(true)
-    window.location.assign("/api/auth/github/start")
+    clerkClient.openUserProfile()
+    window.setTimeout(() => setLoginLoading(false), 500)
   }
 
   const signOut = async () => {
     const confirmed = window.confirm(
-      "Sign out of GitHub in this browser? This will not revoke the GitHub authorization. Use the dashboard profile menu if you want to disconnect GitHub completely.",
+      "Sign out of Badger in this browser? You can sign in again from the landing page or dashboard.",
     )
     if (!confirmed) return
 
-    const response = await fetch("/api/auth/github/session", { method: "DELETE" })
-    if (!response.ok) {
-      setError("Could not sign out of GitHub. Try again.")
+    try {
+      const response = await fetch("/api/auth/github/session", { method: "DELETE" })
+      if (!response.ok) throw new Error("Could not clear the GitHub session.")
+      if (isSignedIn) await clerkClient.signOut()
+    } catch {
+      setError("Could not sign out. Try again.")
       return
     }
 
@@ -328,11 +336,11 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
               </div>
               <div>
                 <b>Connect GitHub for your account repositories</b>
-                <span>This starts with read-only profile access. Badger asks for PR permission only if you choose to open a pull request.</span>
+                <span>Your Badger account is active, but Clerk has no GitHub token available for repository listing. Add or reconnect GitHub in account settings.</span>
               </div>
               <button className="btn btn-accent btn-lg btn-shine" type="button" onClick={connectGitHub} disabled={loginLoading}>
                 <Icon.branch style={{ width: 14, height: 14 }} />
-                {loginLoading ? "Redirecting..." : "Connect GitHub"}
+                {loginLoading ? "Opening..." : "Open account settings"}
               </button>
             </div>
           ) : (
@@ -385,7 +393,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
               {noticeKind === "busy" && !githubConnected && (
                 badgerSignedIn ? (
                   <button className="btn btn-outline scan-error-action" type="button" onClick={connectGitHub} disabled={loginLoading}>
-                    {loginLoading ? "Redirecting..." : "Connect GitHub"}
+                    {loginLoading ? "Opening..." : "Account settings"}
                   </button>
                 ) : (
                   <SignInButton mode="modal">
