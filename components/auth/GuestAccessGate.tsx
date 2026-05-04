@@ -123,7 +123,7 @@ function GuestAccessDialog({
         <button type="button" className="guest-gate-close" aria-label="Close" onClick={onClose}>
           <X aria-hidden="true" />
         </button>
-        <Image className="guest-gate-mark" src="/badger-mark.svg" alt="" width={72} height={72} aria-hidden="true" />
+        <Image className="guest-gate-mark" src="/badger-mark.webp" alt="" width={72} height={72} aria-hidden="true" />
         <h2 id="guest-gate-title">Welcome to Badger</h2>
         <p className="guest-gate-copy">Scan public GitHub repos in seconds. No account needed to start.</p>
 
