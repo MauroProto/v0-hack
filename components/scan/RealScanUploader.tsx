@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { SignInButton, useUser } from "@clerk/nextjs"
 import { useRouter } from "next/navigation"
 import { Icon } from "@/app/(app)/_components/icons"
 import { ScanProgress } from "@/app/(app)/_components/scan-progress"
@@ -42,6 +43,7 @@ type ScanNoticeKind = "error" | "busy"
 
 export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mode }) {
   const router = useRouter()
+  const { isLoaded: clerkLoaded, isSignedIn } = useUser()
   const [mode, setMode] = useState<Mode>(initialMode)
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("normal")
   const [githubUrl, setGithubUrl] = useState("")
@@ -60,6 +62,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   const sessionVersion = useRef(0)
 
   const githubConnected = githubSession.authenticated
+  const badgerSignedIn = clerkLoaded && Boolean(isSignedIn)
 
   const loadRepos = useCallback(async () => {
     const activeSessionVersion = sessionVersion.current
@@ -211,7 +214,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     }
   }
 
-  const signInWithGitHub = async () => {
+  const connectGitHub = async () => {
     setError(null)
     setLoginLoading(true)
     window.location.assign("/api/auth/github/start")
@@ -292,15 +295,31 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
                 Public scans do not require GitHub login. Badger reads supported public repository files server-side and only asks for GitHub write access if you choose PR creation.
               </p>
             </>
-          ) : sessionLoading ? (
+          ) : sessionLoading || !clerkLoaded ? (
             <div className="scan-auth-gate">
               <div className="auth-gate-icon">
                 <Icon.branch style={{ width: 20, height: 20 }} />
               </div>
               <div>
-                <b>Checking GitHub session</b>
-                <span>Public scans still work without connecting an account.</span>
+                <b>Checking account session</b>
+                <span>Public scans still work without signing in.</span>
               </div>
+            </div>
+          ) : !badgerSignedIn ? (
+            <div className="scan-auth-gate">
+              <div className="auth-gate-icon">
+                <Icon.branch style={{ width: 20, height: 20 }} />
+              </div>
+              <div>
+                <b>Log in to use your account dashboard</b>
+                <span>This uses the same Clerk login flow as the landing page. Public scans still work without an account.</span>
+              </div>
+              <SignInButton mode="modal">
+                <button className="btn btn-accent btn-lg btn-shine" type="button">
+                  <Icon.branch style={{ width: 14, height: 14 }} />
+                  Sign in with GitHub
+                </button>
+              </SignInButton>
             </div>
           ) : !githubConnected ? (
             <div className="scan-auth-gate">
@@ -311,9 +330,9 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
                 <b>Connect GitHub for your account repositories</b>
                 <span>This starts with read-only profile access. Badger asks for PR permission only if you choose to open a pull request.</span>
               </div>
-              <button className="btn btn-accent btn-lg btn-shine" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
+              <button className="btn btn-accent btn-lg btn-shine" type="button" onClick={connectGitHub} disabled={loginLoading}>
                 <Icon.branch style={{ width: 14, height: 14 }} />
-                {loginLoading ? "Redirecting..." : "Login with GitHub"}
+                {loginLoading ? "Redirecting..." : "Connect GitHub"}
               </button>
             </div>
           ) : (
@@ -364,9 +383,17 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
               <Icon.focus style={{ width: 14, height: 14 }} />
               <span>{error}</span>
               {noticeKind === "busy" && !githubConnected && (
-                <button className="btn btn-outline scan-error-action" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
-                  {loginLoading ? "Redirecting..." : "Login with GitHub"}
-                </button>
+                badgerSignedIn ? (
+                  <button className="btn btn-outline scan-error-action" type="button" onClick={connectGitHub} disabled={loginLoading}>
+                    {loginLoading ? "Redirecting..." : "Connect GitHub"}
+                  </button>
+                ) : (
+                  <SignInButton mode="modal">
+                    <button className="btn btn-outline scan-error-action" type="button">
+                      Sign in
+                    </button>
+                  </SignInButton>
+                )
               )}
             </div>
           )}
