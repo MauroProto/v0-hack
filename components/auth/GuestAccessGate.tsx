@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { SignInButton, useUser } from "@clerk/nextjs"
 import { ArrowRight, Github, X } from "lucide-react"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
 import {
   ensureGuestSession,
@@ -122,9 +123,7 @@ function GuestAccessDialog({
         <button type="button" className="guest-gate-close" aria-label="Close" onClick={onClose}>
           <X aria-hidden="true" />
         </button>
-        <div className="guest-gate-mark" aria-hidden="true">
-          BG
-        </div>
+        <Image className="guest-gate-mark" src="/badger-mark.svg" alt="" width={72} height={72} aria-hidden="true" />
         <h2 id="guest-gate-title">Welcome to Badger</h2>
         <p className="guest-gate-copy">Scan public GitHub repos in seconds. No account needed to start.</p>
 

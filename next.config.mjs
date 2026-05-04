@@ -11,6 +11,7 @@ const contentSecurityPolicy = [
   "img-src 'self' data: blob: https://avatars.githubusercontent.com https://*.githubusercontent.com https://img.clerk.com https://images.clerk.dev https://*.clerk.com https://*.clerk.accounts.dev",
   "font-src 'self' data:",
   `connect-src 'self'${isDev ? " ws: http://localhost:*" : ""} https://api.github.com https://*.supabase.co https://api.clerk.com https://*.clerk.com https://*.clerk.accounts.dev`,
+  "worker-src 'self' blob:",
   "frame-src https://*.clerk.com https://*.clerk.accounts.dev",
   "frame-ancestors 'none'",
   "base-uri 'self'",

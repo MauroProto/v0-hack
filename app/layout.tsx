@@ -22,6 +22,7 @@ const instrumentSerif = Instrument_Serif({
 })
 
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+const showVercelAnalytics = process.env.VERCEL === "1"
 
 export const metadata: Metadata = {
   title: "Badger — Security review for AI-built apps",
@@ -49,7 +50,7 @@ export default function RootLayout({
   const page = (
     <>
       {children}
-      {process.env.NODE_ENV === "production" && <Analytics />}
+      {showVercelAnalytics && <Analytics />}
     </>
   )
 
@@ -60,7 +61,9 @@ export default function RootLayout({
     >
       <body>
         {clerkPublishableKey ? (
-          <ClerkProvider publishableKey={clerkPublishableKey}>{page}</ClerkProvider>
+          <ClerkProvider publishableKey={clerkPublishableKey} telemetry={{ disabled: true }}>
+            {page}
+          </ClerkProvider>
         ) : (
           page
         )}
