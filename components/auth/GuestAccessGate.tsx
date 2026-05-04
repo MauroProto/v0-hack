@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState, type ReactNode } from "react"
-import { SignInButton, SignUpButton, useUser } from "@clerk/nextjs"
+import { SignInButton, useUser } from "@clerk/nextjs"
+import { ArrowRight, Github, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import {
   ensureGuestSession,
@@ -119,42 +120,35 @@ function GuestAccessDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button type="button" className="guest-gate-close" aria-label="Close" onClick={onClose}>
-          ×
+          <X aria-hidden="true" />
         </button>
         <div className="guest-gate-mark" aria-hidden="true">
           BG
         </div>
-        <p className="guest-gate-eyebrow">Choose how to enter</p>
-        <h2 id="guest-gate-title">Open Badger with an account or as a guest.</h2>
-        <p className="guest-gate-copy">
-          Guest mode scans public GitHub repos without connecting your GitHub account. Sign in only if you want a saved identity and cleaner history across devices.
-        </p>
+        <h2 id="guest-gate-title">Welcome to Badger</h2>
+        <p className="guest-gate-copy">Scan public GitHub repos in seconds. No account needed to start.</p>
 
-        <div className="guest-gate-options">
-          <button type="button" className="guest-option guest-option-primary" onClick={onGuest}>
-            <span className="guest-option-kicker">No GitHub needed</span>
-            <b>Continue as guest</b>
-            <em>Badger assigns a local guest profile for this browser.</em>
-          </button>
+        <button type="button" className="guest-gate-primary" onClick={onGuest}>
+          <span>Continue as guest</span>
+          <ArrowRight aria-hidden="true" />
+        </button>
 
-          <div className="guest-option guest-option-account">
-            <span className="guest-option-kicker">Saved workspace</span>
-            <b>Sign in</b>
-            <em>Use an account for persistent identity. GitHub authorization stays separate.</em>
-            <div className="guest-auth-actions">
-              <SignInButton mode="modal">
-                <button type="button">Sign in</button>
-              </SignInButton>
-              <SignUpButton mode="modal">
-                <button type="button">Create account</button>
-              </SignUpButton>
-            </div>
-          </div>
+        <div className="guest-gate-separator" aria-hidden="true">
+          <span />
+          <b>OR</b>
+          <span />
         </div>
 
-        <p className="guest-gate-note">
-          Public scans read public repository files server-side. They do not fork repos or use your GitHub account unless you explicitly connect GitHub later.
-        </p>
+        <SignInButton mode="modal">
+          <button type="button" className="guest-gate-secondary">
+            <Github aria-hidden="true" />
+            <span>Sign in with GitHub</span>
+          </button>
+        </SignInButton>
+        <p className="guest-gate-powered">Account sign-in powered by Clerk.</p>
+
+        <div className="guest-gate-rule" aria-hidden="true" />
+        <p className="guest-gate-note">Public scans read repos server-side. Nothing is stored without an account.</p>
       </section>
     </div>
   )
