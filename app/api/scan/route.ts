@@ -66,9 +66,9 @@ export async function POST(request: Request) {
     const token = body.githubUrl ? await getPublicGitHubReadTokenFromRequest(request) : getGitHubTokenFromRequest(request)
     const repo = body.repoFullName ? parseGitHubFullName(body.repoFullName) : parsePublicGitHubUrl(body.githubUrl ?? "")
     const creditsUsed = scanCreditCostForMode(body.analysisMode)
-    const quota = await consumeMonthlyScanQuota(identity, creditsUsed)
 
     if (shouldQueueScan(body.analysisMode, token)) {
+      const quota = await consumeMonthlyScanQuota(identity, creditsUsed)
       const report = await createQueuedScanReport({
         repo,
         ref: body.ref,
@@ -86,6 +86,8 @@ export async function POST(request: Request) {
       token,
       limits: getScannerLimitsForMode(body.analysisMode),
     })
+
+    const quota = await consumeMonthlyScanQuota(identity, creditsUsed)
 
     const deterministicReport = await scanProject({
       ...extracted,
