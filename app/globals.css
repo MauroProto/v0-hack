@@ -2662,12 +2662,19 @@ button.chip { cursor: pointer; }
 .guest-gate-powered {
   position: relative;
   z-index: 1;
-  margin: 10px 0 0;
-  color: var(--fg-5);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  margin: 11px auto 0;
+  color: rgba(245,245,245,0.55);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.guest-gate-powered b {
+  color: rgba(245,245,245,0.86);
+  font-weight: 800;
+  letter-spacing: 0;
 }
 .guest-gate-rule {
   display: block;
@@ -2718,7 +2725,7 @@ button.chip { cursor: pointer; }
     height: 20px;
   }
   .guest-gate-separator { gap: 14px; margin: 18px 0; font-size: 11px; }
-  .guest-gate-powered { margin-top: 10px; font-size: 9.5px; letter-spacing: 0.06em; }
+  .guest-gate-powered { margin-top: 10px; font-size: 10.5px; }
   .guest-gate-rule { margin: 18px 0 15px; }
   .guest-gate-note { font-size: 12.5px; line-height: 1.45; }
 }

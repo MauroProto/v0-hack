@@ -144,7 +144,10 @@ function GuestAccessDialog({
             <span>Sign in with GitHub</span>
           </button>
         </SignInButton>
-        <p className="guest-gate-powered">Account sign-in powered by Clerk.</p>
+        <p className="guest-gate-powered">
+          <span>by</span>
+          <b>Clerk</b>
+        </p>
 
         <div className="guest-gate-rule" aria-hidden="true" />
         <p className="guest-gate-note">Public scans read repos server-side. Nothing is stored without an account.</p>
