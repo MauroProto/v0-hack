@@ -328,7 +328,7 @@ function Dashboard() {
             <div className="dash-dots"><span /><span /><span /></div>
             <div className="dash-url">
               <I.lock style={{ width: 12, height: 12 }} />
-              <span>app.badger.dev/</span>
+              <span>badger-security.vercel.app/</span>
               <span className="path">report/{'{scanId}'}</span>
             </div>
             <span className="pill" style={{ height: 22, fontSize: 11 }}>
