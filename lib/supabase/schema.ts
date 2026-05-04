@@ -26,4 +26,5 @@ export const BADGER_SUPABASE_MIGRATIONS = [
   `supabase/migrations/0003_${LEGACY_DB_PREFIX}_revoke_public_table_access.sql`,
   `supabase/migrations/0004_${LEGACY_DB_PREFIX}_scan_credit_quota.sql`,
   `supabase/migrations/0005_${LEGACY_DB_PREFIX}_distributed_burst_quota.sql`,
+  `supabase/migrations/20260504052717_drop_legacy_quota_rpc_overload.sql`,
 ] as const

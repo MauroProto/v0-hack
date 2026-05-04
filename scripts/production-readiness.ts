@@ -94,10 +94,10 @@ async function repositoryChecks(): Promise<Check[]> {
       ok: hasAll(
         migrations,
         `create or replace function public.${BADGER_SUPABASE_QUOTA_RPC}`,
-        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer) from public`,
-        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer) from anon`,
-        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer) from authenticated`,
-        `grant execute on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer) to service_role`,
+        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from public`,
+        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from anon`,
+        `revoke all on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer, integer) from authenticated`,
+        `grant execute on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer, integer) to service_role`,
       ),
       severity: "blocker",
       label: "Monthly quota RPC is callable only by the service role",
@@ -116,6 +116,17 @@ async function repositoryChecks(): Promise<Check[]> {
       severity: "blocker",
       label: "Monthly quota RPC supports multi-credit scans",
       remediation: "Run the latest scan credit quota migration before enabling Max mode in production.",
+    },
+    {
+      id: "quota_rpc_has_single_signature",
+      ok: hasAll(
+        migrations,
+        `drop function if exists public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer)`,
+        `comment on function public.${BADGER_SUPABASE_QUOTA_RPC}(text, date, integer, integer)`,
+      ),
+      severity: "blocker",
+      label: "Monthly quota RPC has a single unambiguous production signature",
+      remediation: "Drop the legacy three-argument quota RPC overload so Supabase/PostgREST can resolve scan quota calls.",
     },
     {
       id: "burst_rpc_service_role_only",
