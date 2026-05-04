@@ -2570,11 +2570,11 @@ button.chip { cursor: pointer; }
   z-index: 1;
   margin: 0 auto;
   color: var(--fg);
-  font-family: var(--font-serif);
-  font-size: clamp(36px, 3.2vw, 46px);
-  line-height: 0.98;
-  letter-spacing: -0.035em;
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-size: clamp(32px, 3vw, 42px);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  font-weight: 560;
 }
 .guest-gate-copy {
   position: relative;
@@ -2713,7 +2713,7 @@ button.chip { cursor: pointer; }
   .guest-gate-close { top: 14px; right: 14px; }
   .guest-gate-close svg { width: 21px; height: 21px; }
   .guest-gate-mark { width: 54px; height: 54px; margin-bottom: 18px; }
-  .guest-gate h2 { font-size: 32px; }
+  .guest-gate h2 { font-size: 28px; letter-spacing: -0.04em; }
   .guest-gate-copy { margin: 13px auto 22px; font-size: 14.5px; line-height: 1.38; }
   .guest-gate-primary,
   .guest-gate-secondary {
