@@ -35,6 +35,7 @@ type GitHubAuthSession = {
   login?: string
   name?: string
   avatarUrl?: string
+  scopes?: string[]
 }
 
 export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mode }) {
@@ -282,7 +283,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
                 <span className="hint mono">no login</span>
               </div>
               <p className="scan-trust-note">
-                Public scans do not require GitHub login. Badger reads supported public repository files server-side and only asks for GitHub access if you choose account repositories or PR creation.
+                Public scans do not require GitHub login. Badger reads supported public repository files server-side and only asks for GitHub write access if you choose PR creation.
               </p>
             </>
           ) : sessionLoading ? (
@@ -301,8 +302,8 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
                 <Icon.branch style={{ width: 20, height: 20 }} />
               </div>
               <div>
-                <b>Connect GitHub for private or account repositories</b>
-                <span>Skip this for public repo URLs. Login is only needed when Badger needs your repository list or PR permissions.</span>
+                <b>Connect GitHub for your account repositories</b>
+                <span>This starts with read-only profile access. Badger asks for PR permission only if you choose to open a pull request.</span>
               </div>
               <button className="btn btn-accent btn-lg btn-shine" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
                 <Icon.branch style={{ width: 14, height: 14 }} />
@@ -314,7 +315,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
               <div className="github-repo-head">
                 <div>
                   <b>{githubSession.name ?? githubSession.login ?? "GitHub account"}</b>
-                  <span>Choose a repository from your GitHub account.</span>
+                  <span>Choose a repository from your GitHub account. PR permission is requested later only when needed.</span>
                 </div>
                 <button className="btn btn-outline" type="button" onClick={signOut}>
                   Sign out

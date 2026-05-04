@@ -10,6 +10,9 @@ import {
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
+const READ_ONLY_SCOPE = "read:user user:email"
+const PUBLIC_PR_SCOPE = "read:user user:email public_repo"
+
 export async function GET(request: Request) {
   const clientId = process.env.GITHUB_CLIENT_ID
   if (!clientId || !process.env.GITHUB_CLIENT_SECRET || !hasGitHubSessionSecret()) {
@@ -20,11 +23,13 @@ export async function GET(request: Request) {
   }
 
   const state = createGitHubOAuthState()
-  const returnTo = new URL(request.url).searchParams.get("returnTo") ?? "/scan"
+  const url = new URL(request.url)
+  const returnTo = url.searchParams.get("returnTo") ?? "/scan"
+  const intent = url.searchParams.get("intent")
   const authorizeUrl = new URL("https://github.com/login/oauth/authorize")
   authorizeUrl.searchParams.set("client_id", clientId)
   authorizeUrl.searchParams.set("redirect_uri", githubRedirectUri(request))
-  authorizeUrl.searchParams.set("scope", "public_repo read:user user:email")
+  authorizeUrl.searchParams.set("scope", intent === "pull_request" ? PUBLIC_PR_SCOPE : READ_ONLY_SCOPE)
   authorizeUrl.searchParams.set("state", state)
   authorizeUrl.searchParams.set("allow_signup", "true")
 

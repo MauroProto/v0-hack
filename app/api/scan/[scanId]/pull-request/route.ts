@@ -7,6 +7,7 @@ import type { ScanReport } from "@/lib/scanner/types"
 import { readJsonBodyWithLimit } from "@/lib/security/body"
 import { apiHeaders } from "@/lib/security/headers"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
+import { getGitHubSessionFromHeaders } from "@/lib/security/github-session"
 import { assertBurstAllowed, assertContentLengthAllowed, isSecurityError } from "@/lib/security/quota"
 import { createRemediationPullRequest, getGitHubTokenFromRequest } from "@/lib/utils/github"
 
@@ -64,8 +65,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ sca
     const token = getGitHubTokenFromRequest(request)
     if (!token) {
       return NextResponse.json(
-        { error: "GitHub login is required to create a pull request." },
+        { error: "GitHub login is required to create a pull request.", code: "github_login_required" },
         { status: 401, headers: apiHeaders() },
+      )
+    }
+
+    const githubSession = getGitHubSessionFromHeaders(request.headers)
+    if (githubSession && !hasPublicPullRequestScope(githubSession.scopes)) {
+      return NextResponse.json(
+        {
+          error: "GitHub PR permission is required before Badger can fork or push a remediation branch.",
+          code: "github_pr_scope_required",
+        },
+        { status: 403, headers: apiHeaders() },
       )
     }
 
@@ -133,4 +145,8 @@ function statusForPullRequestError(message: string) {
   if (normalized.includes("select") || normalized.includes("json")) return 400
   if (normalized.includes("metadata") || normalized.includes("repository")) return 400
   return 502
+}
+
+function hasPublicPullRequestScope(scopes: string[]) {
+  return scopes.some((scope) => scope === "public_repo" || scope === "repo")
 }

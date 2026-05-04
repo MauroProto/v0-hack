@@ -1,5 +1,10 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
-import { BADGER_SUPABASE_EXPECTED_TABLES, BADGER_SUPABASE_QUOTA_RPC, BADGER_SUPABASE_TABLES } from "../lib/supabase/schema"
+import {
+  BADGER_SUPABASE_BURST_RPC,
+  BADGER_SUPABASE_EXPECTED_TABLES,
+  BADGER_SUPABASE_QUOTA_RPC,
+  BADGER_SUPABASE_TABLES,
+} from "../lib/supabase/schema"
 import { loadEnvFiles } from "./lib/env"
 
 async function main() {
@@ -47,6 +52,7 @@ async function main() {
   }
 
   failed += await verifyQuotaRpc(supabase)
+  failed += await verifyBurstRpc(supabase)
 
   if (production && !anonKey) {
     console.log("[fail] supabase_anon_key: NEXT_PUBLIC_SUPABASE_ANON_KEY is missing")
@@ -97,6 +103,36 @@ async function verifyQuotaRpc(supabase: SupabaseClient) {
   }
 
   console.log(`[ok] ${BADGER_SUPABASE_QUOTA_RPC}: cost-aware quota RPC is callable with service-role credentials`)
+  return 0
+}
+
+async function verifyBurstRpc(supabase: SupabaseClient) {
+  const testSubjectHash = "1".repeat(64)
+  const windowStart = new Date(Math.floor(Date.now() / 60_000) * 60_000).toISOString()
+  const callRpc = supabase.rpc.bind(supabase) as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcResult>
+
+  const { error } = await callRpc(BADGER_SUPABASE_BURST_RPC, {
+    p_subject_hash: testSubjectHash,
+    p_action: "scan",
+    p_window_start: windowStart,
+    p_limit: 10,
+    p_cost: 1,
+  })
+
+  await supabase
+    .from(BADGER_SUPABASE_TABLES.burstUsage)
+    .delete()
+    .eq("subject_hash", testSubjectHash)
+    .eq("action", "scan")
+    .eq("window_start", windowStart)
+
+  if (error) {
+    console.log(`[fail] ${BADGER_SUPABASE_BURST_RPC}: ${sanitizeSupabaseError(error.message)}`)
+    console.log("[hint] run the latest distributed burst quota migration so short-window rate limits are shared across serverless instances")
+    return 1
+  }
+
+  console.log(`[ok] ${BADGER_SUPABASE_BURST_RPC}: distributed burst quota RPC is callable with service-role credentials`)
   return 0
 }
 

@@ -14,6 +14,7 @@ const REQUIRED_PRODUCTION_ENV_GROUPS = [
   envRequirement("BADGER_IDENTITY_SALT", true),
   envRequirement("BADGER_REQUIRE_PERSISTENT_QUOTA", true),
   envRequirement("BADGER_REQUIRE_PERSISTENT_STORAGE", true),
+  envRequirement("BADGER_REQUIRE_DISTRIBUTED_BURST_LIMIT", true),
   envRequirement("GITHUB_CLIENT_ID"),
   envRequirement("GITHUB_CLIENT_SECRET"),
   envRequirement("GITHUB_REDIRECT_URI"),

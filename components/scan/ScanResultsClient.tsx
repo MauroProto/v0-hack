@@ -169,9 +169,11 @@ export function ScanResultsClient({
     setSelectionMode(mode)
   }
 
-  const signInWithGitHub = () => {
+  const signInWithGitHub = (intent?: "pull_request") => {
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
-    window.location.assign(`/api/auth/github/start?returnTo=${encodeURIComponent(returnTo)}`)
+    const params = new URLSearchParams({ returnTo })
+    if (intent) params.set("intent", intent)
+    window.location.assign(`/api/auth/github/start?${params.toString()}`)
   }
 
   const createPullRequest = async (findingIdsToInclude: string[]) => {
@@ -197,7 +199,15 @@ export function ScanResultsClient({
         body: JSON.stringify(pullRequestSelectionPayload(findingIdsToInclude, prFindingIds)),
       })
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error ?? "Could not create GitHub PR.")
+      if (!response.ok) {
+        if (data.code === "github_pr_scope_required") {
+          setError("GitHub needs one-time public repository write permission before Badger can open this PR.")
+          signInWithGitHub("pull_request")
+          return
+        }
+
+        throw new Error(data.error ?? "Could not create GitHub PR.")
+      }
       setReport(data.report)
       setPullRequest(data.pullRequest)
       setSelectionMode(null)
@@ -592,7 +602,7 @@ function FindingSelectionDialog({
   onSelectAll: () => void
   onClear: () => void
   onToggle: (findingId: string) => void
-  onSignInWithGitHub: () => void
+  onSignInWithGitHub: (intent?: "pull_request") => void
   onConfirm: () => void
 }) {
   const selectedSet = new Set(selectedFindingIds)
@@ -631,8 +641,8 @@ function FindingSelectionDialog({
           <div className="selection-warning">
             <Icon.lock style={{ width: 14, height: 14 }} />
             <span>GitHub login is required before a remediation branch can be opened.</span>
-            <button className="btn btn-outline" type="button" onClick={onSignInWithGitHub}>
-              Login with GitHub
+            <button className="btn btn-outline" type="button" onClick={() => onSignInWithGitHub("pull_request")}>
+              Authorize PR access
             </button>
           </div>
         )}

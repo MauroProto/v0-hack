@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 import {
   BADGER_SUPABASE_EXPECTED_TABLES,
+  BADGER_SUPABASE_BURST_RPC,
   BADGER_SUPABASE_MIGRATIONS,
   BADGER_SUPABASE_QUOTA_RPC,
+  BADGER_SUPABASE_TABLES,
 } from "../lib/supabase/schema"
 import { loadEnvFiles } from "./lib/env"
 
@@ -114,6 +116,21 @@ async function repositoryChecks(): Promise<Check[]> {
       severity: "blocker",
       label: "Monthly quota RPC supports multi-credit scans",
       remediation: "Run the latest scan credit quota migration before enabling Max mode in production.",
+    },
+    {
+      id: "burst_rpc_service_role_only",
+      ok: hasAll(
+        migrations,
+        `create table if not exists public.${BADGER_SUPABASE_TABLES.burstUsage}`,
+        `create or replace function public.${BADGER_SUPABASE_BURST_RPC}`,
+        `revoke all on function public.${BADGER_SUPABASE_BURST_RPC}(text, text, timestamptz, integer, integer) from public`,
+        `revoke all on function public.${BADGER_SUPABASE_BURST_RPC}(text, text, timestamptz, integer, integer) from anon`,
+        `revoke all on function public.${BADGER_SUPABASE_BURST_RPC}(text, text, timestamptz, integer, integer) from authenticated`,
+        `grant execute on function public.${BADGER_SUPABASE_BURST_RPC}(text, text, timestamptz, integer, integer) to service_role`,
+      ),
+      severity: "blocker",
+      label: "Short-window burst limits are persisted and callable only by the service role",
+      remediation: "Run the distributed burst quota migration so public API abuse cannot bypass per-instance memory counters.",
     },
     {
       id: "security_headers_configured",

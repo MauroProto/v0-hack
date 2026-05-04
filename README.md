@@ -100,12 +100,13 @@ SUPABASE_SERVICE_ROLE_KEY=
 BADGER_IDENTITY_SALT=
 BADGER_REQUIRE_PERSISTENT_STORAGE=true
 BADGER_REQUIRE_PERSISTENT_QUOTA=true
+BADGER_REQUIRE_DISTRIBUTED_BURST_LIMIT=true
 BADGER_MONTHLY_SCAN_QUOTA=10
 BADGER_GITHUB_SESSION_SECRET=
 BADGER_WORKER_SECRET=
 ```
 
-For public repository scans without user login, configure either a GitHub App installation:
+For public repository scans without user login, use a GitHub App installation with read-only repository access:
 
 ```bash
 BADGER_GITHUB_APP_ID=
@@ -113,11 +114,7 @@ BADGER_GITHUB_APP_INSTALLATION_ID=
 BADGER_GITHUB_APP_PRIVATE_KEY=
 ```
 
-or a temporary server-only read token:
-
-```bash
-BADGER_GITHUB_TOKEN=
-```
+Badger intentionally ignores personal `BADGER_GITHUB_TOKEN` values in production. Local development can still use one to avoid anonymous GitHub API limits.
 
 For optional GitHub login and PR creation:
 
@@ -126,6 +123,8 @@ GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 GITHUB_REDIRECT_URI=https://your-domain.com/api/auth/github/callback
 ```
+
+GitHub OAuth starts with read-only profile scopes. The broader `public_repo` scope is requested only when a user explicitly creates a pull request.
 
 Public Supabase client variables:
 
@@ -163,7 +162,7 @@ pnpm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Local development can use the git-ignored `.badger/scan-reports.json` file store. For repeated public GitHub scans, set `BADGER_GITHUB_TOKEN` in `.env.local` to avoid anonymous GitHub API limits.
+Local development can use the git-ignored `.badger/scan-reports.json` file store. For repeated public GitHub scans, set `BADGER_GITHUB_TOKEN` in `.env.local` to avoid anonymous GitHub API limits. Production public scans should use the GitHub App path above instead of a personal token.
 
 ## Verification
 

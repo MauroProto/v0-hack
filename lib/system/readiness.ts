@@ -44,6 +44,13 @@ export function getProductionReadiness(): ProductionReadiness {
       remediation: "Keep persistent monthly quota required in production.",
     },
     {
+      id: "distributed_burst_required",
+      ok: productionPersistenceEnabled("REQUIRE_DISTRIBUTED_BURST_LIMIT"),
+      severity: "blocker",
+      label: "Production burst rate limits cannot fall back to per-instance memory",
+      remediation: "Keep distributed burst limiting required in production and run the latest Supabase burst quota migration.",
+    },
+    {
       id: "identity_salt",
       ok: hasStrongIdentitySalt(),
       severity: "blocker",

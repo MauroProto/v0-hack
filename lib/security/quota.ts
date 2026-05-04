@@ -1,7 +1,7 @@
 import "server-only"
 
 import { badgerEnv } from "@/lib/config/env"
-import { BADGER_SUPABASE_QUOTA_RPC, BADGER_SUPABASE_TABLES } from "@/lib/supabase/schema"
+import { BADGER_SUPABASE_BURST_RPC, BADGER_SUPABASE_QUOTA_RPC, BADGER_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
 import type { RequestIdentity } from "./request"
 export { scanCreditCostForMode, type ScanCreditMode } from "./scanCredits"
@@ -36,6 +36,12 @@ type QuotaRpcRow = {
   scan_count: number
 }
 
+type BurstRpcRow = {
+  allowed: boolean
+  remaining: number
+  request_count: number
+}
+
 type QuotaUsageRow = {
   scan_count: number | string | null
 }
@@ -66,22 +72,36 @@ export async function assertBurstAllowed(identity: RequestIdentity, action: "sca
     action === "scan" ? 6 : action === "pull_request" ? 3 : 10,
   )
   const windowSeconds = readPositiveInt(badgerEnv("BURST_WINDOW_SECONDS"), 60)
-  const resetAt = Date.now() + windowSeconds * 1000
+  const windowStart = getBurstWindowStart(windowSeconds)
+  const resetAt = windowStart.getTime() + windowSeconds * 1000
   const key = `${action}:${identity.subjectHash}`
+
+  const supabase = getSupabaseServiceClient()
+  if (supabase) {
+    const { data, error } = await supabase.rpc(BADGER_SUPABASE_BURST_RPC, {
+      p_subject_hash: identity.subjectHash,
+      p_action: action,
+      p_window_start: windowStart.toISOString(),
+      p_limit: limit,
+      p_cost: 1,
+    })
+
+    if (!error) {
+      const row = (Array.isArray(data) ? data[0] : data) as BurstRpcRow | null
+      if (row?.allowed) return
+      throw burstRateLimited(limit, resetAt)
+    }
+
+    console.error("Badger Supabase burst limit failed", error.message)
+    if (distributedBurstRequired()) throw distributedBurstUnavailable()
+  } else if (distributedBurstRequired()) {
+    throw distributedBurstUnavailable()
+  }
+
   const result = consumeMemoryCounter(getBurstCounters(), key, limit, resetAt)
 
   if (!result.allowed) {
-    throw new SecurityError(
-      "Too many requests. Wait a minute and try again.",
-      429,
-      "burst_rate_limited",
-      rateLimitHeaders({
-        limit,
-        remaining: 0,
-        resetAt: new Date(result.resetAt).toISOString(),
-        period: "burst",
-      }),
-    )
+    throw burstRateLimited(limit, result.resetAt)
   }
 }
 
@@ -249,11 +269,40 @@ function persistentQuotaRequired() {
   return process.env.NODE_ENV === "production"
 }
 
+function distributedBurstRequired() {
+  const value = badgerEnv("REQUIRE_DISTRIBUTED_BURST_LIMIT")?.toLowerCase()
+  if (value === "true") return true
+  if (value === "false") return false
+  return process.env.NODE_ENV === "production"
+}
+
 function persistentQuotaUnavailable() {
   return new SecurityError(
     "Persistent monthly scan credits are not configured. Connect Supabase and run the latest migration before accepting production scans.",
     503,
     "persistent_quota_unavailable",
+  )
+}
+
+function distributedBurstUnavailable() {
+  return new SecurityError(
+    "Persistent burst rate limits are not configured. Connect Supabase and run the latest migration before accepting production requests.",
+    503,
+    "persistent_burst_unavailable",
+  )
+}
+
+function burstRateLimited(limit: number, resetAt: number) {
+  return new SecurityError(
+    "Too many requests. Wait a minute and try again.",
+    429,
+    "burst_rate_limited",
+    rateLimitHeaders({
+      limit,
+      remaining: 0,
+      resetAt: new Date(resetAt).toISOString(),
+      period: "burst",
+    }),
   )
 }
 
@@ -318,6 +367,11 @@ function getNextUtcMonthStart() {
 
 function monthlyCounterKey(windowStart: string, subjectHash: string) {
   return `monthly:${windowStart}:${subjectHash}`
+}
+
+function getBurstWindowStart(windowSeconds: number) {
+  const windowMs = Math.max(1, windowSeconds) * 1000
+  return new Date(Math.floor(Date.now() / windowMs) * windowMs)
 }
 
 function readPositiveInt(value: string | undefined, fallback: number) {

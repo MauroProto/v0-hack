@@ -1105,6 +1105,7 @@ function getLocalGitHubToken() {
 
 async function getServerGitHubReadToken() {
   if (isGitHubAppInstallationConfigured()) return createDefaultGitHubAppInstallationToken()
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL === "1") return undefined
 
   return (
     badgerEnv("GITHUB_TOKEN") ||
@@ -1454,7 +1455,7 @@ async function throwGitHubResponseError(response: Response, url: string, authent
 
   if (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0") {
     throw new GitHubApiError(
-      "GitHub public API rate limit exceeded. In local development, set BADGER_GITHUB_TOKEN in .env.local or configure the Badger GitHub App server-side.",
+      "GitHub public API rate limit exceeded. In local development, set BADGER_GITHUB_TOKEN in .env.local. In production, configure the Badger GitHub App server-side so public scans never depend on a personal token.",
       response.status,
       "github_rate_limited",
     )
