@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, type ReactNode } from "react"
-import { useUser } from "@clerk/nextjs"
+import { SignInButton, useUser } from "@clerk/nextjs"
 import { ArrowRight, Github, X } from "lucide-react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
@@ -89,11 +89,6 @@ function useGuestAccess(href: string) {
     router.push(href)
   }
 
-  function signInWithGitHub() {
-    const params = new URLSearchParams({ returnTo: href })
-    window.location.assign(`/api/auth/github/start?${params.toString()}`)
-  }
-
   return {
     open: enter,
     showDialog: () => setOpen(true),
@@ -101,7 +96,6 @@ function useGuestAccess(href: string) {
       open,
       onClose: () => setOpen(false),
       onGuest: continueAsGuest,
-      onSignIn: signInWithGitHub,
     },
   }
 }
@@ -110,12 +104,10 @@ function GuestAccessDialog({
   open,
   onClose,
   onGuest,
-  onSignIn,
 }: {
   open: boolean
   onClose: () => void
   onGuest: () => void
-  onSignIn: () => void
 }) {
   if (!open) return null
 
@@ -146,10 +138,12 @@ function GuestAccessDialog({
           <span />
         </div>
 
-        <button type="button" className="guest-gate-secondary" onClick={onSignIn}>
-          <Github aria-hidden="true" />
-          <span>Sign in with GitHub</span>
-        </button>
+        <SignInButton mode="modal">
+          <button type="button" className="guest-gate-secondary">
+            <Github aria-hidden="true" />
+            <span>Sign in with GitHub</span>
+          </button>
+        </SignInButton>
         <p className="guest-gate-powered">
           <span>by</span>
           <a href="https://clerk.com/" target="_blank" rel="noreferrer">
