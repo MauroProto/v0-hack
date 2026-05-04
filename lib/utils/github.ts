@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib"
 import { auditEvent } from "@/lib/scanner/scan"
 import { generateProfessionalPullRequestCopy } from "@/lib/ai/pullRequestCopy"
 import { reviewPullRequestWithClaude, type PullRequestSafetyChangedFile } from "@/lib/ai/reviewPullRequest"
@@ -128,11 +129,14 @@ type GitHubUserApi = {
 }
 
 const GITHUB_API = "https://api.github.com"
+const GITHUB_CODELOAD = "https://codeload.github.com"
 const GITHUB_REPO_RE = /^https:\/\/github\.com\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})(?:\.git)?\/?$/
 const GITHUB_FULL_NAME_RE = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})$/
 const RETRYABLE_GITHUB_STATUSES = new Set([408, 500, 502, 503, 504])
 const DEFAULT_GITHUB_FETCH_RETRIES = 2
 const DEFAULT_GITHUB_RETRY_DELAY_MS = 450
+const DEFAULT_CODELOAD_MAX_ARCHIVE_BYTES = 50_000_000
+const DEFAULT_CODELOAD_MAX_TAR_BYTES = 160_000_000
 
 export function parsePublicGitHubUrl(input: string): ParsedGitHubUrl {
   const trimmed = input.trim()
@@ -196,51 +200,59 @@ export async function extractProjectFromGitHubRepo(input: {
 }): Promise<ExtractedProject & { sourceLabel: string; private: boolean; defaultBranch: string; ref: string; htmlUrl: string }> {
   const { owner, repo } = normalizeRepoParts(input.owner, input.repo)
   const limits = input.limits ?? getScannerLimits()
-  const repository = await getRepository(owner, repo, input.token)
-  const ref = sanitizeRef(input.ref || repository.default_branch)
+  try {
+    const repository = await getRepository(owner, repo, input.token)
+    const ref = sanitizeRef(input.ref || repository.default_branch)
 
-  if (repository.private && !input.token) {
-    throw new Error("Private repositories require GitHub login.")
-  }
+    if (repository.private && !input.token) {
+      throw new Error("Private repositories require GitHub login.")
+    }
 
-  const tree = await getRepositoryTree(owner, repo, ref, input.token)
-  const fetchResult = await fetchProjectFiles(owner, repo, tree, input.token, limits)
-  const files = fetchResult.files
+    const tree = await getRepositoryTree(owner, repo, ref, input.token)
+    const fetchResult = await fetchProjectFiles(owner, repo, tree, input.token, limits)
+    const files = fetchResult.files
 
-  if (files.length === 0) {
-    throw new Error("No supported text files were found in the GitHub repository.")
-  }
+    if (files.length === 0) {
+      throw new Error("No supported text files were found in the GitHub repository.")
+    }
 
-  return {
-    projectName: repository.name,
-    sourceLabel: `github.com/${owner}/${repo}#${ref}`,
-    private: repository.private,
-    defaultBranch: repository.default_branch,
-    ref,
-    htmlUrl: repository.html_url,
-    files,
-    auditTrail: [
-      auditEvent("Connect to GitHub repository", "complete", {
-        repository: `${owner}/${repo}`,
-        private: repository.private,
-        ref,
-      }),
-      auditEvent("Fetch GitHub tree via REST API", "complete", {
-        entries: tree.length,
-        truncated: false,
-      }),
-      auditEvent("Fetch supported blobs from GitHub", "complete", {
-        files: files.length,
-        supportedFiles: fetchResult.supportedFiles,
-        selectedFiles: fetchResult.selectedFiles,
-        skippedByFileLimit: fetchResult.skippedByFileLimit,
-        skippedByTotalSizeLimit: fetchResult.skippedByTotalSizeLimit,
-        skippedUnsupportedEncoding: fetchResult.skippedUnsupportedEncoding,
-        totalTextBytes: fetchResult.totalTextBytes,
-        partialCoverage:
-          fetchResult.skippedByFileLimit > 0 || fetchResult.skippedByTotalSizeLimit > 0 || fetchResult.skippedUnsupportedEncoding > 0,
-      }),
-    ],
+    return {
+      projectName: repository.name,
+      sourceLabel: `github.com/${owner}/${repo}#${ref}`,
+      private: repository.private,
+      defaultBranch: repository.default_branch,
+      ref,
+      htmlUrl: repository.html_url,
+      files,
+      auditTrail: [
+        auditEvent("Connect to GitHub repository", "complete", {
+          repository: `${owner}/${repo}`,
+          private: repository.private,
+          ref,
+        }),
+        auditEvent("Fetch GitHub tree via REST API", "complete", {
+          entries: tree.length,
+          truncated: false,
+        }),
+        auditEvent("Fetch supported blobs from GitHub", "complete", {
+          files: files.length,
+          supportedFiles: fetchResult.supportedFiles,
+          selectedFiles: fetchResult.selectedFiles,
+          skippedByFileLimit: fetchResult.skippedByFileLimit,
+          skippedByTotalSizeLimit: fetchResult.skippedByTotalSizeLimit,
+          skippedUnsupportedEncoding: fetchResult.skippedUnsupportedEncoding,
+          totalTextBytes: fetchResult.totalTextBytes,
+          partialCoverage:
+            fetchResult.skippedByFileLimit > 0 || fetchResult.skippedByTotalSizeLimit > 0 || fetchResult.skippedUnsupportedEncoding > 0,
+        }),
+      ],
+    }
+  } catch (error) {
+    if (shouldUsePublicArchiveFallback(error, input.token)) {
+      return extractProjectFromPublicGitHubArchive({ owner, repo, ref: input.ref, limits })
+    }
+
+    throw error
   }
 }
 
@@ -322,6 +334,259 @@ async function fetchProjectFiles(
     skippedUnsupportedEncoding,
     totalTextBytes,
   }
+}
+
+function shouldUsePublicArchiveFallback(error: unknown, token: string | undefined) {
+  if (token) return false
+  if (badgerEnv("GITHUB_CODELOAD_FALLBACK") === "false") return false
+  return error instanceof GitHubApiError && error.code === "github_rate_limited"
+}
+
+async function extractProjectFromPublicGitHubArchive(input: {
+  owner: string
+  repo: string
+  ref?: string
+  limits: ScannerLimits
+}): Promise<ExtractedProject & { sourceLabel: string; private: boolean; defaultBranch: string; ref: string; htmlUrl: string }> {
+  const refCandidates = input.ref ? [sanitizeRef(input.ref)] : ["HEAD", "main", "master"]
+  const attempted: string[] = []
+  let lastError: unknown
+
+  for (const candidateRef of refCandidates) {
+    try {
+      const archive = await fetchPublicGitHubTarball(input.owner, input.repo, candidateRef)
+      const fetchResult = extractProjectFilesFromTarball(archive, input.limits)
+
+      if (fetchResult.files.length === 0) {
+        throw new Error("No supported text files were found in the GitHub repository archive.")
+      }
+
+      return {
+        projectName: input.repo,
+        sourceLabel: `github.com/${input.owner}/${input.repo}#${candidateRef}`,
+        private: false,
+        defaultBranch: candidateRef,
+        ref: candidateRef,
+        htmlUrl: `https://github.com/${input.owner}/${input.repo}`,
+        files: fetchResult.files,
+        auditTrail: [
+          auditEvent("Connect to public GitHub archive", "complete", {
+            repository: `${input.owner}/${input.repo}`,
+            private: false,
+            ref: candidateRef,
+            fallback: "codeload",
+          }),
+          auditEvent("Fetch public repository tarball", "complete", {
+            source: "github-codeload",
+            compressedBytes: archive.length,
+          }),
+          auditEvent("Extract supported files from public archive", "complete", {
+            files: fetchResult.files.length,
+            supportedFiles: fetchResult.supportedFiles,
+            selectedFiles: fetchResult.selectedFiles,
+            skippedByFileLimit: fetchResult.skippedByFileLimit,
+            skippedByTotalSizeLimit: fetchResult.skippedByTotalSizeLimit,
+            skippedUnsupportedEncoding: fetchResult.skippedUnsupportedEncoding,
+            totalTextBytes: fetchResult.totalTextBytes,
+            partialCoverage:
+              fetchResult.skippedByFileLimit > 0 || fetchResult.skippedByTotalSizeLimit > 0 || fetchResult.skippedUnsupportedEncoding > 0,
+          }),
+        ],
+      }
+    } catch (error) {
+      attempted.push(candidateRef)
+      lastError = error
+    }
+  }
+
+  if (lastError instanceof GitHubApiError) throw lastError
+  throw new GitHubApiError(
+    `GitHub public archive could not be read for ${input.owner}/${input.repo} (${attempted.join(", ")}). Sign in with GitHub or try a specific branch.`,
+    502,
+    "github_archive_unavailable",
+  )
+}
+
+async function fetchPublicGitHubTarball(owner: string, repo: string, ref: string) {
+  const response = await fetch(`${GITHUB_CODELOAD}/${owner}/${repo}/tar.gz/${encodeGitHubRefPath(ref)}`, {
+    headers: {
+      Accept: "application/x-gzip",
+      "User-Agent": "BadgerSecurityReview",
+    },
+    cache: "no-store",
+  })
+
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined)
+    if (response.status === 404) {
+      throw new GitHubApiError(
+        "GitHub repository archive was not found. Confirm this is a public repository, or sign in with GitHub for private access.",
+        404,
+        "github_archive_not_found",
+      )
+    }
+    if (response.status === 403 || response.status === 429) {
+      throw new GitHubApiError(
+        "GitHub public archive downloads are temporarily limited. Sign in with GitHub or try again in a few minutes.",
+        response.status,
+        "github_archive_rate_limited",
+      )
+    }
+    throw new GitHubApiError(
+      `GitHub public archive download failed with status ${response.status}.`,
+      response.status,
+      "github_archive_failed",
+    )
+  }
+
+  const maxArchiveBytes = readPositiveInt(badgerEnv("GITHUB_CODELOAD_MAX_ARCHIVE_BYTES"), DEFAULT_CODELOAD_MAX_ARCHIVE_BYTES)
+  return readResponseBufferWithLimit(response, maxArchiveBytes)
+}
+
+function extractProjectFilesFromTarball(archive: Buffer, limits: ScannerLimits) {
+  const maxTarBytes = readPositiveInt(badgerEnv("GITHUB_CODELOAD_MAX_TAR_BYTES"), DEFAULT_CODELOAD_MAX_TAR_BYTES)
+  const tarball = gunzipSync(archive, { maxOutputLength: maxTarBytes })
+  const supportedCandidates = readTarEntries(tarball)
+    .filter((entry) => shouldConsiderProjectPath(entry.path))
+    .filter((entry) => entry.bytes.byteLength <= maxBytesForProjectPath(entry.path, limits.maxFileSizeBytes) && !shouldSkipLargeLockfile(entry.path, entry.bytes.byteLength))
+    .sort((a, b) => compareProjectPathPriority(a.path, b.path))
+  const candidates = supportedCandidates.slice(0, limits.maxFiles)
+  const files: ProjectFile[] = []
+  let totalTextBytes = 0
+  let skippedByTotalSizeLimit = 0
+  let skippedUnsupportedEncoding = 0
+
+  for (const candidate of candidates) {
+    const bytes = candidate.bytes
+    if (isProbablyBinary(bytes)) continue
+    if (totalTextBytes + bytes.byteLength > limits.maxTotalSizeBytes) {
+      skippedByTotalSizeLimit += 1
+      continue
+    }
+
+    const text = decodeUtf8(bytes)
+    if (text === null) {
+      skippedUnsupportedEncoding += 1
+      continue
+    }
+
+    totalTextBytes += bytes.byteLength
+    files.push({ path: candidate.path, size: bytes.byteLength, text })
+  }
+
+  return {
+    files,
+    supportedFiles: supportedCandidates.length,
+    selectedFiles: candidates.length,
+    skippedByFileLimit: Math.max(0, supportedCandidates.length - candidates.length),
+    skippedByTotalSizeLimit,
+    skippedUnsupportedEncoding,
+    totalTextBytes,
+  }
+}
+
+async function readResponseBufferWithLimit(response: Response, maxBytes: number) {
+  const contentLength = Number(response.headers.get("content-length"))
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    await response.body?.cancel().catch(() => undefined)
+    throw new GitHubApiError(
+      "GitHub repository archive is too large for guest scanning. Sign in with GitHub or scan a smaller repository.",
+      413,
+      "github_archive_too_large",
+    )
+  }
+
+  if (!response.body) {
+    const bytes = Buffer.from(await response.arrayBuffer())
+    if (bytes.byteLength > maxBytes) {
+      throw new GitHubApiError(
+        "GitHub repository archive is too large for guest scanning. Sign in with GitHub or scan a smaller repository.",
+        413,
+        "github_archive_too_large",
+      )
+    }
+    return bytes
+  }
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined)
+        throw new GitHubApiError(
+          "GitHub repository archive is too large for guest scanning. Sign in with GitHub or scan a smaller repository.",
+          413,
+          "github_archive_too_large",
+        )
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), total)
+}
+
+function readTarEntries(tarball: Buffer) {
+  const entries: Array<{ path: string; bytes: Buffer }> = []
+  let offset = 0
+
+  while (offset + 512 <= tarball.length) {
+    const header = tarball.subarray(offset, offset + 512)
+    if (isZeroBlock(header)) break
+
+    const name = readTarString(header, 0, 100)
+    const size = readTarOctal(header, 124, 12)
+    const type = readTarString(header, 156, 1)
+    const prefix = readTarString(header, 345, 155)
+    const rawPath = prefix ? `${prefix}/${name}` : name
+    const dataStart = offset + 512
+    const dataEnd = dataStart + size
+
+    if (dataEnd > tarball.length) break
+
+    if ((type === "" || type === "0") && rawPath) {
+      const normalized = normalizeArchivePath(rawPath)
+      if (normalized) entries.push({ path: normalized, bytes: tarball.subarray(dataStart, dataEnd) })
+    }
+
+    offset = dataStart + Math.ceil(size / 512) * 512
+  }
+
+  return entries
+}
+
+function normalizeArchivePath(rawPath: string) {
+  const withoutRoot = rawPath.split("/").slice(1).join("/")
+  return normalizeProjectPath(withoutRoot)
+}
+
+function readTarString(buffer: Buffer, offset: number, length: number) {
+  const raw = buffer.subarray(offset, offset + length)
+  const end = raw.indexOf(0)
+  return raw.subarray(0, end === -1 ? raw.length : end).toString("utf8").trim()
+}
+
+function readTarOctal(buffer: Buffer, offset: number, length: number) {
+  const value = readTarString(buffer, offset, length).replace(/\0/g, "").trim()
+  if (!value) return 0
+  const parsed = Number.parseInt(value, 8)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function isZeroBlock(buffer: Buffer) {
+  for (const byte of buffer) {
+    if (byte !== 0) return false
+  }
+  return true
 }
 
 async function getBlob(owner: string, repo: string, sha: string, token?: string) {
@@ -1437,6 +1702,10 @@ function formatFindingLocation(finding: ScanFinding) {
 
 function encodeGitHubPath(path: string) {
   return path.split("/").map(encodeURIComponent).join("/")
+}
+
+function encodeGitHubRefPath(ref: string) {
+  return ref.split("/").map(encodeURIComponent).join("/")
 }
 
 function isGitHubNotFoundError(error: unknown) {
