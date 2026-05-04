@@ -94,8 +94,10 @@ function legacyEnvName(name: string) {
 }
 
 function commandExists(command: string) {
+  if (!/^[a-z0-9._-]+$/i.test(command)) return false
+
   try {
-    execFileSync("command", ["-v", command], { shell: true, stdio: "ignore" })
+    execFileSync("which", [command], { stdio: "ignore" })
     return true
   } catch {
     return false

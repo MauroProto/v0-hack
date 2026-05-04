@@ -1,5 +1,3 @@
-import { readFile, readdir } from "node:fs/promises"
-import path from "node:path"
 import { zodSchema } from "ai"
 import type { ZodTypeAny } from "zod"
 import {
@@ -12,6 +10,7 @@ import {
 import { getSystemHealth } from "../lib/system/health"
 import {
   appendScanEvent,
+  backgroundJobsEnabled,
   claimNextScanJob,
   completeScanJob,
   createScanJob,
@@ -22,7 +21,7 @@ import {
   applyReportPolicy,
   createBaselineFromReport,
 } from "../lib/scanner/reportPolicy"
-import { compareProjectPathPriority, shouldConsiderProjectPath } from "../lib/scanner/extract"
+import { compareProjectPathPriority } from "../lib/scanner/extract"
 import { scanDependencies } from "../lib/scanner/dependencies"
 import { generateFixesBody, generateFullReportBody, generateIssueBody } from "../lib/scanner/patches"
 import { scanProject } from "../lib/scanner/scan"
@@ -32,7 +31,17 @@ import { sanitizePublicPullRequestCopy } from "../lib/ai/publicPullRequestCopy"
 import { pinThirdPartyActionRefsInText } from "../lib/utils/githubActions"
 import { formatGitHubNotFoundMessage } from "../lib/utils/githubErrors"
 import { deriveQuotaDisplay } from "../lib/security/quota-view"
+import { assertSameOriginRequest } from "../lib/security/origin"
+import { assertScanModeAllowed } from "../lib/security/scanAccess"
+import { SecurityError } from "../lib/security/errors"
+import { ensureAnonymousGuestIdentity } from "../lib/security/anonymousGuest"
+import { reportHistoryOwnerHash } from "../lib/security/reportHistory"
 import { scanCreditCostForMode } from "../lib/security/scanCredits"
+import {
+  monthlyScanQuotaLimit,
+  planLinkedMonthlyQuotaConsumption,
+} from "../lib/security/quotaPolicy"
+import { getCodeloadLimits } from "../lib/utils/githubCodeload"
 import {
   buildProfessionalPullRequestBody,
   buildProfessionalPullRequestTitle,
@@ -42,18 +51,16 @@ import {
 import { isSafePullRequestFinding } from "../lib/utils/prSafety"
 import { applyPullRequestSafetyDecision } from "../lib/utils/prSafetyReview"
 
-const fixtureRoot = path.join(process.cwd(), "examples", "vulnerable-next-app")
-
 async function main() {
-  const files = await readProjectFiles(fixtureRoot)
+  const files = securityRegressionFixtureFiles()
   const previousOsv = process.env.BADGER_ENABLE_OSV
   process.env.BADGER_ENABLE_OSV = "false"
 
   try {
     const report = await scanProject({
-      projectName: "vulnerable-next-app",
+      projectName: "security-regression-fixture",
       sourceType: "github",
-      sourceLabel: "fixture://vulnerable-next-app",
+      sourceLabel: "fixture://security-regression",
       analysisMode: "rules",
       files,
     })
@@ -93,6 +100,7 @@ async function main() {
     await assertInterfileTaintFindsRouteServiceDbTrace()
     await assertInterfileTaintIgnoresValidatedFlow()
     await assertBadgerIgnoreSuppressesFindingsAndRisk()
+    await assertDefaultExamplePathsAreSuppressedFromRisk()
     await assertBaselineMarksNewExistingResolved()
     assertAiTriageCanDowngradeAmbiguousProcessFinding()
     assertAiTriageCanSuppressCriticalDetectorFalsePositive()
@@ -112,9 +120,17 @@ async function main() {
     assertPullRequestSafetyGateBlocksAndRepairsUnsafeCopy()
     assertGitHubNotFoundErrorsAreContextual()
     assertFullReportCopyIncludesEveryFinding()
+    assertMaxLaunchReviewAppearsOnlyForMaxReports()
     assertGeneratedFixesCopyIncludesSpecificFixes()
     assertQuotaDisplayCountsRemainingScans()
     assertScanCreditCostsMatchMode()
+    assertSharedMonthlyQuotaPolicy()
+    assertScanModeAccessRules()
+    assertAnonymousReportHistoryIsListable()
+    assertAnonymousGuestIdentityUsesHttpOnlyCookie()
+    assertSameOriginRequestGuard()
+    assertCodeloadDefaultsAreConservative()
+    assertBackgroundJobsStayDisabledUntilAtomicClaim()
     await assertScanJobsAndEventsLifecycle()
     assertHealthStatusIsSecretFree()
 
@@ -974,6 +990,60 @@ async function assertBadgerIgnoreSuppressesFindingsAndRisk() {
   assert(report.riskScore === 0, "suppressed findings should not contribute to risk score")
 }
 
+async function assertDefaultExamplePathsAreSuppressedFromRisk() {
+  const report = await scanProject({
+    projectName: "badger-self-scan-fixtures",
+    sourceType: "github",
+    sourceLabel: "github.com/mauroproto/badger#main",
+    analysisMode: "normal",
+    files: [
+      {
+        path: "examples/security-regression-fixture/app/api/search/route.ts",
+        size: 210,
+        text: [
+          "import { prisma } from '@/lib/db'",
+          "export async function POST(request: Request) {",
+          "  const body = await request.json()",
+          "  const rows = await prisma.$queryRawUnsafe(`select * from users where email = '${body.email}'`)",
+          "  return Response.json({ rows })",
+          "}",
+        ].join("\n"),
+      },
+      {
+        path: "examples/security-regression-fixture/app/actions.ts",
+        size: 160,
+        text: [
+          '"use server"',
+          "import { prisma } from '@/lib/db'",
+          "export async function deleteUser(formData: FormData) {",
+          "  await prisma.user.delete({ where: { id: String(formData.get('userId')) } })",
+          "}",
+        ].join("\n"),
+      },
+      {
+        path: "examples/security-regression-fixture/supabase/migrations/001_init.sql",
+        size: 220,
+        text: [
+          "create table public.accounts (id uuid primary key, email text not null);",
+          "alter table public.accounts disable row level security;",
+          "create function public.admin_delete_account(account_id uuid)",
+          "returns void language plpgsql security definer as $$",
+          "begin delete from public.accounts where id = account_id; end; $$;",
+        ].join("\n"),
+      },
+      {
+        path: "examples/security-regression-fixture/.env.example",
+        size: 48,
+        text: "NEXT_PUBLIC_OPENAI_API_KEY=...redacted\n",
+      },
+    ],
+  })
+
+  assert(report.findings.some((finding) => finding.suppressed), "default example path policy should suppress fixture findings")
+  assert(!report.findings.some((finding) => !finding.suppressed && finding.filePath.startsWith("examples/")), "example fixtures must not remain active findings")
+  assert(report.riskScore === 0, "example fixtures must not contribute to the production risk score")
+}
+
 async function assertBaselineMarksNewExistingResolved() {
   const baseReport = await scanProject({
     projectName: "baseline-v1",
@@ -1262,11 +1332,24 @@ async function assertSafeCookieHelpersDoNotBecomeMissingCookieHardening() {
         ].join("\n"),
       },
       {
+        path: "app/api/auth/github/session/route.ts",
+        size: 180,
+        text: [
+          "import { clearGitHubSessionCookie } from '@/lib/security/github-session'",
+          "export async function DELETE() {",
+          "  return Response.json({}, { headers: { \"Set-Cookie\": clearGitHubSessionCookie() } })",
+          "}",
+        ].join("\n"),
+      },
+      {
         path: "lib/security/github-session.ts",
         size: 220,
         text: [
           "export function createGitHubSessionCookie(session) {",
           "  return serializeCookie('gh', session, { httpOnly: true, sameSite: 'Lax', secure: true, path: '/', maxAge: 100 })",
+          "}",
+          "export function clearGitHubSessionCookie() {",
+          "  return serializeCookie('gh', '', { httpOnly: true, sameSite: 'Lax', secure: true, path: '/', maxAge: 0 })",
           "}",
         ].join("\n"),
       },
@@ -1719,6 +1802,9 @@ function makeTriageReport(findings: ScanFinding[], overrides: Partial<ScanReport
 
 function assertQuotaDisplayCountsRemainingScans() {
   const resetAt = "2026-06-01T00:00:00.000Z"
+  const unknown = deriveQuotaDisplay(null)
+  assert(unknown.limit === 5, "unknown quota display should default to the anonymous five-credit limit")
+
   const full = deriveQuotaDisplay({ limit: 10, remaining: 10, resetAt, period: "monthly" })
   assert(full.remaining === 10, "quota display should preserve full remaining count")
   assert(full.used === 0, "quota display should count zero used credits at full quota")
@@ -1740,6 +1826,203 @@ function assertScanCreditCostsMatchMode() {
   assert(scanCreditCostForMode("normal") === 1, "normal scans should consume one monthly credit")
   assert(scanCreditCostForMode("max") === 2, "max scans should consume two monthly credits")
   assert(scanCreditCostForMode("rules") === 1, "rules-compatible scans should consume one monthly credit")
+}
+
+function assertSharedMonthlyQuotaPolicy() {
+  const anonymous = {
+    subjectHash: "anonymous",
+    quotaSubjectHash: "anonymous",
+    rateLimitSubjectHash: "anonymous-rate-limit",
+    kind: "anonymous" as const,
+    label: "anonymous browser",
+  }
+  const user = {
+    subjectHash: "user",
+    quotaSubjectHash: "user",
+    linkedQuotaSubjectHash: "anonymous",
+    rateLimitSubjectHash: "user-rate-limit",
+    kind: "clerk_user" as const,
+    label: "Badger user",
+  }
+
+  assert(monthlyScanQuotaLimit(anonymous) === 5, "anonymous visitors should get five monthly credits")
+  assert(monthlyScanQuotaLimit(user) === 7, "signed-in users should get seven monthly credits")
+
+  const upgrade = planLinkedMonthlyQuotaConsumption({
+    primaryCount: 0,
+    linkedCount: 5,
+    limit: 7,
+    requestCost: 1,
+  })
+  assert(upgrade.allowed, "signing in after guest usage should allow only the upgraded allowance")
+  assert(upgrade.primaryCost === 6, "linked guest usage should be carried into the signed-in quota ledger")
+  assert(upgrade.remaining === 1, "five guest credits plus one signed-in credit should leave one of seven")
+
+  const exhausted = planLinkedMonthlyQuotaConsumption({
+    primaryCount: 6,
+    linkedCount: 5,
+    limit: 7,
+    requestCost: 2,
+  })
+  assert(!exhausted.allowed, "Max should be blocked when guest-linked usage leaves fewer than two credits")
+}
+
+function assertScanModeAccessRules() {
+  const anonymous = {
+    subjectHash: "anonymous",
+    quotaSubjectHash: "anonymous",
+    rateLimitSubjectHash: "anonymous-rate-limit",
+    kind: "anonymous" as const,
+    label: "anonymous browser",
+  }
+  const user = {
+    subjectHash: "user",
+    quotaSubjectHash: "user",
+    linkedQuotaSubjectHash: "anonymous",
+    rateLimitSubjectHash: "user-rate-limit",
+    kind: "clerk_user" as const,
+    label: "Badger user",
+  }
+
+  assertScanModeAllowed(anonymous, "normal")
+  assertScanModeAllowed(user, "max")
+
+  let blocked = false
+  try {
+    assertScanModeAllowed(anonymous, "max")
+  } catch (error) {
+    blocked = error instanceof SecurityError && error.status === 401 && error.code === "max_login_required"
+  }
+
+  assert(blocked, "anonymous users must be blocked from Max before quota or extraction work")
+}
+
+function assertAnonymousReportHistoryIsListable() {
+  const anonymous = {
+    subjectHash: "anonymous-report-owner",
+    quotaSubjectHash: "anonymous-report-owner",
+    rateLimitSubjectHash: "anonymous-rate-limit",
+    kind: "anonymous" as const,
+    label: "anonymous browser",
+  }
+  const user = {
+    subjectHash: "user-report-owner",
+    quotaSubjectHash: "user-report-owner",
+    linkedQuotaSubjectHash: "anonymous-report-owner",
+    rateLimitSubjectHash: "user-rate-limit",
+    kind: "clerk_user" as const,
+    label: "Badger user",
+  }
+
+  assert(reportHistoryOwnerHash(anonymous) === "anonymous-report-owner", "anonymous scan history should list reports owned by the anonymous identity")
+  assert(reportHistoryOwnerHash(user) === "user-report-owner", "signed-in scan history should remain scoped to the signed-in account")
+}
+
+function assertAnonymousGuestIdentityUsesHttpOnlyCookie() {
+  const first = ensureAnonymousGuestIdentity(new Headers(), "rate-limit-a")
+  const second = ensureAnonymousGuestIdentity(new Headers(), "rate-limit-a")
+  assert(first.subjectHash !== second.subjectHash, "new anonymous browsers must not share report ownership by IP")
+  assert(first.rateLimitSubjectHash === "rate-limit-a", "anonymous rate limiting should still use the abuse subject")
+  assert(first.setCookie?.includes("HttpOnly"), "anonymous guest cookie must be HttpOnly")
+  assert(first.setCookie?.includes("SameSite=Lax"), "anonymous guest cookie must use SameSite=Lax")
+
+  const cookieValue = /^badger_guest_id=([^;]+)/.exec(first.setCookie ?? "")?.[1]
+  assert(Boolean(cookieValue), "anonymous guest cookie should include a guest id value")
+  const repeated = ensureAnonymousGuestIdentity(new Headers({ cookie: `badger_guest_id=${cookieValue}` }), "rate-limit-b")
+  assert(repeated.subjectHash === first.subjectHash, "same anonymous browser cookie should keep the same report owner")
+  assert(!repeated.setCookie, "existing anonymous guest cookie should not be rewritten")
+}
+
+function assertSameOriginRequestGuard() {
+  const previous = process.env.BADGER_ALLOWED_ORIGINS
+  try {
+    delete process.env.BADGER_ALLOWED_ORIGINS
+    assertSameOriginRequest(new Request("https://badger-security.vercel.app/api/scan"))
+    assertSameOriginRequest(new Request("https://badger-security.vercel.app/api/scan", {
+      headers: { Origin: "https://badger-security.vercel.app" },
+    }))
+
+    let blocked = false
+    try {
+      assertSameOriginRequest(new Request("https://badger-security.vercel.app/api/scan", {
+        headers: { Origin: "https://evil.example" },
+      }))
+    } catch (error) {
+      blocked = error instanceof SecurityError && error.status === 403 && error.code === "cross_origin_request_blocked"
+    }
+    assert(blocked, "cross-origin state-changing requests must be blocked")
+
+    process.env.BADGER_ALLOWED_ORIGINS = "https://preview.badger-security.vercel.app"
+    assertSameOriginRequest(new Request("https://badger-security.vercel.app/api/scan", {
+      headers: { Origin: "https://preview.badger-security.vercel.app" },
+    }))
+  } finally {
+    if (previous === undefined) delete process.env.BADGER_ALLOWED_ORIGINS
+    else process.env.BADGER_ALLOWED_ORIGINS = previous
+  }
+}
+
+function assertCodeloadDefaultsAreConservative() {
+  const previousArchive = process.env.BADGER_GITHUB_CODELOAD_MAX_ARCHIVE_BYTES
+  const previousTar = process.env.BADGER_GITHUB_CODELOAD_MAX_TAR_BYTES
+  try {
+    delete process.env.BADGER_GITHUB_CODELOAD_MAX_ARCHIVE_BYTES
+    delete process.env.BADGER_GITHUB_CODELOAD_MAX_TAR_BYTES
+    const defaults = getCodeloadLimits()
+    assert(defaults.maxArchiveBytes === 15_000_000, "default codeload archive limit should be 15 MB")
+    assert(defaults.maxTarBytes === 50_000_000, "default codeload tar expansion limit should be 50 MB")
+
+    process.env.BADGER_GITHUB_CODELOAD_MAX_ARCHIVE_BYTES = "12000000"
+    process.env.BADGER_GITHUB_CODELOAD_MAX_TAR_BYTES = "42000000"
+    const configured = getCodeloadLimits()
+    assert(configured.maxArchiveBytes === 12_000_000, "codeload archive env override should still work")
+    assert(configured.maxTarBytes === 42_000_000, "codeload tar env override should still work")
+  } finally {
+    if (previousArchive === undefined) delete process.env.BADGER_GITHUB_CODELOAD_MAX_ARCHIVE_BYTES
+    else process.env.BADGER_GITHUB_CODELOAD_MAX_ARCHIVE_BYTES = previousArchive
+    if (previousTar === undefined) delete process.env.BADGER_GITHUB_CODELOAD_MAX_TAR_BYTES
+    else process.env.BADGER_GITHUB_CODELOAD_MAX_TAR_BYTES = previousTar
+  }
+}
+
+function assertBackgroundJobsStayDisabledUntilAtomicClaim() {
+  const previous = process.env.BADGER_ENABLE_BACKGROUND_JOBS
+  try {
+    process.env.BADGER_ENABLE_BACKGROUND_JOBS = "true"
+    assert(backgroundJobsEnabled() === false, "background jobs must stay disabled until atomic Supabase job claim exists")
+  } finally {
+    if (previous === undefined) delete process.env.BADGER_ENABLE_BACKGROUND_JOBS
+    else process.env.BADGER_ENABLE_BACKGROUND_JOBS = previous
+  }
+}
+
+function assertMaxLaunchReviewAppearsOnlyForMaxReports() {
+  const maxReport = makeTriageReport([], {
+    analysisMode: "max",
+    maxLaunchReview: {
+      verdict: "needs_attention",
+      summary: "The public endpoint has cost controls, but quota timing needs review.",
+      sections: [
+        {
+          area: "Cost and abuse controls",
+          status: "action_required",
+          summary: "Monthly credits must be consumed before expensive GitHub extraction.",
+          evidence: ["app/api/scan/route.ts"],
+          recommendations: ["Reserve credits before extracting repository files."],
+        },
+      ],
+    },
+  } as Partial<ScanReport>)
+  const normalReport = makeTriageReport([], {
+    analysisMode: "normal",
+    maxLaunchReview: maxReport.maxLaunchReview,
+  } as Partial<ScanReport>)
+
+  const maxBody = generateFullReportBody(maxReport)
+  const normalBody = generateFullReportBody(normalReport)
+  assert(maxBody.includes("## Max launch review"), "Max full report should include launch review notes")
+  assert(maxBody.includes("Cost and abuse controls"), "Max launch review should include section evidence")
+  assert(!normalBody.includes("## Max launch review"), "Normal full report should not include Max launch review")
 }
 
 async function assertScanJobsAndEventsLifecycle() {
@@ -1796,27 +2079,101 @@ function assertHealthStatusIsSecretFree() {
   assert(typeof health.githubAppConfigured === "boolean", "health should expose boolean GitHub App status")
 }
 
-async function readProjectFiles(root: string): Promise<ProjectFile[]> {
-  const out: ProjectFile[] = []
-
-  async function walk(dir: string) {
-    const entries = await readdir(dir, { withFileTypes: true })
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        await walk(fullPath)
-        continue
-      }
-
-      const relativePath = path.relative(root, fullPath).replaceAll(path.sep, "/")
-      if (!shouldConsiderProjectPath(relativePath)) continue
-      const text = await readFile(fullPath, "utf8")
-      out.push({ path: relativePath, size: Buffer.byteLength(text), text })
-    }
-  }
-
-  await walk(root)
-  return out
+function securityRegressionFixtureFiles(): ProjectFile[] {
+  return [
+    {
+      path: ".github/workflows/ci.yml",
+      size: 130,
+      text: [
+        "name: ci",
+        "on:",
+        "  pull_request_target:",
+        "permissions: write-all",
+        "jobs:",
+        "  test:",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - uses: actions/checkout@v4",
+        "      - run: npm test",
+      ].join("\n"),
+    },
+    {
+      path: "app/actions.ts",
+      size: 180,
+      text: [
+        '"use server"',
+        "import { prisma } from '@/lib/db'",
+        "export async function deleteUser(formData: FormData) {",
+        "  const userId = String(formData.get('userId'))",
+        "  await prisma.user.delete({ where: { id: userId } })",
+        "}",
+      ].join("\n"),
+    },
+    {
+      path: "app/api/search/route.ts",
+      size: 220,
+      text: [
+        "import { prisma } from '@/lib/db'",
+        "export async function POST(request: Request) {",
+        "  const body = await request.json()",
+        "  const rows = await prisma.$queryRawUnsafe(`select * from users where email = '${body.email}'`)",
+        "  return Response.json({ rows })",
+        "}",
+      ].join("\n"),
+    },
+    {
+      path: "app/api/chat/route.ts",
+      size: 230,
+      text: [
+        "import { streamText } from 'ai'",
+        "import { tools } from '@/lib/agent/tools'",
+        "export async function POST(request: Request) {",
+        "  const body = await request.json()",
+        "  return streamText({ model: 'openai/gpt-5.2-mini', prompt: body.message, tools }).toTextStreamResponse()",
+        "}",
+      ].join("\n"),
+    },
+    {
+      path: "app/dashboard/page.tsx",
+      size: 70,
+      text: "'use client'\nexport default function Page() { return <pre>{JSON.stringify({ token: 'demo-token' })}</pre> }\n",
+    },
+    {
+      path: "lib/agent/tools.ts",
+      size: 160,
+      text: [
+        "export const tools = {",
+        "  search: async () => 'ok',",
+        "  deleteUser: async () => 'deleted',",
+        "}",
+        "export async function runTool(input: { tool: string }) {",
+        "  return tools[input.tool as keyof typeof tools]()",
+        "}",
+      ].join("\n"),
+    },
+    {
+      path: "supabase/migrations/001_init.sql",
+      size: 280,
+      text: [
+        "create table public.accounts (",
+        "  id uuid primary key,",
+        "  email text not null",
+        ");",
+        "alter table public.accounts disable row level security;",
+        "create function public.admin_delete_account(account_id uuid)",
+        "returns void language plpgsql security definer as $$",
+        "begin",
+        "  delete from public.accounts where id = account_id;",
+        "end;",
+        "$$;",
+      ].join("\n"),
+    },
+    {
+      path: "prisma/schema.prisma",
+      size: 120,
+      text: "datasource db { provider = \"postgresql\" url = env(\"DATABASE_URL\") }\ngenerator client { provider = \"prisma-client-js\" }\n",
+    },
+  ]
 }
 
 function assert(value: unknown, message: string): asserts value {

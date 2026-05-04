@@ -8,7 +8,7 @@ import { subscribeGitHubSessionChange } from "@/lib/client/github-session-events
 
 export function ScanHistoryClient() {
   const [reports, setReports] = useState<ScanReport[]>([])
-  const [authenticated, setAuthenticated] = useState(true)
+  const [historyAvailable, setHistoryAvailable] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const sessionVersion = useRef(0)
@@ -30,7 +30,7 @@ export function ScanHistoryClient() {
         if (sessionVersion.current !== activeSessionVersion) return
         if (!response.ok) throw new Error(data.error ?? "Could not load scan history.")
         setReports(data.reports ?? [])
-        setAuthenticated(data.authenticated !== false)
+        setHistoryAvailable(data.historyAvailable !== false)
       } catch (loadError) {
         if (controller.signal.aborted) return
         if (sessionVersion.current !== activeSessionVersion) return
@@ -49,7 +49,7 @@ export function ScanHistoryClient() {
     return subscribeGitHubSessionChange(() => {
       sessionVersion.current += 1
       setReports([])
-      setAuthenticated(false)
+      setHistoryAvailable(true)
       setLoading(false)
       setError(null)
     })
@@ -73,7 +73,7 @@ export function ScanHistoryClient() {
       </div>
 
       {loading || error || reports.length === 0 ? (
-        <ScanHistoryState loading={loading} error={error} authenticated={authenticated} />
+        <ScanHistoryState loading={loading} error={error} historyAvailable={historyAvailable} />
       ) : (
         <ScanHistoryTable reports={reports} />
       )}
@@ -81,14 +81,14 @@ export function ScanHistoryClient() {
   )
 }
 
-function ScanHistoryState({ loading, error, authenticated }: { loading: boolean; error: string | null; authenticated: boolean }) {
-  const title = loading ? "Loading scans" : error ? "Could not load scans" : authenticated ? "No scans yet" : "Login to view scan history"
+function ScanHistoryState({ loading, error, historyAvailable }: { loading: boolean; error: string | null; historyAvailable: boolean }) {
+  const title = loading ? "Loading scans" : error ? "Could not load scans" : historyAvailable ? "No scans yet" : "Login to view scan history"
   const copy = loading
-    ? "Fetching reports for your account."
+    ? "Fetching reports for this browser session."
     : error
       ? error
-      : authenticated
-        ? "Start a scan from your GitHub account to create your first private report history entry."
+      : historyAvailable
+        ? "Start a scan to create the first report for this browser session."
         : "Public scans are not listed in shared history. Login with GitHub so reports are tied to your account."
 
   return (

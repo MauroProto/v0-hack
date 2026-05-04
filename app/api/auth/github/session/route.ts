@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server"
+import { z } from "zod"
 import { apiHeaders } from "@/lib/security/headers"
 import { getClerkGitHubSession } from "@/lib/security/clerk-github"
 import { clearGitHubSessionCookie, getGitHubSessionFromHeaders, publicGitHubSession } from "@/lib/security/github-session"
+import { assertSameOriginRequest } from "@/lib/security/origin"
+import { isSecurityError } from "@/lib/security/quota"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+const DisconnectBodySchema = z.object({
+  disconnect: z.boolean().optional(),
+})
 
 export async function GET(request: Request) {
   const legacySession = getGitHubSessionFromHeaders(request.headers)
@@ -23,33 +30,42 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const disconnect = await shouldDisconnectGitHub(request)
+  try {
+    assertSameOriginRequest(request)
+    const disconnect = await shouldDisconnectGitHub(request)
 
-  if (disconnect) {
-    const session = getGitHubSessionFromHeaders(request.headers)
-    if (session) {
-      try {
-        await deleteGitHubAppAuthorization(session.token)
-      } catch {
-        return NextResponse.json(
-          {
-            error:
-              "Could not disconnect GitHub from this account. Try again, or remove the app from GitHub Authorized OAuth Apps.",
-          },
-          { status: 502, headers: apiHeaders() },
-        )
+    if (disconnect) {
+      const session = getGitHubSessionFromHeaders(request.headers)
+      if (session) {
+        try {
+          await deleteGitHubAppAuthorization(session.token)
+        } catch {
+          return NextResponse.json(
+            {
+              error:
+                "Could not disconnect GitHub from this account. Try again, or remove the app from GitHub Authorized OAuth Apps.",
+            },
+            { status: 502, headers: apiHeaders() },
+          )
+        }
       }
     }
-  }
 
-  return NextResponse.json(
-    { session: { authenticated: false }, disconnected: disconnect },
-    {
-      headers: apiHeaders({
-        "Set-Cookie": clearGitHubSessionCookie(),
-      }),
-    },
-  )
+    return NextResponse.json(
+      { session: { authenticated: false }, disconnected: disconnect },
+      {
+        headers: apiHeaders({
+          "Set-Cookie": clearGitHubSessionCookie(),
+        }),
+      },
+    )
+  } catch (error) {
+    if (isSecurityError(error)) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: apiHeaders(error.headers) })
+    }
+
+    return NextResponse.json({ error: "Could not clear the GitHub session." }, { status: 500, headers: apiHeaders() })
+  }
 }
 
 async function shouldDisconnectGitHub(request: Request) {
@@ -59,7 +75,7 @@ async function shouldDisconnectGitHub(request: Request) {
   if (!request.headers.get("content-type")?.includes("application/json")) return false
 
   try {
-    const body = (await request.json()) as { disconnect?: unknown }
+    const body = DisconnectBodySchema.parse(await request.json())
     return body.disconnect === true
   } catch {
     return false

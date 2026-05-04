@@ -4,6 +4,7 @@ import { createBaselineFromReport } from "@/lib/scanner/reportPolicy"
 import { auditEvent } from "@/lib/scanner/scan"
 import { getScanReport, saveScanBaseline, saveScanReport } from "@/lib/scanner/store"
 import { apiHeaders } from "@/lib/security/headers"
+import { assertSameOriginRequest } from "@/lib/security/origin"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
 import { assertBurstAllowed, assertContentLengthAllowed, isSecurityError } from "@/lib/security/quota"
 
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic"
 
 export async function POST(request: Request, { params }: { params: Promise<{ scanId: string }> }) {
   try {
+    assertSameOriginRequest(request)
     const { scanId } = await params
     assertContentLengthAllowed(request, 1_000)
 

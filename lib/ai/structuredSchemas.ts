@@ -5,6 +5,8 @@ const KindSchema = z.enum(["vulnerability", "hardening", "repo_posture", "platfo
 const TriageVerdictSchema = z.enum(["confirmed", "needs_review", "posture_only", "likely_false_positive"])
 const TriagePrioritySchema = z.enum(["urgent", "high", "normal", "low"])
 const RiskBandSchema = z.enum(["none", "low", "medium", "moderate", "high", "critical"])
+const MaxLaunchVerdictSchema = z.enum(["ready", "needs_attention", "blocked"])
+const MaxLaunchSectionStatusSchema = z.enum(["pass", "watch", "action_required"])
 const CategorySchema = z.enum([
   "secret_exposure",
   "public_env_misuse",
@@ -64,6 +66,21 @@ export const AiReviewSchema = z.object({
       repoPostureRisk: RiskBandSchema.optional(),
       dependencyRisk: RiskBandSchema.optional(),
       secretsRisk: RiskBandSchema.optional(),
+    })
+    .optional(),
+  maxLaunchReview: z
+    .object({
+      verdict: MaxLaunchVerdictSchema,
+      summary: z.string(),
+      sections: z.array(
+        z.object({
+          area: z.string(),
+          status: MaxLaunchSectionStatusSchema,
+          summary: z.string(),
+          evidence: z.array(z.string()),
+          recommendations: z.array(z.string()),
+        }),
+      ),
     })
     .optional(),
   findings: z

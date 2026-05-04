@@ -102,6 +102,27 @@ export interface ReportAiTriage {
   reviewedFindings: number
 }
 
+export type MaxLaunchReviewVerdict = "ready" | "needs_attention" | "blocked"
+export type MaxLaunchReviewSectionStatus = "pass" | "watch" | "action_required"
+
+export interface MaxLaunchReviewSection {
+  area: string
+  status: MaxLaunchReviewSectionStatus
+  summary: string
+  evidence: string[]
+  recommendations: string[]
+}
+
+export interface MaxLaunchReview {
+  verdict: MaxLaunchReviewVerdict
+  summary: string
+  sections: MaxLaunchReviewSection[]
+  generatedAt?: string
+  model?: string
+  provider?: string
+  reasoningEffort?: string
+}
+
 export interface ScanRepositoryRef {
   owner: string
   repo: string
@@ -271,6 +292,7 @@ export interface ScanReport {
   dependencySummary?: DependencySummary
   repoInventory?: RepoInventory
   aiTriage?: ReportAiTriage
+  maxLaunchReview?: MaxLaunchReview
   riskBreakdown?: RiskBreakdown
   sarifAvailable?: boolean
   scannerVersion?: string

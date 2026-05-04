@@ -9,8 +9,11 @@ import { scanProject } from "@/lib/scanner/scan"
 import { getScanBaseline, saveScanReport } from "@/lib/scanner/store"
 import type { ScanRepositoryRef } from "@/lib/scanner/types"
 import { readJsonBodyWithLimit } from "@/lib/security/body"
+import { anonymousGuestResponseHeaders } from "@/lib/security/anonymousGuest"
 import { apiHeaders } from "@/lib/security/headers"
-import { attachReportOwner, getRequestIdentity, publicReport } from "@/lib/security/request"
+import { assertSameOriginRequest } from "@/lib/security/origin"
+import { attachReportOwner, getRequestIdentity, publicReport, type RequestIdentity } from "@/lib/security/request"
+import { assertScanModeAllowed } from "@/lib/security/scanAccess"
 import {
   assertBurstAllowed,
   consumeMonthlyScanQuota,
@@ -47,28 +50,33 @@ const JsonScanSchema = z
   })
 
 export async function POST(request: Request) {
+  let identity: RequestIdentity | undefined
+
   try {
-    const identity = await getRequestIdentity(request)
-    await assertBurstAllowed(identity, "scan")
+    assertSameOriginRequest(request)
 
     if (!isJsonContentType(request.headers.get("content-type"))) {
       return NextResponse.json({ error: "Use application/json. ZIP uploads are disabled for security." }, { status: 415, headers: apiHeaders() })
     }
 
     const body = JsonScanSchema.parse(await readJsonBodyWithLimit(request, 20_000))
+    identity = await getRequestIdentity(request)
+    assertScanModeAllowed(identity, body.analysisMode)
+    await assertBurstAllowed(identity, "scan")
+
     if (identity.kind === "anonymous" && body.repoFullName) {
       return NextResponse.json(
         { error: "Login with GitHub before scanning repositories from an account list.", code: "github_login_required" },
-        { status: 401, headers: apiHeaders() },
+        { status: 401, headers: scanResponseHeaders(identity) },
       )
     }
 
-    const token = (body.githubUrl ? await getPublicGitHubReadTokenFromRequest(request) : await getGitHubTokenFromRequest(request)) ?? undefined
     const repo = body.repoFullName ? parseGitHubFullName(body.repoFullName) : parsePublicGitHubUrl(body.githubUrl ?? "")
     const creditsUsed = scanCreditCostForMode(body.analysisMode)
+    const quota = await consumeMonthlyScanQuota(identity, creditsUsed)
+    const token = (body.githubUrl ? await getPublicGitHubReadTokenFromRequest(request) : await getGitHubTokenFromRequest(request)) ?? undefined
 
     if (shouldQueueScan(body.analysisMode, token)) {
-      const quota = await consumeMonthlyScanQuota(identity, creditsUsed)
       const report = await createQueuedScanReport({
         repo,
         ref: body.ref,
@@ -77,7 +85,7 @@ export async function POST(request: Request) {
         ownerKind: identity.kind,
       })
 
-      return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota, creditsUsed }, quota)
+      return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota, creditsUsed }, quota, identity)
     }
 
     const extracted = await extractProjectFromGitHubRepo({
@@ -86,8 +94,6 @@ export async function POST(request: Request) {
       token,
       limits: getScannerLimitsForMode(body.analysisMode),
     })
-
-    const quota = await consumeMonthlyScanQuota(identity, creditsUsed)
 
     const deterministicReport = await scanProject({
       ...extracted,
@@ -128,9 +134,9 @@ export async function POST(request: Request) {
       policyReport,
     )
 
-    return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota, creditsUsed }, quota)
+    return jsonWithQuota({ scanId: report.id, report: publicReport(report), quota, creditsUsed }, quota, identity)
   } catch (error) {
-    return errorResponse(error)
+    return errorResponse(error, identity)
   }
 }
 
@@ -161,20 +167,27 @@ function getErrorMessage(error: unknown) {
   return "Scan failed."
 }
 
-function errorResponse(error: unknown) {
+function errorResponse(error: unknown, identity?: RequestIdentity) {
   if (isSecurityError(error)) {
-    return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: apiHeaders(error.headers) })
+    return NextResponse.json(
+      { error: error.message, code: error.code },
+      { status: error.status, headers: scanResponseHeaders(identity, error.headers) },
+    )
   }
 
   if (isGitHubApiError(error)) {
-    return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: apiHeaders() })
+    return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: scanResponseHeaders(identity) })
   }
 
-  return NextResponse.json({ error: getErrorMessage(error) }, { status: getErrorStatus(error), headers: apiHeaders() })
+  return NextResponse.json({ error: getErrorMessage(error) }, { status: getErrorStatus(error), headers: scanResponseHeaders(identity) })
 }
 
-function jsonWithQuota(body: Record<string, unknown>, quota: QuotaState) {
-  return NextResponse.json(body, { headers: apiHeaders(rateLimitHeaders(quota)) })
+function jsonWithQuota(body: Record<string, unknown>, quota: QuotaState, identity: { setCookie?: string }) {
+  return NextResponse.json(body, { headers: scanResponseHeaders(identity, rateLimitHeaders(quota)) })
+}
+
+function scanResponseHeaders(identity?: { setCookie?: string }, headers?: Record<string, string>) {
+  return apiHeaders({ ...headers, ...anonymousGuestResponseHeaders(identity ?? {}) })
 }
 
 function shouldQueueScan(analysisMode: "rules" | "normal" | "max", token?: string) {

@@ -7,6 +7,14 @@ type SuppressionRule =
   | { kind: "category"; value: string }
   | { kind: "path"; value: string; regex: RegExp }
 
+const DEFAULT_SUPPRESSION_RULES: SuppressionRule[] = [
+  { kind: "path", value: "examples/**", regex: globToRegex("examples/**") },
+  { kind: "path", value: "fixtures/**", regex: globToRegex("fixtures/**") },
+  { kind: "path", value: "__fixtures__/**", regex: globToRegex("__fixtures__/**") },
+  { kind: "path", value: "tests/fixtures/**", regex: globToRegex("tests/fixtures/**") },
+  { kind: "path", value: "test/fixtures/**", regex: globToRegex("test/fixtures/**") },
+]
+
 export function applyReportPolicy(report: ScanReport, files: ProjectFile[], baseline?: ScanBaseline | null): ScanReport {
   const suppressionRules = parseBadgerIgnore(files)
   const suppressed = applySuppressions(report.findings, suppressionRules)
@@ -52,11 +60,11 @@ export function baselineIdFor(sourceLabel: string, ownerHash?: string) {
 function parseBadgerIgnore(files: ProjectFile[]): SuppressionRule[] {
   const ignore = files.find((file) => {
     const normalized = normalizePath(file.path)
-    return normalized === ".badgerignore" || normalized === ".badgerignore"
+    return normalized === ".badgerignore"
   })
-  if (!ignore) return []
+  if (!ignore) return DEFAULT_SUPPRESSION_RULES
 
-  const rules: SuppressionRule[] = []
+  const rules: SuppressionRule[] = [...DEFAULT_SUPPRESSION_RULES]
   for (const rawLine of ignore.text.split(/\r?\n/)) {
     const line = rawLine.split("#")[0]?.trim()
     if (!line) continue

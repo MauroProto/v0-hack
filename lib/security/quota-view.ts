@@ -36,7 +36,7 @@ export function normalizePublicQuota(value: unknown): PublicQuotaState | null {
   }
 }
 
-export function deriveQuotaDisplay(quota: PublicQuotaState | null | undefined, fallbackLimit = 10): QuotaDisplay {
+export function deriveQuotaDisplay(quota: PublicQuotaState | null | undefined, fallbackLimit = 5): QuotaDisplay {
   if (!quota) {
     const limit = Math.max(1, Math.floor(fallbackLimit))
     return {

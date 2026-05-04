@@ -1,4 +1,0 @@
-# Internal scanner fixtures.
-# These files intentionally contain vulnerable patterns and redacted tokens used by smoke tests.
-path:examples/vulnerable-next-app/**
-path:scripts/scanner-smoke.ts

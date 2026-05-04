@@ -652,7 +652,7 @@ function scanCookieHardening(file: ProjectFile, add: (finding: RuleFinding) => v
     const line = lines[index]
     if (!/\b(cookies\(\)\.set|response\.cookies\.set|Set-Cookie)\b/i.test(line)) continue
     if (isScannerSelfTestOrDetectorLine(file.path, line)) continue
-    if (/\bSet-Cookie\b[\s\S]*\bcreate[A-Za-z0-9_$]*Cookie\s*\(/.test(line)) continue
+    if (/\bSet-Cookie\b[\s\S]*\b(?:create|clear)[A-Za-z0-9_$]*Cookie\s*\(/.test(line)) continue
 
     const window = lines.slice(index, index + 10).join("\n")
     if (!/\b(session|token|auth|jwt|refresh|access)\b/i.test(window)) continue

@@ -11,7 +11,18 @@ import { normalizeFindings, withReportDerivedFields } from "@/lib/scanner/enrich
 import { compareFindingsForReport } from "@/lib/scanner/prioritize"
 import { isApiRoute, isDocumentationSecretExample, redactSecrets } from "@/lib/scanner/rules"
 import { buildSecurityTaskflow } from "@/lib/scanner/taskflow"
-import type { FindingCategory, FindingKind, FindingTriageVerdict, ProjectFile, ScanFinding, ScanMode, ScanReport, Severity, TriagePriority } from "@/lib/scanner/types"
+import type {
+  FindingCategory,
+  FindingKind,
+  FindingTriageVerdict,
+  MaxLaunchReview,
+  ProjectFile,
+  ScanFinding,
+  ScanMode,
+  ScanReport,
+  Severity,
+  TriagePriority,
+} from "@/lib/scanner/types"
 
 type SnippetContext = {
   file: ProjectFile
@@ -241,6 +252,9 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
             "Normal mode is still professional: prioritize high-confidence vulnerabilities and production blockers over broad advisory noise.",
           maxModeContract:
             "Max mode may spend more context on cross-file trust boundaries, webhook/auth/CORS/session/database paths, AI tool execution and supply-chain scripts.",
+          maxLaunchReviewContract: config.mode === "max"
+            ? "Return maxLaunchReview as an architecture/readiness review, not as vulnerability findings. Cover cost/abuse controls, quota timing, anonymous access, codeload fallback, CSRF/origin, OAuth scopes, Supabase/RLS, AI privacy, PR safety, background workers, and readiness flags. Use action_required only for concrete gaps visible in snippets or scanner artifacts."
+            : "Do not return maxLaunchReview outside Max mode.",
         },
         redactedSnippets: snippets.map((snippet) => ({
           filePath: snippet.file.path,
@@ -254,11 +268,13 @@ export async function reviewProjectWithAi(report: ScanReport, files: ProjectFile
     const aiFindings = normalizeAiFindings(output, snippets, harnessedReport.findings).slice(0, config.maxFindings)
     const findings = normalizeFindings(assignFindingIds([...harnessedReport.findings, ...aiFindings]))
     const triage = normalizeAiTriage(output, new Set(findings.map((finding) => finding.id))).slice(0, config.maxTriageFindings)
+    const maxLaunchReview = config.mode === "max" ? normalizeMaxLaunchReview(output.maxLaunchReview, aiModel) : undefined
 
     const reportWithAiFindings = withReportDerivedFields({
       ...harnessedReport,
       riskScore: calculateRiskScore(findings),
       findings,
+      ...(maxLaunchReview ? { maxLaunchReview } : {}),
       auditTrail: [
         ...harnessedReport.auditTrail,
         auditEvent("Run AI auditor model", "complete", {
@@ -302,6 +318,51 @@ function normalizeReportSummary(summary: AiReviewOutput["reportSummary"]) {
       .filter(Boolean)
       .slice(0, 8),
   }
+}
+
+function normalizeMaxLaunchReview(
+  review: AiReviewOutput["maxLaunchReview"],
+  aiModel: { modelId: string; provider: string; reasoningEffort?: string },
+): MaxLaunchReview | undefined {
+  if (!review) return undefined
+
+  const sections = (review.sections ?? [])
+    .map((section) => ({
+      area: cleanAiText(section.area, 90),
+      status: section.status,
+      summary: cleanAiText(section.summary, 420),
+      evidence: cleanAiList(section.evidence, 6, 180),
+      recommendations: cleanAiList(section.recommendations, 6, 220),
+    }))
+    .filter((section) => section.area && section.summary)
+    .slice(0, 12)
+
+  if (!sections.length) return undefined
+
+  return {
+    verdict: review.verdict,
+    summary: cleanAiText(review.summary, 900) || "Max launch review completed.",
+    sections,
+    generatedAt: new Date().toISOString(),
+    model: aiModel.modelId,
+    provider: aiModel.provider,
+    reasoningEffort: aiModel.reasoningEffort,
+  }
+}
+
+function cleanAiList(values: string[] | undefined, maxItems: number, maxLength: number) {
+  return (values ?? [])
+    .map((value) => cleanAiText(value, maxLength))
+    .filter(Boolean)
+    .slice(0, maxItems)
+}
+
+function cleanAiText(value: string | undefined, maxLength: number) {
+  const normalized = (value ?? "").replace(/\s+/g, " ").trim()
+  if (normalized.length <= maxLength) return normalized
+  const clipped = normalized.slice(0, maxLength)
+  const lastSpace = clipped.lastIndexOf(" ")
+  return `${(lastSpace > maxLength * 0.65 ? clipped.slice(0, lastSpace) : clipped).trim()}...`
 }
 
 function normalizeAiFindings(output: AiReviewOutput, snippets: SnippetContext[], existing: ScanFinding[]): ScanFinding[] {

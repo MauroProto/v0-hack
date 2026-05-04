@@ -170,7 +170,13 @@ export async function listScanEvents(reportId: string): Promise<ScanEvent[]> {
 }
 
 export function backgroundJobsEnabled() {
-  return badgerEnv("ENABLE_BACKGROUND_JOBS")?.toLowerCase() === "true"
+  if (badgerEnv("ENABLE_BACKGROUND_JOBS")?.toLowerCase() !== "true") return false
+
+  // Background draining stays fail-closed until the Supabase job claim path is
+  // made atomic with a FOR UPDATE SKIP LOCKED RPC. Manual job lifecycle helpers
+  // remain available for tests and future worker work, but production queuing is
+  // intentionally off.
+  return false
 }
 
 async function markJobRunning(job: ScanJob) {

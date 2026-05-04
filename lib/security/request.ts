@@ -6,11 +6,16 @@ import { badgerEnv } from "@/lib/config/env"
 import { calculateRiskScore } from "@/lib/scanner/patches"
 import { withReportDerivedFields } from "@/lib/scanner/enrich"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
+import { ensureAnonymousGuestIdentity } from "@/lib/security/anonymousGuest"
 import { getGitHubSessionFromHeaders } from "@/lib/security/github-session"
 import type { AuditTrailEvent, ScanFinding, ScanReport } from "@/lib/scanner/types"
 
 export interface RequestIdentity {
   subjectHash: string
+  quotaSubjectHash: string
+  linkedQuotaSubjectHash?: string
+  rateLimitSubjectHash: string
+  setCookie?: string
   kind: "clerk_user" | "supabase_user" | "github_user" | "anonymous"
   label: string
 }
@@ -24,10 +29,19 @@ export async function getRequestIdentity(request: Request): Promise<RequestIdent
 }
 
 export async function getRequestIdentityFromHeaders(headers: HeaderSource): Promise<RequestIdentity> {
+  const anonymousRateLimitHash = hashSubject(`anonymous_ip:${getClientIp(headers)}`)
+  const anonymousGuestIdentity = ensureAnonymousGuestIdentity(headers, anonymousRateLimitHash)
+  const linkedQuotaSubjectHash = anonymousGuestIdentity.setCookie
+    ? undefined
+    : anonymousGuestIdentity.quotaSubjectHash
   const clerkUserId = await getClerkUserId()
   if (clerkUserId) {
+    const subjectHash = hashSubject(`clerk_user:${clerkUserId}`)
     return {
-      subjectHash: hashSubject(`clerk_user:${clerkUserId}`),
+      subjectHash,
+      quotaSubjectHash: subjectHash,
+      linkedQuotaSubjectHash,
+      rateLimitSubjectHash: subjectHash,
       kind: "clerk_user",
       label: "Badger user",
     }
@@ -35,8 +49,12 @@ export async function getRequestIdentityFromHeaders(headers: HeaderSource): Prom
 
   const githubSession = getGitHubSessionFromHeaders(headers)
   if (githubSession) {
+    const subjectHash = hashSubject(`github_user:${githubSession.id}`)
     return {
-      subjectHash: hashSubject(`github_user:${githubSession.id}`),
+      subjectHash,
+      quotaSubjectHash: subjectHash,
+      linkedQuotaSubjectHash,
+      rateLimitSubjectHash: subjectHash,
       kind: "github_user",
       label: "GitHub user",
     }
@@ -44,19 +62,21 @@ export async function getRequestIdentityFromHeaders(headers: HeaderSource): Prom
 
   const userId = await getSupabaseUserId(headers)
   if (userId) {
+    const subjectHash = hashSubject(`supabase_user:${userId}`)
     return {
-      subjectHash: hashSubject(`supabase_user:${userId}`),
+      subjectHash,
+      quotaSubjectHash: subjectHash,
+      linkedQuotaSubjectHash,
+      rateLimitSubjectHash: subjectHash,
       kind: "supabase_user",
       label: "authenticated user",
     }
   }
 
-  const ip = getClientIp(headers)
-
   return {
-    subjectHash: hashSubject(`anonymous_ip:${ip}`),
+    ...anonymousGuestIdentity,
     kind: "anonymous",
-    label: "anonymous IP",
+    label: "anonymous browser",
   }
 }
 

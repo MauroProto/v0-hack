@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server"
 import { listScanReports } from "@/lib/scanner/store"
+import { anonymousGuestResponseHeaders } from "@/lib/security/anonymousGuest"
 import { apiHeaders } from "@/lib/security/headers"
 import { getRequestIdentity, publicReport } from "@/lib/security/request"
+import { reportHistoryOwnerHash } from "@/lib/security/reportHistory"
 import { isSecurityError, peekMonthlyScanQuota, rateLimitHeaders } from "@/lib/security/quota"
 
 export const runtime = "nodejs"
@@ -10,17 +12,18 @@ export const dynamic = "force-dynamic"
 export async function GET(request: Request) {
   try {
     const identity = await getRequestIdentity(request)
-    const shouldListReports = identity.kind !== "anonymous"
+    const ownerHash = reportHistoryOwnerHash(identity)
     const [reports, quota] = await Promise.all([
-      shouldListReports ? listScanReports(identity.subjectHash) : Promise.resolve([]),
+      listScanReports(ownerHash),
       peekMonthlyScanQuota(identity),
     ])
 
     return NextResponse.json({
       reports: reports.map(publicReport),
-      authenticated: shouldListReports,
+      authenticated: identity.kind !== "anonymous",
+      historyAvailable: true,
       quota,
-    }, { headers: apiHeaders(rateLimitHeaders(quota)) })
+    }, { headers: apiHeaders({ ...rateLimitHeaders(quota), ...anonymousGuestResponseHeaders(identity) }) })
   } catch (error) {
     if (isSecurityError(error)) {
       return NextResponse.json(

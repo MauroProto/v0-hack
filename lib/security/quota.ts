@@ -4,7 +4,16 @@ import { badgerEnv } from "@/lib/config/env"
 import { BADGER_SUPABASE_BURST_RPC, BADGER_SUPABASE_QUOTA_RPC, BADGER_SUPABASE_TABLES } from "@/lib/supabase/schema"
 import { getSupabaseServiceClient } from "@/lib/supabase/server"
 import type { RequestIdentity } from "./request"
+import { SecurityError } from "./errors"
+import {
+  monthlyQuotaLinkedSubject,
+  monthlyQuotaPrimarySubject,
+  monthlyScanQuotaLimit,
+  planLinkedMonthlyQuotaConsumption,
+  remainingLinkedMonthlyQuota,
+} from "./quotaPolicy"
 export { scanCreditCostForMode, type ScanCreditMode } from "./scanCredits"
+export { SecurityError, isSecurityError } from "./errors"
 
 type Counter = {
   count: number
@@ -43,22 +52,14 @@ type BurstRpcRow = {
 }
 
 type QuotaUsageRow = {
+  subject_hash?: string | null
   scan_count: number | string | null
 }
 
+type SupabaseServiceClient = NonNullable<ReturnType<typeof getSupabaseServiceClient>>
+
 const securityGlobal = globalThis as SecurityGlobal
 const MAX_SCAN_CREDIT_COST = 10
-
-export class SecurityError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-    public readonly code: string,
-    public readonly headers: Record<string, string> = {},
-  ) {
-    super(message)
-  }
-}
 
 export async function assertBurstAllowed(identity: RequestIdentity, action: "scan" | "explain" | "pull_request") {
   if (localRateLimitsDisabled()) return
@@ -74,12 +75,13 @@ export async function assertBurstAllowed(identity: RequestIdentity, action: "sca
   const windowSeconds = readPositiveInt(badgerEnv("BURST_WINDOW_SECONDS"), 60)
   const windowStart = getBurstWindowStart(windowSeconds)
   const resetAt = windowStart.getTime() + windowSeconds * 1000
-  const key = `${action}:${identity.subjectHash}`
+  const subjectHash = identity.rateLimitSubjectHash || identity.subjectHash
+  const key = `${action}:${subjectHash}`
 
   const supabase = getSupabaseServiceClient()
   if (supabase) {
     const { data, error } = await supabase.rpc(BADGER_SUPABASE_BURST_RPC, {
-      p_subject_hash: identity.subjectHash,
+      p_subject_hash: subjectHash,
       p_action: action,
       p_window_start: windowStart.toISOString(),
       p_limit: limit,
@@ -106,14 +108,17 @@ export async function assertBurstAllowed(identity: RequestIdentity, action: "sca
 }
 
 export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits = 1): Promise<QuotaState> {
-  const limit = readPositiveInt(badgerEnv("MONTHLY_SCAN_QUOTA"), 10)
+  const limit = monthlyScanQuotaLimit(identity)
   const cost = normalizeCreditCost(credits)
   const windowStart = getUtcMonthStart()
   const resetAt = getNextUtcMonthStart()
-  const memoryKey = monthlyCounterKey(windowStart, identity.subjectHash)
+  const subjectHash = monthlyQuotaPrimarySubject(identity)
+  const linkedSubjectHash = monthlyQuotaLinkedSubject(identity)
+  const memoryKey = monthlyCounterKey(windowStart, subjectHash)
+  const linkedMemoryKey = linkedSubjectHash ? monthlyCounterKey(windowStart, linkedSubjectHash) : null
 
   if (localRateLimitsDisabled()) {
-    const result = consumeMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime(), cost)
+    const result = consumeLinkedMemoryCounter(getMonthlyCounters(), memoryKey, linkedMemoryKey, limit, resetAt.getTime(), cost)
     return {
       limit,
       remaining: result.remaining,
@@ -129,35 +134,50 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits
   }
 
   if (supabase) {
-    const { data, error } = await supabase.rpc(
-      BADGER_SUPABASE_QUOTA_RPC,
-      quotaRpcArgs({
-        subjectHash: identity.subjectHash,
-        windowStart,
+    const usage = await readPersistentQuotaUsage(supabase, subjectHash, linkedSubjectHash, windowStart)
+    if (usage.error) {
+      console.error("Badger Supabase quota read failed", usage.error)
+      if (persistentQuotaRequired()) throw persistentQuotaUnavailable()
+    } else {
+      const plan = planLinkedMonthlyQuotaConsumption({
+        primaryCount: usage.primaryCount,
+        linkedCount: usage.linkedCount,
         limit,
-        cost,
-      }),
-    )
+        requestCost: cost,
+      })
 
-    if (!error) {
-      const row = (Array.isArray(data) ? data[0] : data) as QuotaRpcRow | null
-      if (row?.allowed) {
-        return {
+      if (!plan.allowed) throw quotaExceeded(limit, resetAt)
+
+      const { data, error } = await supabase.rpc(
+        BADGER_SUPABASE_QUOTA_RPC,
+        quotaRpcArgs({
+          subjectHash,
+          windowStart,
           limit,
-          remaining: Math.max(0, Number(row.remaining) || 0),
-          resetAt: resetAt.toISOString(),
-          period: "monthly",
+          cost: plan.primaryCost,
+        }),
+      )
+
+      if (!error) {
+        const row = (Array.isArray(data) ? data[0] : data) as QuotaRpcRow | null
+        if (row?.allowed) {
+          return {
+            limit,
+            remaining: Math.max(0, Number(row.remaining) || 0),
+            resetAt: resetAt.toISOString(),
+            period: "monthly",
+          }
         }
+
+        throw quotaExceeded(limit, resetAt)
       }
 
-      throw quotaExceeded(limit, resetAt)
+      console.error("Badger Supabase quota failed", error.message)
+      if (persistentQuotaRequired()) throw persistentQuotaUnavailable()
     }
-
-    console.error("Badger Supabase quota failed", error.message)
-    if (persistentQuotaRequired()) throw persistentQuotaUnavailable()
   }
 
-  const result = consumeMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime(), cost)
+  const result = consumeLinkedMemoryCounter(getMonthlyCounters(), memoryKey, linkedMemoryKey, limit, resetAt.getTime(), cost)
   if (!result.allowed) throw quotaExceeded(limit, resetAt)
 
   return {
@@ -169,13 +189,16 @@ export async function consumeMonthlyScanQuota(identity: RequestIdentity, credits
 }
 
 export async function peekMonthlyScanQuota(identity: RequestIdentity): Promise<QuotaState> {
-  const limit = readPositiveInt(badgerEnv("MONTHLY_SCAN_QUOTA"), 10)
+  const limit = monthlyScanQuotaLimit(identity)
   const windowStart = getUtcMonthStart()
   const resetAt = getNextUtcMonthStart()
-  const memoryKey = monthlyCounterKey(windowStart, identity.subjectHash)
+  const subjectHash = monthlyQuotaPrimarySubject(identity)
+  const linkedSubjectHash = monthlyQuotaLinkedSubject(identity)
+  const memoryKey = monthlyCounterKey(windowStart, subjectHash)
+  const linkedMemoryKey = linkedSubjectHash ? monthlyCounterKey(windowStart, linkedSubjectHash) : null
 
   if (localRateLimitsDisabled()) {
-    const result = peekMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime())
+    const result = peekLinkedMemoryCounter(getMonthlyCounters(), memoryKey, linkedMemoryKey, limit, resetAt.getTime())
     return {
       limit,
       remaining: result.remaining,
@@ -191,28 +214,25 @@ export async function peekMonthlyScanQuota(identity: RequestIdentity): Promise<Q
   }
 
   if (supabase) {
-    const { data, error } = await supabase
-      .from(BADGER_SUPABASE_TABLES.usage)
-      .select("scan_count")
-      .eq("subject_hash", identity.subjectHash)
-      .eq("window_start", windowStart)
-      .maybeSingle()
-
-    if (!error) {
-      const scanCount = Math.max(0, Number((data as QuotaUsageRow | null)?.scan_count ?? 0) || 0)
+    const usage = await readPersistentQuotaUsage(supabase, subjectHash, linkedSubjectHash, windowStart)
+    if (!usage.error) {
       return {
         limit,
-        remaining: Math.max(0, limit - scanCount),
+        remaining: remainingLinkedMonthlyQuota({
+          primaryCount: usage.primaryCount,
+          linkedCount: usage.linkedCount,
+          limit,
+        }),
         resetAt: resetAt.toISOString(),
         period: "monthly",
       }
     }
 
-    console.error("Badger Supabase quota read failed", error.message)
+    console.error("Badger Supabase quota read failed", usage.error)
     if (persistentQuotaRequired()) throw persistentQuotaUnavailable()
   }
 
-  const result = peekMemoryCounter(getMonthlyCounters(), memoryKey, limit, resetAt.getTime())
+  const result = peekLinkedMemoryCounter(getMonthlyCounters(), memoryKey, linkedMemoryKey, limit, resetAt.getTime())
   return {
     limit,
     remaining: result.remaining,
@@ -233,10 +253,6 @@ export function assertContentLengthAllowed(request: Request, maxBytes: number) {
   if (contentLength > maxBytes) {
     throw new SecurityError(`Request is too large. Maximum is ${maxBytes} bytes.`, 413, "request_too_large")
   }
-}
-
-export function isSecurityError(error: unknown): error is SecurityError {
-  return error instanceof SecurityError
 }
 
 export function rateLimitHeaders(quota: RateLimitHeaderState) {
@@ -332,17 +348,87 @@ function consumeMemoryCounter(counters: Map<string, Counter>, key: string, limit
   return { allowed: true, remaining: Math.max(0, limit - next.count), resetAt: next.resetAt }
 }
 
-function peekMemoryCounter(counters: Map<string, Counter>, key: string, limit: number, resetAt: number) {
-  const now = Date.now()
-  const current = counters.get(key)
-  if (!current || current.resetAt <= now) {
-    return { remaining: limit, resetAt }
+function consumeLinkedMemoryCounter(
+  counters: Map<string, Counter>,
+  primaryKey: string,
+  linkedKey: string | null,
+  limit: number,
+  resetAt: number,
+  amount = 1,
+) {
+  const primaryCount = readMemoryCounter(counters, primaryKey)
+  const linkedCount = linkedKey ? readMemoryCounter(counters, linkedKey) : 0
+  const plan = planLinkedMonthlyQuotaConsumption({
+    primaryCount,
+    linkedCount,
+    limit,
+    requestCost: normalizeCreditCost(amount),
+  })
+
+  if (!plan.allowed) {
+    ensureMemoryCounter(counters, primaryKey, primaryCount, resetAt)
+    return { allowed: false, remaining: 0, resetAt }
   }
 
+  counters.set(primaryKey, {
+    count: primaryCount + plan.primaryCost,
+    resetAt,
+  })
   return {
-    remaining: Math.max(0, limit - current.count),
-    resetAt: current.resetAt,
+    allowed: true,
+    remaining: plan.remaining,
+    resetAt,
   }
+}
+
+function peekLinkedMemoryCounter(counters: Map<string, Counter>, primaryKey: string, linkedKey: string | null, limit: number, resetAt: number) {
+  return {
+    remaining: remainingLinkedMonthlyQuota({
+      primaryCount: readMemoryCounter(counters, primaryKey),
+      linkedCount: linkedKey ? readMemoryCounter(counters, linkedKey) : 0,
+      limit,
+    }),
+    resetAt,
+  }
+}
+
+function readMemoryCounter(counters: Map<string, Counter>, key: string) {
+  const current = counters.get(key)
+  if (!current || current.resetAt <= Date.now()) return 0
+  return current.count
+}
+
+function ensureMemoryCounter(counters: Map<string, Counter>, key: string, count: number, resetAt: number) {
+  const current = counters.get(key)
+  if (!current || current.resetAt <= Date.now()) {
+    counters.set(key, { count, resetAt })
+  }
+}
+
+async function readPersistentQuotaUsage(
+  supabase: SupabaseServiceClient,
+  subjectHash: string,
+  linkedSubjectHash: string | null,
+  windowStart: string,
+): Promise<{ primaryCount: number; linkedCount: number; error?: string }> {
+  const subjects = linkedSubjectHash ? [subjectHash, linkedSubjectHash] : [subjectHash]
+  const { data, error } = await supabase
+    .from(BADGER_SUPABASE_TABLES.usage)
+    .select("subject_hash, scan_count")
+    .eq("window_start", windowStart)
+    .in("subject_hash", subjects)
+
+  if (error) return { primaryCount: 0, linkedCount: 0, error: error.message }
+
+  let primaryCount = 0
+  let linkedCount = 0
+  for (const row of (data ?? []) as QuotaUsageRow[]) {
+    const scanCount = Math.max(0, Number(row.scan_count ?? 0) || 0)
+    if (row.subject_hash === subjectHash) primaryCount = scanCount
+    if (linkedSubjectHash && row.subject_hash === linkedSubjectHash) linkedCount = scanCount
+  }
+
+  return { primaryCount, linkedCount }
 }
 
 function getBurstCounters() {

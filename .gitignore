@@ -13,7 +13,6 @@ next.user-config.*
 .env.*
 .env*.local
 !.env.example
-!examples/vulnerable-next-app/.env.local
 
 # Common ignores
 node_modules

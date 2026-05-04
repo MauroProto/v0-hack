@@ -65,6 +65,8 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
 
   const githubConnected = githubSession.authenticated
   const badgerSignedIn = clerkLoaded && Boolean(isSignedIn)
+  const maxReviewAuthenticated = badgerSignedIn || githubConnected
+  const maxRequiresSignIn = analysisMode === "max" && !maxReviewAuthenticated
 
   const loadRepos = useCallback(async () => {
     const activeSessionVersion = sessionVersion.current
@@ -140,6 +142,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
       setRepos([])
       setSelectedRepo(null)
       setMode("public")
+      setAnalysisMode("normal")
       setLoginLoading(false)
       setSessionLoading(false)
       setReposLoading(false)
@@ -169,6 +172,11 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   }
 
   const startPublicScan = async () => {
+    if (maxRequiresSignIn) {
+      handleScanFailure("Sign in to run Max review. Normal public scans are available without an account.")
+      return
+    }
+
     if (!githubUrl.trim()) {
       handleScanFailure("Paste a public GitHub repository URL first.")
       return
@@ -244,6 +252,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
     setRepos([])
     setSelectedRepo(null)
     setMode("public")
+    setAnalysisMode("normal")
     publishGitHubSessionChange("signed_out")
   }
 
@@ -278,15 +287,20 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
                 <button
                   className="analysis-mode-choice"
                   data-active={analysisMode === option.id}
+                  disabled={option.id === "max" && !maxReviewAuthenticated}
                   key={option.id}
                   type="button"
                   onClick={() => setAnalysisMode(option.id)}
+                  title={option.id === "max" && !maxReviewAuthenticated ? "Sign in to run Max review." : undefined}
                 >
                   <b>{option.label}</b>
-                  <span>{option.detail}</span>
+                  <span>{option.id === "max" && !maxReviewAuthenticated ? "Sign in to run Max review" : option.detail}</span>
                 </button>
               ))}
             </div>
+            {!maxReviewAuthenticated && (
+              <p className="analysis-mode-note">Guests get 5 shared monthly credits. Sign in to unlock 7 total credits and Max review.</p>
+            )}
           </fieldset>
 
           {mode === "public" ? (

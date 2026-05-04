@@ -244,6 +244,7 @@ export function generateFullReportBody(report: ScanReport) {
     ...formatRiskBreakdown(report),
     ...formatRepoInventory(report),
     ...formatDependencySummary(report),
+    ...formatMaxLaunchReview(report),
     "## All findings",
     "",
     ...(sortedFindings.length
@@ -329,6 +330,29 @@ function formatDependencySummary(report: ScanReport) {
     `- **OSV enabled:** ${summary.osvEnabled ? "yes" : "no"}`,
     ...(summary.error ? [`- **OSV error:** ${summary.error}`] : []),
     "",
+  ]
+}
+
+function formatMaxLaunchReview(report: ScanReport) {
+  const review = report.analysisMode === "max" ? report.maxLaunchReview : undefined
+  if (!review) return []
+
+  return [
+    "## Max launch review",
+    "",
+    `- **Verdict:** ${review.verdict.replaceAll("_", " ")}`,
+    `- **Summary:** ${review.summary}`,
+    ...(review.model ? [`- **Reviewer:** ${review.provider ?? "ai"} / ${review.model}${review.reasoningEffort ? ` (${review.reasoningEffort})` : ""}`] : []),
+    "",
+    ...review.sections.flatMap((section, index) => [
+      `### ${index + 1}. ${section.area}`,
+      "",
+      `- **Status:** ${section.status.replaceAll("_", " ")}`,
+      `- **Summary:** ${section.summary}`,
+      ...(section.evidence.length ? [`- **Evidence:** ${section.evidence.join("; ")}`] : []),
+      ...(section.recommendations.length ? [`- **Recommendations:** ${section.recommendations.join("; ")}`] : []),
+      "",
+    ]),
   ]
 }
 

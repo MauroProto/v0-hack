@@ -6,6 +6,7 @@ import { getScanReport, saveScanReport } from "@/lib/scanner/store"
 import type { ScanReport } from "@/lib/scanner/types"
 import { readJsonBodyWithLimit } from "@/lib/security/body"
 import { apiHeaders } from "@/lib/security/headers"
+import { assertSameOriginRequest } from "@/lib/security/origin"
 import { canAccessReport, getRequestIdentity, publicReport } from "@/lib/security/request"
 import { assertBurstAllowed, assertContentLengthAllowed, isSecurityError } from "@/lib/security/quota"
 import { createRemediationPullRequest, getGitHubAuthFromRequest } from "@/lib/utils/github"
@@ -23,6 +24,7 @@ type PullRequestSelection = z.infer<typeof PullRequestSelectionSchema>
 
 export async function POST(request: Request, { params }: { params: Promise<{ scanId: string }> }) {
   try {
+    assertSameOriginRequest(request)
     const { scanId } = await params
     assertContentLengthAllowed(request, 60_000)
     const selection = await readPullRequestSelection(request)

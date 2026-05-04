@@ -21,6 +21,7 @@ import {
   createDefaultGitHubAppInstallationToken,
   isGitHubAppInstallationConfigured,
 } from "@/lib/utils/github-app"
+import { getCodeloadLimits } from "@/lib/utils/githubCodeload"
 import {
   pinThirdPartyActionRefsInText,
   type ActionRef,
@@ -136,8 +137,6 @@ const GITHUB_FULL_NAME_RE = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._
 const RETRYABLE_GITHUB_STATUSES = new Set([408, 500, 502, 503, 504])
 const DEFAULT_GITHUB_FETCH_RETRIES = 2
 const DEFAULT_GITHUB_RETRY_DELAY_MS = 450
-const DEFAULT_CODELOAD_MAX_ARCHIVE_BYTES = 50_000_000
-const DEFAULT_CODELOAD_MAX_TAR_BYTES = 160_000_000
 
 export function parsePublicGitHubUrl(input: string): ParsedGitHubUrl {
   const trimmed = input.trim()
@@ -484,13 +483,11 @@ async function fetchPublicGitHubTarball(owner: string, repo: string, ref: string
     )
   }
 
-  const maxArchiveBytes = readPositiveInt(badgerEnv("GITHUB_CODELOAD_MAX_ARCHIVE_BYTES"), DEFAULT_CODELOAD_MAX_ARCHIVE_BYTES)
-  return readResponseBufferWithLimit(response, maxArchiveBytes)
+  return readResponseBufferWithLimit(response, getCodeloadLimits().maxArchiveBytes)
 }
 
 function extractProjectFilesFromTarball(archive: Buffer, limits: ScannerLimits) {
-  const maxTarBytes = readPositiveInt(badgerEnv("GITHUB_CODELOAD_MAX_TAR_BYTES"), DEFAULT_CODELOAD_MAX_TAR_BYTES)
-  const tarball = gunzipSync(archive, { maxOutputLength: maxTarBytes })
+  const tarball = gunzipSync(archive, { maxOutputLength: getCodeloadLimits().maxTarBytes })
   const supportedCandidates = readTarEntries(tarball)
     .filter((entry) => shouldConsiderProjectPath(entry.path))
     .filter((entry) => entry.bytes.byteLength <= maxBytesForProjectPath(entry.path, limits.maxFileSizeBytes) && !shouldSkipLargeLockfile(entry.path, entry.bytes.byteLength))

@@ -1,0 +1,3 @@
+# Internal scanner fixtures.
+# These files intentionally contain scanner regression patterns and redacted tokens used by smoke tests.
+path:scripts/scanner-smoke.ts

@@ -410,6 +410,10 @@ export function ScanResultsClient({
               )}
             </div>
 
+            {report.analysisMode === "max" && report.maxLaunchReview && (
+              <MaxLaunchReviewPanel review={report.maxLaunchReview} />
+            )}
+
             <div className="app-findings-head">
               <h4>Findings</h4>
               <div className="filter">
@@ -721,6 +725,39 @@ function RiskBucketCard({
       </div>
       <div className="sub">{bucket.label}</div>
     </div>
+  )
+}
+
+function MaxLaunchReviewPanel({ review }: { review: NonNullable<ScanReport["maxLaunchReview"]> }) {
+  return (
+    <section className="max-launch-review">
+      <div className="max-launch-review-head">
+        <div>
+          <span>Max launch review</span>
+          <h3>{review.verdict.replaceAll("_", " ")}</h3>
+        </div>
+        {review.model && <em>{review.provider ?? "ai"} · {review.model}</em>}
+      </div>
+      <p>{review.summary}</p>
+      <div className="max-launch-grid">
+        {review.sections.map((section) => (
+          <article className="max-launch-section" data-status={section.status} key={`${section.area}-${section.status}`}>
+            <div>
+              <b>{section.area}</b>
+              <span>{section.status.replaceAll("_", " ")}</span>
+            </div>
+            <p>{section.summary}</p>
+            {section.recommendations.length > 0 && (
+              <ul>
+                {section.recommendations.slice(0, 3).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
   )
 }
 
