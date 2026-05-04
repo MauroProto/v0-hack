@@ -750,6 +750,17 @@ img { max-width: 100%; display: block; }
   font-size: 13px;
   line-height: 1.4;
 }
+.scan-error[data-kind="busy"] {
+  border-color: rgba(127,231,196,0.24);
+  background: rgba(127,231,196,0.075);
+  color: rgba(226,255,246,0.92);
+}
+.scan-error-action {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 12px;
+}
 .scan-error-report {
   margin-top: 18px;
 }

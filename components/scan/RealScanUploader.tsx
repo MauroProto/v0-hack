@@ -38,6 +38,8 @@ type GitHubAuthSession = {
   scopes?: string[]
 }
 
+type ScanNoticeKind = "error" | "busy"
+
 export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mode }) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>(initialMode)
@@ -51,6 +53,7 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
   const [sessionLoading, setSessionLoading] = useState(true)
   const [reposLoading, setReposLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [noticeKind, setNoticeKind] = useState<ScanNoticeKind>("error")
   const [pendingScanId, setPendingScanId] = useState<string | null>(null)
   const [scanFinished, setScanFinished] = useState(false)
   const [scanKey, setScanKey] = useState(0)
@@ -137,19 +140,22 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
       setScanFinished(false)
       setPendingScanId(null)
       setError(null)
+      setNoticeKind("error")
     })
   }, [])
 
   const beginScan = () => {
     setError(null)
+    setNoticeKind("error")
     setPendingScanId(null)
     setScanFinished(false)
     setScanKey((k) => k + 1)
     setScanLoading(true)
   }
 
-  const handleScanFailure = (message: string) => {
+  const handleScanFailure = (message: string, kind: ScanNoticeKind = "error") => {
     setError(message)
+    setNoticeKind(kind)
     setScanLoading(false)
     setScanFinished(false)
     setPendingScanId(null)
@@ -171,12 +177,12 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
       }, scanTimeoutMs(analysisMode))
       if (sessionVersion.current !== activeSessionVersion) return
       notifyQuotaFromResponse(data, response.headers)
-      if (!response.ok) throw new Error(data.error ?? "Scan failed.")
+      if (!response.ok) throw scanErrorFromResponse(data)
       setPendingScanId(data.scanId)
       setScanFinished(true)
     } catch (scanError) {
       if (sessionVersion.current !== activeSessionVersion) return
-      handleScanFailure(errorMessageForScan(scanError, analysisMode))
+      handleScanFailure(errorMessageForScan(scanError, analysisMode), scanNoticeKind(scanError))
     }
   }
 
@@ -196,12 +202,12 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
       }, scanTimeoutMs(analysisMode))
       if (sessionVersion.current !== activeSessionVersion) return
       notifyQuotaFromResponse(data, response.headers)
-      if (!response.ok) throw new Error(data.error ?? "Scan failed.")
+      if (!response.ok) throw scanErrorFromResponse(data)
       setPendingScanId(data.scanId)
       setScanFinished(true)
     } catch (scanError) {
       if (sessionVersion.current !== activeSessionVersion) return
-      handleScanFailure(errorMessageForScan(scanError, analysisMode))
+      handleScanFailure(errorMessageForScan(scanError, analysisMode), scanNoticeKind(scanError))
     }
   }
 
@@ -354,9 +360,14 @@ export function RealScanUploader({ initialMode = "public" }: { initialMode?: Mod
           )}
 
           {error && (
-            <div className="scan-error" role="alert">
+            <div className="scan-error" data-kind={noticeKind} role="alert">
               <Icon.focus style={{ width: 14, height: 14 }} />
               <span>{error}</span>
+              {noticeKind === "busy" && !githubConnected && (
+                <button className="btn btn-outline scan-error-action" type="button" onClick={signInWithGitHub} disabled={loginLoading}>
+                  {loginLoading ? "Redirecting..." : "Login with GitHub"}
+                </button>
+              )}
             </div>
           )}
 
@@ -417,6 +428,18 @@ async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: n
   } finally {
     window.clearTimeout(timeout)
   }
+}
+
+function scanErrorFromResponse(data: unknown) {
+  const body = data as { error?: unknown; code?: unknown } | null
+  const error = new Error(typeof body?.error === "string" ? body.error : "Scan failed.") as Error & { code?: string }
+  if (typeof body?.code === "string") error.code = body.code
+  return error
+}
+
+function scanNoticeKind(error: unknown): ScanNoticeKind {
+  if (error instanceof Error && (error as Error & { code?: string }).code === "github_rate_limited") return "busy"
+  return "error"
 }
 
 function scanTimeoutMs(mode: AnalysisMode) {

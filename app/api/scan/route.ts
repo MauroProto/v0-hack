@@ -23,6 +23,7 @@ import {
   extractProjectFromGitHubRepo,
   getGitHubTokenFromRequest,
   getPublicGitHubReadTokenFromRequest,
+  isGitHubApiError,
   parseGitHubFullName,
   parsePublicGitHubUrl,
 } from "@/lib/utils/github"
@@ -161,6 +162,10 @@ function getErrorMessage(error: unknown) {
 function errorResponse(error: unknown) {
   if (isSecurityError(error)) {
     return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: apiHeaders(error.headers) })
+  }
+
+  if (isGitHubApiError(error)) {
+    return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: apiHeaders() })
   }
 
   return NextResponse.json({ error: getErrorMessage(error) }, { status: getErrorStatus(error), headers: apiHeaders() })

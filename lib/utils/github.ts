@@ -158,6 +158,10 @@ export async function getPublicGitHubReadTokenFromRequest(request: Request) {
   return getGitHubSessionFromHeaders(request.headers)?.token ?? await getServerGitHubReadToken()
 }
 
+export function isGitHubApiError(error: unknown): error is GitHubApiError {
+  return error instanceof GitHubApiError
+}
+
 export async function listAuthenticatedGitHubRepos(token: string): Promise<GitHubRepositorySummary[]> {
   const maxPages = readPositiveInt(badgerEnv("GITHUB_REPO_LIST_MAX_PAGES"), 5)
   const repos: GitHubRepoApi[] = []
@@ -1455,7 +1459,7 @@ async function throwGitHubResponseError(response: Response, url: string, authent
 
   if (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0") {
     throw new GitHubApiError(
-      "GitHub public API rate limit exceeded. In local development, set BADGER_GITHUB_TOKEN in .env.local. In production, configure the Badger GitHub App server-side so public scans never depend on a personal token.",
+      "The public scan service is busy right now. Sign in with GitHub to keep testing with your own GitHub session, or try again in a few minutes.",
       response.status,
       "github_rate_limited",
     )
