@@ -127,6 +127,26 @@ img { max-width: 100%; display: block; }
 .nav-links a { color: var(--fg-3); font-size: 13.5px; transition: color .15s; }
 .nav-links a:hover { color: var(--fg); }
 .nav-right { display: flex; align-items: center; gap: 10px; }
+.landing-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 36px;
+  padding: 0 6px 0 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.035);
+  color: var(--fg-2);
+}
+.landing-account-name {
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
 .clerk-auth-controls {
   display: inline-flex;
   align-items: center;
@@ -1962,6 +1982,12 @@ button.chip { cursor: pointer; }
   .analysis-mode-choice { min-height: 0; }
   .nav-right { gap: 7px; }
   .nav-cta { padding: 0 11px; }
+  .landing-account {
+    max-width: 42px;
+    padding: 0 4px;
+    justify-content: center;
+  }
+  .landing-account-name { display: none; }
   .guest-mode-badge { width: 34px; padding: 0; justify-content: center; }
   .guest-mode-badge span:last-child { display: none; }
 }

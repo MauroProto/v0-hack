@@ -2,6 +2,7 @@
 
 import { useState, useEffect, type ReactNode, type SVGProps } from "react"
 import Link from "next/link"
+import { UserButton, useUser } from "@clerk/nextjs"
 import { GuestAccessButton, GuestAccessTextLink, GuestModeBadge } from "@/components/auth/GuestAccessGate"
 
 type IconProps = SVGProps<SVGSVGElement>
@@ -166,6 +167,14 @@ const I = {
 // ---------- Nav ----------
 function Nav() {
   const [scrolled, setScrolled] = useState(false)
+  const { isLoaded, isSignedIn, user } = useUser()
+  const accountName =
+    user?.firstName ||
+    user?.fullName ||
+    user?.username ||
+    user?.primaryEmailAddress?.emailAddress ||
+    "Account"
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40)
     onScroll()
@@ -187,6 +196,12 @@ function Nav() {
         </nav>
         <div className="nav-right">
           <GuestModeBadge />
+          {isLoaded && isSignedIn ? (
+            <div className="landing-account" aria-label="Signed in account">
+              <span className="landing-account-name">{accountName}</span>
+              <UserButton />
+            </div>
+          ) : null}
           <GuestAccessButton className="btn btn-primary nav-cta">
             Start free scan <I.scan style={{ width: 14, height: 14 }} />
           </GuestAccessButton>
