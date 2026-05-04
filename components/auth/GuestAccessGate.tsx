@@ -146,7 +146,9 @@ function GuestAccessDialog({
         </SignInButton>
         <p className="guest-gate-powered">
           <span>by</span>
-          <b>Clerk</b>
+          <a href="https://clerk.com/" target="_blank" rel="noreferrer">
+            Clerk
+          </a>
         </p>
 
         <div className="guest-gate-rule" aria-hidden="true" />

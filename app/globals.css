@@ -2671,10 +2671,14 @@ button.chip { cursor: pointer; }
   font-size: 11px;
   letter-spacing: 0.02em;
 }
-.guest-gate-powered b {
+.guest-gate-powered a {
   color: rgba(245,245,245,0.86);
   font-weight: 800;
   letter-spacing: 0;
+  text-decoration: none;
+}
+.guest-gate-powered a:hover {
+  color: #fff;
 }
 .guest-gate-rule {
   display: block;
